@@ -1,0 +1,24 @@
+load("@iree_core//build_tools/bazel:build_defs.oss.bzl", "iree_compiler_register_plugin")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+cc_library(
+    name = "registration",
+    srcs = [
+        "PluginRegistration.cpp",
+    ],
+    deps = [
+        "@iree_core//compiler/src/iree/compiler/PluginAPI",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+iree_compiler_register_plugin(
+    plugin_id = "coralnpu",
+    target = ":registration",
+)

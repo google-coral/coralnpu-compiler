@@ -1,0 +1,3 @@
+# Ignore third_party directories which contain BUILD files so that recursive
+# from root works.
+third_party/llvm-project

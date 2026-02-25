@@ -1,0 +1,204 @@
+From cbdc21b347bc73c175ef665dede070e2962f18b6 Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Wed, 25 Feb 2026 16:26:55 +0100
+Subject: [PATCH] [bazel] fix bazel when used as submodule
+
+---
+ build_tools/bazel/extensions.bzl           | 27 ++++++++++++++--------
+ build_tools/bazel/iree_bitcode_library.bzl | 10 ++++----
+ build_tools/bazel/iree_flatcc.bzl          | 10 ++++++--
+ runtime/src/BUILD.bazel                    |  5 ++++
+ 4 files changed, 34 insertions(+), 18 deletions(-)
+
+diff --git a/build_tools/bazel/extensions.bzl b/build_tools/bazel/extensions.bzl
+index a9ecad1cb9..34346a230a 100644
+--- a/build_tools/bazel/extensions.bzl
++++ b/build_tools/bazel/extensions.bzl
+@@ -12,6 +12,11 @@ load("//build_tools/bazel:workspace.bzl", "cuda_auto_configure")
+ def _iree_extension_impl(module_ctx):
+     """Implementation of the IREE module extension."""
+ 
++    iree_root = "."
++    for mod in module_ctx.modules:
++        for location in mod.tags.location:
++            iree_root = location.path
++
+     # Create llvm-raw only when IREE is the root module.
+     # This allows downstream consumers to provide their own LLVM.
+     if any([m.is_root and m.name == "iree_core" for m in module_ctx.modules]):
+@@ -24,68 +29,68 @@ def _iree_extension_impl(module_ctx):
+     # Googletest
+     local_repository(
+         name = "com_google_googletest",
+-        path = "third_party/googletest",
++        path = iree_root + "/third_party/googletest",
+     )
+ 
+     # Flatcc
+     new_local_repository(
+         name = "com_github_dvidelabs_flatcc",
+         build_file = "@iree_core//:build_tools/third_party/flatcc/BUILD.overlay",
+-        path = "third_party/flatcc",
++        path = iree_root + "/third_party/flatcc",
+     )
+ 
+     # Vulkan headers
+     new_local_repository(
+         name = "vulkan_headers",
+         build_file = "@iree_core//:build_tools/third_party/vulkan_headers/BUILD.overlay",
+-        path = "third_party/vulkan_headers",
++        path = iree_root + "/third_party/vulkan_headers",
+     )
+ 
+     # StableHLO
+     local_repository(
+         name = "stablehlo",
+-        path = "third_party/stablehlo",
++        path = iree_root + "/third_party/stablehlo",
+     )
+ 
+     # Benchmark
+     local_repository(
+         name = "com_google_benchmark",
+-        path = "third_party/benchmark",
++        path = iree_root + "/third_party/benchmark",
+     )
+ 
+     # SPIRV-Cross
+     new_local_repository(
+         name = "spirv_cross",
+         build_file = "@iree_core//:build_tools/third_party/spirv_cross/BUILD.overlay",
+-        path = "third_party/spirv_cross",
++        path = iree_root + "/third_party/spirv_cross",
+     )
+ 
+     # Tracy
+     new_local_repository(
+         name = "tracy_client",
+         build_file = "@iree_core//:build_tools/third_party/tracy_client/BUILD.overlay",
+-        path = "third_party/tracy",
++        path = iree_root + "/third_party/tracy",
+     )
+ 
+     # NCCL
+     new_local_repository(
+         name = "nccl",
+         build_file = "@iree_core//:build_tools/third_party/nccl/BUILD.overlay",
+-        path = "third_party/nccl",
++        path = iree_root + "/third_party/nccl",
+     )
+ 
+     # HSA runtime headers
+     new_local_repository(
+         name = "hsa_runtime_headers",
+         build_file = "@iree_core//:build_tools/third_party/hsa-runtime-headers/BUILD.overlay",
+-        path = "third_party/hsa-runtime-headers",
++        path = iree_root + "/third_party/hsa-runtime-headers",
+     )
+ 
+     # WebGPU headers
+     new_local_repository(
+         name = "webgpu_headers",
+         build_file = "@iree_core//:build_tools/third_party/webgpu-headers/BUILD.overlay",
+-        path = "third_party/webgpu-headers",
++        path = iree_root + "/third_party/webgpu-headers",
+     )
+ 
+     # CUDA auto-configuration
+@@ -94,6 +99,8 @@ def _iree_extension_impl(module_ctx):
+         iree_repo_alias = "@iree_core",
+     )
+ 
++_location = tag_class(attrs = {"path": attr.string()})
+ iree_extension = module_extension(
+     implementation = _iree_extension_impl,
++    tag_classes = {"location": _location},
+ )
+diff --git a/build_tools/bazel/iree_bitcode_library.bzl b/build_tools/bazel/iree_bitcode_library.bzl
+index 03a32745f5..1c6c0df0ca 100644
+--- a/build_tools/bazel/iree_bitcode_library.bzl
++++ b/build_tools/bazel/iree_bitcode_library.bzl
+@@ -67,7 +67,7 @@ def iree_bitcode_library(
+     clang_tool = "@llvm-project//clang:clang"
+     link_tool = "@llvm-project//llvm:llvm-link"
+     builtin_headers_dep = "@llvm-project//clang:builtin_headers_gen"
+-    builtin_headers_path = "external/_main~_repo_rules~llvm-project/clang/staging/include/"
++    builtin_headers_path = Label("@llvm-project").workspace_root + "/clang/staging/include/"
+ 
+     base_copts = [
+         # Target architecture
+@@ -126,9 +126,8 @@ def iree_bitcode_library(
+                 " ".join([
+                     "$(location %s)" % (clang_tool),
+                     "-isystem $(BINDIR)/%s" % builtin_headers_path,
+-                    " ".join(base_copts + copts),
+-                    " ".join(["-I $(BINDIR)/runtime/src"]),
+-                    " ".join(["-I runtime/src"]),
++                    ] + base_copts + copts + [
++                    "-I %s/runtime/src" % Label("@iree_core").workspace_root,
+                     "-o $(location %s)" % (bitcode_out),
+                     "$(location %s)" % (src),
+                 ]),
+@@ -189,7 +188,6 @@ def iree_cuda_bitcode_library(
+     clang_tool = "@llvm-project//clang:clang"
+     link_tool = "@llvm-project//llvm:llvm-link"
+     builtin_headers_dep = "@llvm-project//clang:builtin_headers_gen"
+-    builtin_headers_path = "external/_main~_repo_rules~llvm-project/clang/staging/include/"
+ 
+     base_copts = [
+         "-x",
+@@ -322,7 +320,7 @@ def iree_amdgpu_bitcode_library(
+             "$(location %s)" % (clang_tool),
+             "$(location %s)" % (src),
+             "-o $(location %s)" % (out),
+-            "-I .",
++            "-I %s" % Label("@iree_core").workspace_root,
+         ] + base_copts + copts),
+         tools = [
+             clang_tool,
+diff --git a/build_tools/bazel/iree_flatcc.bzl b/build_tools/bazel/iree_flatcc.bzl
+index de5ddb72e0..97ef6e42b8 100644
+--- a/build_tools/bazel/iree_flatcc.bzl
++++ b/build_tools/bazel/iree_flatcc.bzl
+@@ -15,9 +15,15 @@ def iree_flatbuffer_c_library(
+         **kwargs):
+     flatcc = "@com_github_dvidelabs_flatcc//:flatcc"
+ 
++    # Extract the path from the //runtime/src:fbs_files label.
++    runtime_src_label = Label("//runtime/src:fbs_files")
++    runtime_src_path = runtime_src_label.package
++    if runtime_src_label.workspace_root:
++        runtime_src_path = runtime_src_label.workspace_root + "/" + runtime_src_path
++
+     flags = [
+         "-o$(RULEDIR)",
+-        "-I runtime/src",
++        "-I " + runtime_src_path,
+     ] + flatcc_args
+ 
+     out_stem = "%s" % (srcs[0].replace(".fbs", ""))
+@@ -36,7 +42,7 @@ def iree_flatbuffer_c_library(
+ 
+     native.genrule(
+         name = name + "_gen",
+-        srcs = srcs + includes,
++        srcs = srcs + includes + ["//runtime/src:fbs_files"],
+         outs = outs,
+         tools = [flatcc],
+         cmd = "$(location %s) %s %s" % (flatcc, " ".join(flags), " ".join(["$(location {})".format(src) for src in srcs])),
+diff --git a/runtime/src/BUILD.bazel b/runtime/src/BUILD.bazel
+index 0198accacb..d006485114 100644
+--- a/runtime/src/BUILD.bazel
++++ b/runtime/src/BUILD.bazel
+@@ -18,3 +18,8 @@ iree_cc_library(
+         ".",
+     ],
+ )
++
++filegroup(
++    name = "fbs_files",
++    srcs = glob(["**/*.fbs"]),
++)
+-- 
+2.53.0.414.gf7e9f6c205-goog
+

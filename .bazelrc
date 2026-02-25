@@ -1,0 +1,91 @@
+# Enable bzlmod (required for LLVM integration as of Nov 2025)
+common --enable_bzlmod
+
+# Prevent invalid caching if input files are modified during a build.
+# build --guard_against_concurrent_changes
+# Default to optimized builds
+# Override via: "-c dbg" or --compilation_mode=dbg
+build --compilation_mode=opt
+
+# build --dynamic_mode=off
+build --force_pic
+
+build --noincompatible_disallow_empty_glob
+
+###############################################################################
+# Options for "generic_clang" builds: these options should generally apply to
+# either clang or gcc and are curated based on need.
+###############################################################################
+
+# C++17 standard version is required.
+build:generic_clang --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+
+# TODO: OSS assert builds of TF became non functional around 1/27/2022. RIP.
+# Default to adding back asserts in optimized builds.
+# This is a good compromise between runtime and debugability.
+#build:generic_clang --copt=-UNDEBUG
+
+# Treat warnings as errors...
+build:generic_clang --copt=-Werror --host_copt=-Werror
+# ...except for unused command-line arguments, which fire spuriously during
+# LTO backend compilation when Bazel passes linkopts to the compiler.
+build:generic_clang --copt=-Wno-error=unused-command-line-argument
+# ...and silence them outside of the workspace.
+build:generic_clang --per_file_copt=external/.*@-w
+# ...and silence them on host builds. There is no host_per_file_copt and
+# everything we build in the host configuration we either also build in the
+# target configuration or is external, so we can't control it.
+# If/when Bazel supports --host_per_file_copt, we could use that instead:
+# https://github.com/bazelbuild/bazel/issues/12406.
+# Would need to then make all the --copt below duplicated with --host_copt.
+build:generic_clang --host_copt=-w
+
+build:generic_clang --copt=-Wno-c++20-extensions --host_copt=-Wno-c++20-extensions
+
+# Set clang diagnostics. These largely match the set of warnings used within
+# Google.
+
+build:generic_clang --copt=-Wall
+
+# Disable warnings we don't care about or that generally have a low signal/noise
+# ratio.
+build:generic_clang --copt=-Wno-ambiguous-member-template
+build:generic_clang --copt=-Wno-extern-c-compat # Matches upstream. Cannot impact due to extern C inclusion method.
+build:generic_clang --copt=-Wno-invalid-offsetof # Technically UB but needed for intrusive ptrs
+build:generic_clang --copt=-Wno-unused-const-variable
+build:generic_clang --copt=-Wno-unused-function
+build:generic_clang --copt=-Wno-unused-private-field
+build:generic_clang --copt=-Wno-pointer-sign
+build:generic_clang --copt=-Wno-char-subscripts
+
+# Explicitly enable some additional warnings.
+# Some of these aren't on by default, or under -Wall, or are subsets of warnings
+# turned off above.
+# build:generic_clang --copt=-Wc++20-extensions  # See above.
+build:generic_clang --copt=-Wctad-maybe-unsupported
+build:generic_clang --copt=-Wfloat-overflow-conversion
+build:generic_clang --copt=-Wfloat-zero-conversion
+build:generic_clang --copt=-Wfor-loop-analysis
+build:generic_clang --copt=-Wformat-security
+build:generic_clang --copt=-Wgnu-redeclared-enum
+build:generic_clang --copt=-Wimplicit-fallthrough
+build:generic_clang --copt=-Winfinite-recursion
+build:generic_clang --copt=-Wliteral-conversion
+build:generic_clang --copt=-Wnon-virtual-dtor
+build:generic_clang --copt=-Woverloaded-virtual
+build:generic_clang --copt=-Wself-assign
+build:generic_clang --copt=-Wstring-conversion
+build:generic_clang --copt=-Wtautological-overlap-compare
+build:generic_clang --copt=-Wthread-safety
+build:generic_clang --copt=-Wthread-safety-beta
+build:generic_clang --copt=-Wunused-comparison
+build:generic_clang --copt=-Wvla
+
+###############################################################################
+# Linker options.
+###############################################################################
+
+# Treat linker warnings as errors (supported by all linkers).
+build:generic_clang --linkopt=-Wl,--fatal-warnings
+
+build --config=generic_clang

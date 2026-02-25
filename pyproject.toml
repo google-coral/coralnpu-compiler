@@ -1,0 +1,6 @@
+[tool.yapf]
+based_on_style = "google"
+indent_width = 2
+
+[tool.pylint.format]
+indent-string = "  "

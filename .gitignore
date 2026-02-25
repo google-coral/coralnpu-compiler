@@ -1,0 +1,6 @@
+# Bazel artifacts
+/bazel-bin
+/bazel-coralnpu-compiler
+/bazel-out
+/bazel-testlogs
+MODULE.bazel.lock
