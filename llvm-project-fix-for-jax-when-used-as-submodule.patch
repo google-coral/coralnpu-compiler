@@ -1,0 +1,57 @@
+diff --git a/mlir/lib/IR/Builders.cpp b/mlir/lib/IR/Builders.cpp
+index 8f199b60fccd..005eb26e741e 100644
+--- a/mlir/lib/IR/Builders.cpp
++++ b/mlir/lib/IR/Builders.cpp
+@@ -215,7 +215,8 @@ IntegerAttr Builder::getUI32IntegerAttr(uint32_t value) {
+ }
+ 
+ IntegerAttr Builder::getI16IntegerAttr(int16_t value) {
+-  return IntegerAttr::get(getIntegerType(16), APInt(16, value));
++  return IntegerAttr::get(getIntegerType(16),
++                          APInt(16, value, /*isSigned=*/true));
+ }
+ 
+ IntegerAttr Builder::getI8IntegerAttr(int8_t value) {
+diff --git a/mlir/lib/IR/Types.cpp b/mlir/lib/IR/Types.cpp
+index 765b787d3d17..462501a254ff 100644
+--- a/mlir/lib/IR/Types.cpp
++++ b/mlir/lib/IR/Types.cpp
+@@ -8,6 +8,7 @@
+ 
+ #include "mlir/IR/BuiltinTypes.h"
+ #include "mlir/IR/Dialect.h"
++#include "llvm/Support/Casting.h"
+ 
+ using namespace mlir;
+ using namespace mlir::detail;
+@@ -120,7 +121,10 @@ bool Type::isIntOrFloat() const {
+ bool Type::isIntOrIndexOrFloat() const { return isIntOrFloat() || isIndex(); }
+ 
+ unsigned Type::getIntOrFloatBitWidth() const {
+-  assert(isIntOrFloat() && "only integers and floats have a bitwidth");
++  assert(isIntOrIndexOrFloat() &&
++         "only integers, indexes and floats have a bitwidth");
++  if (isIndex())
++    return llvm::dyn_cast<IndexType>(*this).kInternalStorageBitWidth;
+   if (auto intType = llvm::dyn_cast<IntegerType>(*this))
+     return intType.getWidth();
+   return llvm::cast<FloatType>(*this).getWidth();
+diff --git a/mlir/lib/Transforms/Utils/DialectConversion.cpp b/mlir/lib/Transforms/Utils/DialectConversion.cpp
+index bd972df271ed..52067f1b95ad 100644
+--- a/mlir/lib/Transforms/Utils/DialectConversion.cpp
++++ b/mlir/lib/Transforms/Utils/DialectConversion.cpp
+@@ -548,7 +548,13 @@ public:
+     // Move the block back to its original position.
+     Region::iterator before =
+         insertBeforeBlock ? Region::iterator(insertBeforeBlock) : region->end();
+-    region->getBlocks().splice(before, block->getParent()->getBlocks(), block);
++    if (Region *currentParent = block->getParent()) {
++      // Block is still in a region, use cheap splice to move it back.
++      region->getBlocks().splice(before, currentParent->getBlocks(), block);
++      return;
++    }
++    // Block was orphaned by a prior rollback, can't splice.
++    region->getBlocks().insert(before, block);
+   }
+ 
+ private:

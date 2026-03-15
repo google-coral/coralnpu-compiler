@@ -15,6 +15,7 @@ cc_library(
     ],
     deps = [
         "//compiler/Pipelines",
+        "@iree_core//compiler/src/iree/compiler/Dialect/HAL/Target",
         "@iree_core//compiler/src/iree/compiler/PluginAPI",
         "@llvm-project//mlir:IR",
     ],

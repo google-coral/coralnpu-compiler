@@ -1,0 +1,62 @@
+# Copyright 2026 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+# Configuration to detect x86_64 architecture
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+cc_library(
+    name = "coralnpu",
+    srcs = [
+        "coralnpu_command_buffer.c",
+        "coralnpu_device.c",
+        "coralnpu_driver.c",
+        "coralnpu_event.c",
+        "coralnpu_executable.c",
+        "coralnpu_executable_cache.c",
+        "coralnpu_semaphore.c",
+    ],
+    hdrs = [
+        "coralnpu_command_buffer.h",
+        "coralnpu_device.h",
+        "coralnpu_driver.h",
+        "coralnpu_event.h",
+        "coralnpu_executable.h",
+        "coralnpu_executable_cache.h",
+        "coralnpu_semaphore.h",
+    ],
+    deps = [
+        "@iree_core//runtime/src/iree/base",
+        "@iree_core//runtime/src/iree/base/internal",
+        "@iree_core//runtime/src/iree/base/internal:arena",
+        "@iree_core//runtime/src/iree/base/internal:cpu",
+        "@iree_core//runtime/src/iree/base/internal:fpu_state",
+        "@iree_core//runtime/src/iree/base/internal:synchronization",
+        "@iree_core//runtime/src/iree/hal",
+        "@iree_core//runtime/src/iree/hal/local:executable_environment",
+        "@iree_core//runtime/src/iree/hal/utils:deferred_command_buffer",
+        "@iree_core//runtime/src/iree/hal/utils:file_transfer",
+        "@iree_core//runtime/src/iree/hal/utils:files",
+        "@iree_core//runtime/src/iree/hal/utils:queue_emulation",
+        "@iree_core//runtime/src/iree/hal/utils:semaphore_base",
+    ] + select({
+        ":linux_x86_64": ["//runtime/sim:simulation"],
+        "//conditions:default": [],
+    }),
+)

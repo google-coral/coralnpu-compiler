@@ -1,0 +1,60 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+cc_library(
+    name = "client",
+    srcs = ["client.cc"],
+    hdrs = ["client.h"],
+    deps = [
+        "//runtime/driver:coralnpu",
+        "@iree_core//integrations/pjrt/src/iree_pjrt/common",
+        "@iree_core//runtime/src/iree/base",
+        "@iree_core//runtime/src/iree/hal/local/loaders/registration",
+        "@iree_core//runtime/src/iree/hal/local/plugins/registration",
+    ],
+)
+
+cc_library(
+    name = "dylib",
+    srcs = ["dylib_entry_point.cc"],
+    defines = [
+        "PJRT_PLUGIN_BUILDING_LIBRARY",
+    ],
+    deps = [
+        ":client",
+        "@iree_core//integrations/pjrt/src/iree_pjrt/common",
+        "@iree_core//integrations/pjrt/src/iree_pjrt/common:dylib_platform",
+    ],
+    alwayslink = True,
+)
+
+cc_shared_library(
+    name = "iree_pjrt_coralnpu_dylib",
+    user_link_flags = [
+        # During dynamic linking at runtime, hide definitions of internal symbols
+        # to avoid conflicts with other libraries loaded in the same process.
+        "-Wl,-Bsymbolic",
+    ],
+    deps = [
+        ":dylib",
+    ],
+)

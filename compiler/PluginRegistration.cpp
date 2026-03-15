@@ -1,5 +1,6 @@
 #include "Pipelines/Pipelines.h"
 
+#include "iree/compiler/Dialect/HAL/Target/TargetRegistry.h"
 #include "iree/compiler/PluginAPI/Client.h"
 
 #include "mlir/IR/Diagnostics.h"
@@ -23,6 +24,27 @@ struct CoralNPUOptions {
   }
 };
 
+class CoralNPUTargetDevice final : public IREE::HAL::TargetDevice {
+public:
+  CoralNPUTargetDevice(const CoralNPUOptions & /*options*/) {}
+
+  IREE::HAL::DeviceTargetAttr getDefaultDeviceTarget(
+      MLIRContext *context,
+      const IREE::HAL::TargetRegistry &targetRegistry) const override {
+    Builder b(context);
+    auto configAttr = b.getDictionaryAttr({});
+
+    SmallVector<IREE::HAL::ExecutableTargetAttr> executableTargetAttrs;
+    targetRegistry.getTargetBackend("llvm-cpu")
+        ->getDefaultExecutableTargets(context, "coralnpu", configAttr,
+                                      executableTargetAttrs);
+
+    return IREE::HAL::DeviceTargetAttr::get(context,
+                                            b.getStringAttr("coralnpu"),
+                                            configAttr, executableTargetAttrs);
+  }
+};
+
 class CoralNPUSession
     : public PluginSession<CoralNPUSession, CoralNPUOptions,
                            PluginActivationPolicy::DefaultActivated> {
@@ -42,8 +64,11 @@ public:
 public:
   // Populates new HAL target devices, if any, into the given list.
   // Targets will be merged into the plugin session-owned registry.
-  // virtual void populateHALTargetDevices(IREE::HAL::TargetDeviceList &targets)
-  // {}
+  void populateHALTargetDevices(IREE::HAL::TargetDeviceList &targets) override {
+    targets.add("coralnpu", [=]() {
+      return std::make_shared<CoralNPUTargetDevice>(options);
+    });
+  }
 
   // Populates new HAL target backends, if any, into the given list.
   // Targets will be merged into the plugin session-owned registry.

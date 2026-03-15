@@ -1,0 +1,680 @@
+diff --git a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
+index 8a996a19d6..58da233241 100644
+--- a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
++++ b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
+@@ -1176,9 +1176,9 @@ struct StableHLOCanonicalize final
+ };
+ 
+ } // namespace
+-void populateCanonicalizationPatterns(MLIRContext *context,
+-                                      RewritePatternSet *patterns,
+-                                      PatternBenefit benefit) {
++void populateCanonicalizationPatternsNoReorder(MLIRContext *context,
++                                               RewritePatternSet *patterns,
++                                               PatternBenefit benefit) {
+   patterns->add<
+       // Arithmetic ops.
+       AddOpCanon, SubtractOpCanon, MulOpCanon, CompareOpCanon, SelectOpCanon,
+@@ -1197,6 +1197,12 @@ void populateCanonicalizationPatterns(MLIRContext *context,
+       ReshapeOpCanon, MergeConsecutiveReshapes, TransposeIsReshape,
+       // Types.
+       ZeroExtentTensorCanon>(context, benefit);
++}
++
++void populateCanonicalizationPatterns(MLIRContext *context,
++                                      RewritePatternSet *patterns,
++                                      PatternBenefit benefit) {
++  populateCanonicalizationPatternsNoReorder(context, patterns, benefit);
+   patterns->add<ReorderElementwiseAndShapeOp>(context);
+ }
+ } // namespace mlir::iree_compiler::stablehlo
+diff --git a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Rewriters.h b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Rewriters.h
+index 6f11ec8f46..038c38659a 100644
+--- a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Rewriters.h
++++ b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Rewriters.h
+@@ -20,6 +20,11 @@ namespace mlir::iree_compiler::stablehlo {
+ void populateCanonicalizationPatterns(MLIRContext *context,
+                                       RewritePatternSet *patterns,
+                                       PatternBenefit benefit = 1);
++/// Collection of canonicalization patterns for StableHLO
++/// without ReorderElementwiseAndShapeOp.
++void populateCanonicalizationPatternsNoReorder(MLIRContext *context,
++                                               RewritePatternSet *patterns,
++                                               PatternBenefit benefit = 1);
+ 
+ /// Collection of rewrite patterns for lowering of StableHLO dot general
+ /// operations.
+diff --git a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp
+index ba77c12a9b..78db732887 100644
+--- a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp
++++ b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp
+@@ -564,6 +564,16 @@ struct ScatterImplicitBatch final
+     auto indices = cast<Value>(op.getScatterIndices());
+     auto indicesTy = dyn_cast<RankedTensorType>(indices.getType());
+ 
++    auto input = op.getInputs().front();
++    auto update = op.getUpdates().front();
++    auto inputTy = dyn_cast<RankedTensorType>(input.getType());
++    auto updateTy = dyn_cast<RankedTensorType>(update.getType());
++
++    if (inputTy.getRank() > 1 && indicesTy.getRank() == 1 &&
++        updateTy.getRank() == inputTy.getRank()) {
++      return rewriter.notifyMatchFailure(op, "special case handling.");
++    }
++
+     // Check whether indices has no batch dimension.
+     if (!indicesTy)
+       return failure();
+@@ -853,9 +863,17 @@ struct ScatterMaterializeInsertedDim final
+                                 PatternRewriter &rewriter) const override {
+     auto indices = op.getScatterIndices();
+     auto operand = op.getInputs().front();
++    auto update = op.getUpdates().front();
+     auto indicesTy = cast<ShapedType>(indices.getType());
+     auto operandTy = cast<ShapedType>(operand.getType());
+ 
++    auto updateTy = cast<ShapedType>(update.getType());
++
++    if (operandTy.getRank() == updateTy.getRank() &&
++        operandTy.getRank() == indicesTy.getRank()) {
++      return rewriter.notifyMatchFailure(op, "special case handling.");
++    }
++
+     if (!operandTy.hasRank() || !indicesTy.hasRank()) {
+       return rewriter.notifyMatchFailure(op, "operand/indices have no rank");
+     }
+diff --git a/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp b/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp
+index c26220cdf5..c6b16aa551 100644
+--- a/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp
++++ b/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp
+@@ -7,6 +7,7 @@
+ // Implements logic for lowering CHLO ops to StableHLO and Shape dialect ops,
+ // taking care of CHLO's broadcasting semantics
+ 
++#include <llvm/Support/Casting.h>
+ #include "compiler/plugins/input/StableHLO/Conversion/Passes.h"
+ #include "compiler/plugins/input/StableHLO/Conversion/Preprocessing/Rewriters.h"
+ #include "compiler/plugins/input/StableHLO/Conversion/Rewriters.h"
+@@ -15,6 +16,7 @@
+ #include "mlir/Dialect/Linalg/IR/Linalg.h"
+ #include "mlir/Dialect/SCF/IR/SCF.h"
+ #include "mlir/Dialect/Tensor/IR/Tensor.h"
++#include "mlir/IR/Attributes.h"
+ #include "mlir/IR/BuiltinTypes.h"
+ #include "mlir/IR/ImplicitLocOpBuilder.h"
+ #include "mlir/IR/TypeUtilities.h"
+@@ -238,6 +240,50 @@ struct ShapeAssertionDrop final
+   }
+ };
+ 
++struct NoOpShardingDrop final
++    : OpRewritePattern<mlir::stablehlo::CustomCallOp> {
++  using Base::Base;
++  using OpAdaptor = mlir::stablehlo::CustomCallOp::Adaptor;
++
++  LogicalResult matchAndRewrite(mlir::stablehlo::CustomCallOp op,
++                                PatternRewriter &rewriter) const final {
++    if (op.getCallTargetName() != "Sharding") {
++      return rewriter.notifyMatchFailure(op, "not ShardingCustomCall");
++    }
++    unsigned numOperands = op.getNumOperands();
++    if (numOperands != 1) {
++      return rewriter.notifyMatchFailure(
++          op, "ShardingCustomCall with more than one operand");
++    }
++
++    // Get root of the operations
++    mlir::Operation *root = op.getOperation();
++    while (root->getParentOp() != nullptr) {
++      root = root->getParentOp();
++    }
++    auto rootAttrs =
++        llvm::dyn_cast<mlir::DictionaryAttr>(root->getAttrDictionary());
++    auto numPartitions = llvm::dyn_cast_if_present<mlir::IntegerAttr>(
++        rootAttrs.get("mhlo.num_partitions"));
++    auto numReplicas = llvm::dyn_cast_if_present<mlir::IntegerAttr>(
++        rootAttrs.get("mhlo.num_replicas"));
++    if (numPartitions == nullptr || numReplicas == nullptr) {
++      return rewriter.notifyMatchFailure(
++          op,
++          "ShardingCustomCall: Number of partitions or replicas not specified");
++    }
++
++    if (numPartitions.getInt() == 1 && numReplicas.getInt() == 1) {
++      // Remove sharding as number of partitions and replicas is 1
++      rewriter.replaceOp(op, op.getOperands()[0]);
++      return success();
++    }
++    // There is more than one partition or replica
++    return rewriter.notifyMatchFailure(
++        op, "Sharding with multiple partitions or replicas is not supported");
++  }
++};
++
+ //===----------------------------------------------------------------------===//
+ // Pass Definition.
+ //===----------------------------------------------------------------------===//
+@@ -254,7 +300,8 @@ struct LegalizeStableHLOCustomCalls final
+     MLIRContext *ctx = f.getContext();
+ 
+     RewritePatternSet patterns(ctx);
+-    patterns.add<HouseholderReflectorRewriter, ShapeAssertionDrop>(ctx);
++    patterns.add<HouseholderReflectorRewriter, ShapeAssertionDrop,
++                 NoOpShardingDrop>(ctx);
+     if (failed(applyPatternsGreedily(f, std::move(patterns)))) {
+       signalPassFailure();
+     }
+diff --git a/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp b/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp
+index 75ba4b3817..0ab8144927 100644
+--- a/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp
++++ b/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp
+@@ -511,7 +511,8 @@ struct ConvertStableHloToIreeInputDialects final
+ 
+     // Run stablehlo canonicalization patterns with a high benefit to avoid some
+     // expensive expansions.
+-    populateCanonicalizationPatterns(context, &patterns, /*benefit=*/1024);
++    populateCanonicalizationPatternsNoReorder(context, &patterns,
++                                              /*benefit=*/1024);
+ 
+     // Run custom patterns with a high benefit to override stablehlo patterns.
+     patterns.add<ConcatenateOpConversion, FftOpConversion,
+diff --git a/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp b/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp
+index 8c3fab7e1a..a91ef73888 100644
+--- a/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp
++++ b/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp
+@@ -247,8 +247,6 @@ struct ScatterOpConversion final
+   LogicalResult
+   matchAndRewrite(mlir::stablehlo::ScatterOp op, OpAdaptor adaptor,
+                   ConversionPatternRewriter &rewriter) const override {
+-    if (!hasCanonicalDimensionNumbers(op))
+-      return failure();
+     if (llvm::size(op.getInputs()) != 1)
+       return op.emitError("NYI variadic operands scatter");
+     if (llvm::size(op.getUpdates()) != 1)
+@@ -260,7 +258,149 @@ struct ScatterOpConversion final
+     Value indices = adaptor.getScatterIndices();
+     Value updates = adaptor.getUpdates().front();
+ 
+-    auto originalType = dyn_cast<ShapedType>(original.getType());
++    Location loc = op.getLoc();
++    auto originalType = dyn_cast<RankedTensorType>(original.getType());
++    auto indicesType = dyn_cast<RankedTensorType>(indices.getType());
++    auto updateType = dyn_cast<RankedTensorType>(updates.getType());
++
++    auto dimNumbers = op.getScatterDimensionNumbers();
++    auto updateDims = dimNumbers.getUpdateWindowDims();
++
++    if (originalType.getRank() == 2 && //
++        originalType.getShape().front() == 1 &&
++        updateType.getShape().front() == 1 &&
++        indicesType.getShape().front() == 1 && //
++        updateDims.size() == 1 &&              //
++        updateDims.front() == 1 &&
++        dimNumbers.getInsertedWindowDims().size() == 1 &&
++        dimNumbers.getInsertedWindowDims().front() == 1 &&
++        dimNumbers.getInputBatchingDims().empty() &&
++        dimNumbers.getScatterIndicesBatchingDims().empty() &&
++        dimNumbers.getScatterDimsToOperandDims().size() == 1 &&
++        dimNumbers.getScatterDimsToOperandDims().front() == 1) {
++
++      auto newIndices = mlir::tensor::CollapseShapeOp::create(
++          rewriter, loc, op.getScatterIndices(),
++          mlir::ArrayRef<mlir::ReassociationIndices>{{0, 1}});
++
++      Value zero = mlir::arith::ConstantIndexOp::create(rewriter, loc, 0);
++      Value newIndices0 =
++          mlir::tensor::ExtractOp::create(rewriter, loc, newIndices, zero);
++
++      auto newUpdates = mlir::tensor::CollapseShapeOp::create(
++          rewriter, loc, updates,
++          mlir::ArrayRef<mlir::ReassociationIndices>{{0, 1}});
++
++      SmallVector<OpFoldResult, 4> sizes;
++      for (int64_t size : updateType.getShape()) {
++        sizes.push_back(rewriter.getIndexAttr(size));
++      }
++
++      newIndices0 = mlir::arith::IndexCastOp::create(
++          rewriter, loc, rewriter.getIndexType(), newIndices0);
++      SmallVector<OpFoldResult, 4> offsets = {zero, newIndices0};
++
++      int64_t rank = originalType.getRank();
++      SmallVector<OpFoldResult, 4> strides(rank, rewriter.getI64IntegerAttr(1));
++      rewriter.replaceOpWithNewOp<mlir::tensor::InsertSliceOp>(
++          op, newUpdates, original, offsets, sizes, strides);
++
++      return success();
++    }
++    if (originalType.getRank() == 2 && //
++        originalType.getShape().front() == 1 &&
++        updateType.getShape().front() == 2 &&
++        indicesType.getShape().front() == 2 && //
++        updateDims.size() == 1 &&              //
++        updateDims.front() == 1 &&
++        dimNumbers.getInsertedWindowDims().size() == 1 &&
++        dimNumbers.getInsertedWindowDims().front() == 1 &&
++        dimNumbers.getInputBatchingDims().empty() &&
++        dimNumbers.getScatterIndicesBatchingDims().empty() &&
++        dimNumbers.getScatterDimsToOperandDims().size() == 1 &&
++        dimNumbers.getScatterDimsToOperandDims().front() == 1) {
++
++      Value zero = mlir::arith::ConstantIndexOp::create(rewriter, loc, 0);
++      Value one = mlir::arith::ConstantIndexOp::create(rewriter, loc, 1);
++
++      auto newIndices = mlir::tensor::CollapseShapeOp::create(
++          rewriter, loc, op.getScatterIndices(),
++          mlir::ArrayRef<mlir::ReassociationIndices>{{0, 1}});
++
++      Value newIndices0 =
++          mlir::tensor::ExtractOp::create(rewriter, loc, newIndices, zero);
++      newIndices0 = mlir::arith::IndexCastOp::create(
++          rewriter, loc, rewriter.getIndexType(), newIndices0);
++      Value newIndices1 =
++          mlir::tensor::ExtractOp::create(rewriter, loc, newIndices, one);
++      newIndices1 = mlir::arith::IndexCastOp::create(
++          rewriter, loc, rewriter.getIndexType(), newIndices1);
++
++      SmallVector<int64_t> vShape = {1, 1};
++      SmallVector<OpFoldResult> vSizes;
++      for (auto v : vShape) {
++        vSizes.push_back(b.getIndexAttr(v));
++      }
++
++      auto sliceTy = RankedTensorType::get(vShape, updateType.getElementType());
++      SmallVector<OpFoldResult> vOffsets0(updateType.getRank(),
++                                          b.getIndexAttr(0));
++      SmallVector<OpFoldResult> vStrides(updateType.getRank(),
++                                         b.getIndexAttr(1));
++      auto newUpdates0 = mlir::tensor::ExtractSliceOp::create(
++          rewriter, loc, sliceTy, updates, vOffsets0, vSizes, vStrides);
++      SmallVector<OpFoldResult> vOffsets1(updateType.getRank(),
++                                          b.getIndexAttr(0));
++      vOffsets1[0] = b.getIndexAttr(1);
++      auto newUpdates1 = mlir::tensor::ExtractSliceOp::create(
++          rewriter, loc, sliceTy, updates, vOffsets1, vSizes, vStrides);
++
++      SmallVector<OpFoldResult, 4> offsets0 = {zero, newIndices0};
++      SmallVector<OpFoldResult, 4> offsets1 = {zero, newIndices1};
++      for (int i = 0; i < originalType.getRank() - 2; i++) {
++        offsets0.push_back(zero);
++        offsets1.push_back(zero);
++      }
++
++      int64_t rank = originalType.getRank();
++      SmallVector<OpFoldResult, 4> sizes = {b.getIndexAttr(1),
++                                            b.getIndexAttr(1)};
++      SmallVector<OpFoldResult, 4> strides(rank, rewriter.getI64IntegerAttr(1));
++      Value slice = mlir::tensor::InsertSliceOp::create(
++          b, newUpdates0, original, offsets0, sizes, strides);
++      rewriter.replaceOpWithNewOp<mlir::tensor::InsertSliceOp>(
++          op, newUpdates1, slice, offsets1, sizes, strides);
++
++      return success();
++    }
++
++    if (originalType.getRank() > 1 && indicesType.getRank() == 1 &&
++        updateType.getRank() == originalType.getRank()) {
++      SmallVector<OpFoldResult, 4> sizes;
++      for (int64_t size : updateType.getShape()) {
++        sizes.push_back(rewriter.getIndexAttr(size));
++      }
++
++      Value zero = mlir::arith::ConstantIndexOp::create(rewriter, loc, 0);
++      Value extracted =
++          mlir::tensor::ExtractOp::create(rewriter, loc, indices, zero);
++      extracted = mlir::arith::IndexCastOp::create(
++          rewriter, loc, rewriter.getIndexType(), extracted);
++      SmallVector<OpFoldResult, 4> offsets = {zero, extracted};
++      for (int i = 0; i < originalType.getRank() - 2; i++) {
++        offsets.push_back(zero);
++      }
++
++      int64_t rank = originalType.getRank();
++      SmallVector<OpFoldResult, 4> strides(rank, rewriter.getI64IntegerAttr(1));
++      rewriter.replaceOpWithNewOp<mlir::tensor::InsertSliceOp>(
++          op, updates, original, offsets, sizes, strides);
++
++      return success();
++    }
++
++    if (!hasCanonicalDimensionNumbers(op))
++      return failure();
+ 
+     llvm::SmallVector<int64_t> scatterDimMap;
+     for (auto dim :
+diff --git a/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp b/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp
+index 9c7a2ed1ab..c5bc2db37d 100644
+--- a/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp
++++ b/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp
+@@ -538,6 +538,9 @@ TraversalResult ValueConsumerAffinityPVS::updateFromUse(Value value,
+           auto &valueUsage = solver.getElementFor<ValueConsumerAffinityPVS>(
+               *this, value, DFX::Resolution::REQUIRED);
+           newState ^= valueUsage.getState();
++          if (operand.getOperandNumber() >= whileOp->getResults().size()) {
++            return TraversalResult::INCOMPLETE;
++          }
+           auto &parentUsage = solver.getElementFor<ValueConsumerAffinityPVS>(
+               *this,
+               Position::forValue(
+diff --git a/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp b/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp
+index bcbd72cb19..5de8e1ac7e 100644
+--- a/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp
++++ b/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp
+@@ -1210,8 +1210,10 @@ TraversalResult Explorer::walkTransitiveUses(Value value, UseWalkFn fn,
+       if (ownerOp->hasTrait<OpTrait::ReturnLike>() &&
+           !isa<CallableOpInterface>(ownerOp->getParentOp())) {
+         auto parent = ownerOp->getParentOp();
+-        auto result = parent->getResult(use.getOperandNumber());
+-        worklist.insert(result);
++        if (use.getOperandNumber() < parent->getResults().size()) {
++          auto result = parent->getResult(use.getOperandNumber());
++          worklist.insert(result);
++        }
+       }
+ 
+       // Step across global stores and into all of the loads across the program.
+diff --git a/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h b/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h
+index 6b1307a55f..0aac3857de 100644
+--- a/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h
++++ b/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h
+@@ -367,7 +367,14 @@ static inline int32_t getRoundedElementByteWidth(Type type) {
+     return vectorType.getNumElements() *
+            getRoundedElementByteWidth(vectorType.getElementType());
+   }
+-  unsigned bitsUnaligned = type.getIntOrFloatBitWidth();
++
++  unsigned bitsUnaligned;
++  if (type.isIndex()) {
++    bitsUnaligned = dyn_cast<IndexType>(type).kInternalStorageBitWidth;
++  } else {
++    bitsUnaligned = type.getIntOrFloatBitWidth();
++  }
++
+   assert(bitsUnaligned > 0 && "0-width types unsupported");
+   // Round up to 8-bit aligned bytes.
+   unsigned byteAligned = (bitsUnaligned + 8 - 1) / 8;
+diff --git a/integrations/pjrt/src/iree_pjrt/common/BUILD.bazel b/integrations/pjrt/src/iree_pjrt/common/BUILD.bazel
+new file mode 100644
+index 0000000000..4898db620b
+--- /dev/null
++++ b/integrations/pjrt/src/iree_pjrt/common/BUILD.bazel
+@@ -0,0 +1,94 @@
++# Copyright 2025 The IREE Authors
++#
++# Licensed under the Apache License v2.0 with LLVM Exceptions.
++# See https://llvm.org/LICENSE.txt for license information.
++# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++package(
++    default_visibility = ["//visibility:public"],
++    features = ["layering_check"],
++    licenses = ["notice"],  # Apache 2.0
++)
++
++cc_library(
++    name = "common",
++    hdrs = [
++        "api_impl.h",
++        "dylib_entry_point.cc.inc",
++        "iree_helpers.h",
++        "layout_utils.h",
++        "platform.h",
++        "tensor_utils.h",
++    ],
++    srcs = [
++        "api_impl.cc",
++        "layout_utils.cc",
++        "platform.cc",
++        "tensor_utils.cc",
++    ],
++    deps = [
++        ":compiler",
++        ":stubs",
++        ":debugging",
++        "//integrations/pjrt/third_party/pjrt_c_api",
++        "//runtime/src/iree/base:base",
++        "//runtime/src/iree/hal:hal",
++        "//runtime/src/iree/modules/hal:hal",
++        "//runtime/src/iree/vm:vm",
++        "//runtime/src/iree/vm/bytecode:module",
++        "//integrations/pjrt/third_party/pjrt_c_api:compile_options_cc_proto",
++    ],
++)
++
++cc_library(
++    name = "stubs",
++    textual_hdrs = [ "stubs.inc" ],
++    includes = [ "." ],
++)
++
++cc_library(
++    name = "compiler",
++    hdrs = [ "compiler.h" ],
++    srcs = [
++      "hlo_partitioner.cc",
++      "iree_compiler.cc",
++    ],
++    deps = [
++        ":debugging",
++        "//compiler/bindings/c:headers",
++        "//compiler/bindings/c:loader",
++        "//integrations/pjrt/src/iree_pjrt/partitioner_api:loader",
++        "//integrations/pjrt/src/iree_pjrt/partitioner_api:partitioner_api",
++        "//integrations/pjrt/third_party/pjrt_c_api:compile_options_cc_proto",
++    ],
++)
++
++cc_library(
++    name = "debugging",
++    hdrs = [ "debugging.h" ],
++    srcs = [ "debugging.cc" ],
++    includes = [ "../../" ],
++)
++
++cc_library(
++    name = "dylib_platform",
++    hdrs = [
++        "dylib_platform.h",
++        "command_line_utils.h",
++    ],
++    srcs = [
++        "dylib_platform.cc",
++        "command_line_utils.cc",
++    ],
++    deps = [
++        ":common",
++        ":debugging",
++        "//runtime/src/iree/base/internal:path",
++        "//runtime/src/iree/base:base",
++        "//integrations/pjrt/third_party/pjrt_c_api",
++        "//compiler/bindings/c:headers",
++        "//compiler/bindings/c:loader",
++        "//integrations/pjrt/src/iree_pjrt/partitioner_api:loader",
++        "//integrations/pjrt/src/iree_pjrt/partitioner_api:partitioner_api",
++    ],
++)
+diff --git a/integrations/pjrt/src/iree_pjrt/common/api_impl.cc b/integrations/pjrt/src/iree_pjrt/common/api_impl.cc
+index c4ead3494a..1c2e890ec1 100644
+--- a/integrations/pjrt/src/iree_pjrt/common/api_impl.cc
++++ b/integrations/pjrt/src/iree_pjrt/common/api_impl.cc
+@@ -991,8 +991,8 @@ iree_status_t DeviceInstance::TransposeBroadcastDeviceBuffer(
+     EventInstance** out_done_with_host_buffer_event,
+     BufferInstance** out_buffer) {
+   if (num_dims > kMaxDims) {
+-    auto ret = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+-                                "number of dimensions exceeded max supported");
++    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
++                            "number of dimensions exceeded max supported");
+   }
+ 
+   std::array<iree_hal_dim_t, kMaxDims> transpose_dims;
+@@ -1049,8 +1049,8 @@ iree_status_t DeviceInstance::TransposeBroadcastDeviceBuffer(
+       input_ty.c_str(), transpose_ty.c_str(), output_ty.c_str(),
+       perms_str.c_str(), broadcast_str.c_str());
+   if (program_len > sizeof(transpose_program)) {
+-    auto ret = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+-                                "program size exceeded limit");
++    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
++                            "program size exceeded limit");
+   }
+ 
+   // Create an on stack program:
+diff --git a/integrations/pjrt/src/iree_pjrt/cpu/BUILD.bazel b/integrations/pjrt/src/iree_pjrt/cpu/BUILD.bazel
+new file mode 100644
+index 0000000000..8e13762ca3
+--- /dev/null
++++ b/integrations/pjrt/src/iree_pjrt/cpu/BUILD.bazel
+@@ -0,0 +1,57 @@
++# Copyright 2025 The IREE Authors
++#
++# Licensed under the Apache License v2.0 with LLVM Exceptions.
++# See https://llvm.org/LICENSE.txt for license information.
++# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++package(
++    default_visibility = ["//visibility:public"],
++    features = ["layering_check"],
++    licenses = ["notice"],  # Apache 2.0
++)
++
++cc_library(
++    name = "client",
++    hdrs = [ "client.h" ],
++    srcs = [ "client.cc" ],
++    deps = [
++        "//integrations/pjrt/src/iree_pjrt/common",
++        "//runtime/src/iree/hal/drivers/local_sync:sync_driver",
++        "//runtime/src/iree/hal/drivers/local_task:task_driver",
++        "//runtime/src/iree/hal/local",
++        "//runtime/src/iree/hal/local:executable_loader",
++        "//runtime/src/iree/hal/local/loaders/registration",
++        "//runtime/src/iree/hal/local/plugins/registration",
++        "//runtime/src/iree/task:api",
++    ],
++)
++
++cc_library(
++    name = "dylib",
++    srcs = [ "dylib_entry_point.cc" ],
++    alwayslink = True,
++    defines = [
++        "PJRT_PLUGIN_BUILDING_LIBRARY",
++    ],
++    deps = [
++        ":client",
++        "//integrations/pjrt/src/iree_pjrt/common",
++        "//integrations/pjrt/src/iree_pjrt/common:dylib_platform",
++    ],
++)
++
++cc_shared_library(
++    name = "iree_pjrt_cpu_dylib",
++    user_link_flags = [
++        # "-fvisibility=hidden",
++        # "-fvisibility-inlines-hidden",
++        # "-ffunction-sections",
++        # "-fdata-sections",
++        # "-fPIC",
++        "-Wl,-Bsymbolic",
++        # "-Wl,--gc-sections",
++    ],
++    deps = [
++        ":dylib",
++    ],
++)
+diff --git a/integrations/pjrt/src/iree_pjrt/cpu/client.h b/integrations/pjrt/src/iree_pjrt/cpu/client.h
+index 446aceb3b9..0f750d73c7 100644
+--- a/integrations/pjrt/src/iree_pjrt/cpu/client.h
++++ b/integrations/pjrt/src/iree_pjrt/cpu/client.h
+@@ -24,7 +24,7 @@ class CPUClientInstance final : public ClientInstance {
+   iree_status_t InitializeDeps();
+ 
+   // Instance scoped options.
+-  bool single_threaded_debug_ = false;
++  bool single_threaded_debug_ = true;
+   iree_task_topology_t task_topology_options_;
+ 
+   // Deps.
+diff --git a/integrations/pjrt/src/iree_pjrt/partitioner_api/BUILD.bazel b/integrations/pjrt/src/iree_pjrt/partitioner_api/BUILD.bazel
+new file mode 100644
+index 0000000000..d29c14a6a1
+--- /dev/null
++++ b/integrations/pjrt/src/iree_pjrt/partitioner_api/BUILD.bazel
+@@ -0,0 +1,33 @@
++# Copyright 2025 The IREE Authors
++#
++# Licensed under the Apache License v2.0 with LLVM Exceptions.
++# See https://llvm.org/LICENSE.txt for license information.
++# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++package(
++    default_visibility = ["//visibility:public"],
++    features = ["layering_check"],
++    licenses = ["notice"],  # Apache 2.0
++)
++
++cc_library(
++    name = "partitioner_api",
++    hdrs = [
++        "embedding_api.h",
++        "loader.h"
++    ],
++    includes = [ "../../" ],
++)
++
++cc_library(
++    name = "loader",
++    hdrs = [ "embedding_api.h" ],
++    srcs = [
++        "loader/handle_symbols.inc",
++        "loader/loader.cpp",
++    ],
++    includes = [ "../../" ],
++    deps = [
++        ":partitioner_api"
++    ],
++)
+diff --git a/integrations/pjrt/third_party/pjrt_c_api/BUILD.bazel b/integrations/pjrt/third_party/pjrt_c_api/BUILD.bazel
+new file mode 100644
+index 0000000000..daa8d78835
+--- /dev/null
++++ b/integrations/pjrt/third_party/pjrt_c_api/BUILD.bazel
+@@ -0,0 +1,38 @@
++# Copyright 2025 The IREE Authors
++#
++# Licensed under the Apache License v2.0 with LLVM Exceptions.
++# See https://llvm.org/LICENSE.txt for license information.
++# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++package(
++    default_visibility = ["//visibility:public"],
++    features = ["layering_check"],
++    licenses = ["notice"],  # Apache 2.0
++)
++
++cc_library(
++    name = "pjrt_c_api",
++    hdrs = [ "xla/pjrt/c/pjrt_c_api.h" ],
++    includes = [ "." ],
++)
++
++proto_library(
++    name = "xla_data-proto",
++    srcs = [ "xla/xla_data.proto" ],
++    # import_prefix = "xla",
++    strip_import_prefix = "",
++)
++
++proto_library(
++    name = "compile_options-proto",
++    srcs = [ "xla/pjrt/compile_options.proto" ],
++    deps = [ ":xla_data-proto" ],
++    exports = [ ":xla_data-proto" ],
++    # import_prefix = "xla/pjrt",
++    strip_import_prefix = "",
++)
++
++cc_proto_library(
++    name = "compile_options_cc_proto",
++    deps = [":compile_options-proto"],
++)

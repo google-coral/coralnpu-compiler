@@ -1,0 +1,91 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_import")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+# Equivalent to the CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" check
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+# Target: mpact_simulator
+cc_library(
+    name = "mpact_simulator",
+    srcs = select({
+        ":linux_x86_64": ["simulator_mpact.cpp"],
+        "//conditions:default": [],
+    }),
+    hdrs = select({
+        ":linux_x86_64": ["simulator_api.h"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = select({
+        ":linux_x86_64": [":simulator_lib_import"],
+        "//conditions:default": [],
+    }),
+)
+
+# Target: simulation
+cc_library(
+    name = "simulation",
+    srcs = select({
+        ":linux_x86_64": [
+            "simulator_elf_loader.c",
+            "simulator_executable.c",
+            "simulator_inline.c",
+        ],
+        "//conditions:default": [],
+    }),
+    hdrs = select({
+        ":linux_x86_64": [
+            "simulator_api.h",
+            "simulator_elf_loader.h",
+            "simulator_executable.h",
+            "simulator_format.h",
+            "simulator_inline.h",
+            "//runtime/driver:coralnpu_executable.h",
+        ],
+        "//conditions:default": [],
+    }),
+    deps = select({
+        ":linux_x86_64": [
+            ":mpact_simulator",
+            "@iree_core//runtime/src/iree/base",
+            "@iree_core//runtime/src/iree/base/internal",
+            "@iree_core//runtime/src/iree/hal/local:executable_environment",
+            "@iree_core//runtime/src/iree/hal/local:executable_library",
+            "@iree_core//runtime/src/iree/hal/local:executable_loader",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# Wrapper for the precompiled .so file
+# TODO(b/507534842): Build the .so file from source if possible.
+cc_import(
+    name = "simulator_lib_import",
+    shared_library = "libcoralnpu_simulator_mpact.so",
+)
