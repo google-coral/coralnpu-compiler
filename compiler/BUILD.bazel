@@ -1,5 +1,6 @@
 load("@iree_core//build_tools/bazel:build_defs.oss.bzl", "iree_compiler_register_plugin")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_static_library.bzl", "cc_static_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -13,12 +14,27 @@ cc_library(
         "PluginRegistration.cpp",
     ],
     deps = [
+        "//compiler/Pipelines",
         "@iree_core//compiler/src/iree/compiler/PluginAPI",
         "@llvm-project//mlir:IR",
     ],
 )
 
+# NB: This library is going to be cc_imported in a different module
+# (@iree_core), so we need to pack everything into a single file. cc_library
+# does not do that, but cc_static_library does.
+cc_static_library(
+    name = "static_registration",
+    deps = [
+        ":registration",
+    ],
+)
+
+# NB: This does not do anything (it's implementation is `pass`)! The actual
+# registration is done in //MODULE.bazel (iree_ext.register_plugin).
 iree_compiler_register_plugin(
+    # this must match the suffix (the *) of the `extern "C" bool
+    # iree_register_compiler_plugin_*` function
     plugin_id = "coralnpu",
     target = ":registration",
 )

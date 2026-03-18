@@ -49,13 +49,13 @@ llvm_repos_ext = use_extension(
 )
 use_repo(
     llvm_repos_ext,
-    "gmp",
-    "mpc",
-    "mpfr",
-    "nanobind",
-    "pfm",
-    "pybind11",
-    "vulkan_sdk",
+    # "gmp",
+    # "mpc",
+    # "mpfr",
+    # "nanobind",
+    # "pfm",
+    # "pybind11",
+    # "vulkan_sdk",
 )
 
 # Configure LLVM using the llvm-raw repo (creates llvm-project)
@@ -80,22 +80,36 @@ local_path_override(
     path = "third_party/iree",
 )
 
-# # Use IREE's extension (won't create llvm-raw since you're the root module)
+# Use IREE's extension (won't create llvm-raw since you're the root module)
 iree_ext = use_extension(
     "@iree_core//build_tools/bazel:extensions.bzl",
     "iree_extension",
 )
 iree_ext.location(path = "third_party/iree")
+iree_ext.register_plugin(
+    plugin_id = "coralnpu",
+    # NB: as the library will be used by a different module, we have to use the
+    # canonical name here.
+    static_library = "@@//compiler:static_registration",
+)
 
 inject_repo(iree_ext, "llvm-raw")
 
 use_repo(
     iree_ext,
-    "com_github_dvidelabs_flatcc",
-    "com_google_benchmark",
-    "com_google_googletest",
-    "stablehlo",
-    # ... other IREE repos you need
+    # "com_github_dvidelabs_flatcc",
+    # "com_google_benchmark",
+    # "com_google_googletest",
+    # "stablehlo",
+    # "hsa_runtime_headers",
+    # "iree_cuda",
+    # "llvm-raw",
+    # "nccl",
+    # "spirv_cross",
+    # "tracy_client",
+    # "vulkan_headers",
+    # "webgpu_headers",
+    # "iree_external_plugins",
 )
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")

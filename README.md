@@ -35,7 +35,10 @@ We use bazel. The version has to be backward compatible with IREE's requirements
 To build the compiler, run:
 
 ```shell
+# For a static iree-compile
 bazel build @iree_core//tools:iree-compile
+# Or, for dynamically linked with libIREECompiler.so
+# bazel build --@iree_core//compiler/src/iree/compiler/API:link_shared @iree_core//tools:iree-compile
 ```
 
 ## Run the compiler

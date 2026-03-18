@@ -1,0 +1,22 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+cc_library(
+    name = "Pipelines",
+    srcs = [
+        "Pipelines.cpp",
+    ],
+    hdrs = [
+        "Pipelines.h",
+    ],
+    deps = [
+        "@iree_core//compiler/plugins/input/TOSA/InputConversion",
+        "@iree_core//compiler/src/iree/compiler/Preprocessing/Common:Transforms",
+        "@llvm-project//mlir:IR",
+    ],
+)

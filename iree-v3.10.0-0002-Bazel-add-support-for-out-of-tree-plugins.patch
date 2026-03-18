@@ -1,0 +1,169 @@
+From 25510f91910dca9cda4e9cc6c9086be68c6de2ca Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Wed, 18 Mar 2026 09:41:30 +0100
+Subject: [PATCH 2/2] [Bazel] add support for out-of-tree plugins
+
+---
+ MODULE.bazel                                  |  1 +
+ build_tools/bazel/extensions.bzl              | 76 +++++++++++++++++--
+ .../compiler/PluginAPI/Config/BUILD.bazel     |  9 ++-
+ 3 files changed, 78 insertions(+), 8 deletions(-)
+
+diff --git a/MODULE.bazel b/MODULE.bazel
+index f32260091f..a4d23ed5b9 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -83,6 +83,7 @@ use_repo(
+     "tracy_client",
+     "vulkan_headers",
+     "webgpu_headers",
++    "iree_external_plugins",
+ )
+ 
+ # Configure LLVM using the llvm-raw repo (creates llvm-project)
+diff --git a/build_tools/bazel/extensions.bzl b/build_tools/bazel/extensions.bzl
+index 34346a230a..b0b14a5b46 100644
+--- a/build_tools/bazel/extensions.bzl
++++ b/build_tools/bazel/extensions.bzl
+@@ -9,14 +9,53 @@
+ load("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository", "new_local_repository")
+ load("//build_tools/bazel:workspace.bzl", "cuda_auto_configure")
+ 
++def _iree_external_plugins_impl(repository_ctx):
++    # Do we need to watch for changes?
++    # for static_library in repository_ctx.attr.plugins.values():
++    #     repository_ctx.watch(static_library)
++
++    handle_plugin_ids = "".join(["HANDLE_PLUGIN_ID(%s)\\n" % plugin_id for plugin_id in repository_ctx.attr.plugins])
++
++    cc_imports = "".join(["""
++cc_import(
++    name = "external_plugin_%s",
++    static_library = "%s",
++)
++""" % (plugin_id, static_library) for plugin_id, static_library in repository_ctx.attr.plugins.items()])
++
++    cc_library_deps = ", ".join(["\"external_plugin_%s\"" % plugin_id for plugin_id in repository_ctx.attr.plugins])
++
++    repository_ctx.file("BUILD.bazel", """
++load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
++
++package(
++    default_visibility = ["//visibility:public"],
++)
++
++genrule(
++    name = "StaticLinkedExternalPlugins_inc__generate",
++    outs = ["StaticLinkedExternalPlugins.inc"],
++    cmd = "printf -- '%s' > $@",
++)
++
++%s
++
++cc_library(
++    name = "StaticLinkedExternalPlugins",
++    deps = [ %s ],
++)
++""" % (handle_plugin_ids, cc_imports, cc_library_deps))
++
++# TODO(sflur): make sure the libraries are "watched", so the repo is re-fetched
++# when they change.
++iree_external_plugins = repository_rule(
++    implementation = _iree_external_plugins_impl,
++    attrs = { "plugins": attr.string_dict(mandatory=True) }
++)
++
+ def _iree_extension_impl(module_ctx):
+     """Implementation of the IREE module extension."""
+ 
+-    iree_root = "."
+-    for mod in module_ctx.modules:
+-        for location in mod.tags.location:
+-            iree_root = location.path
+-
+     # Create llvm-raw only when IREE is the root module.
+     # This allows downstream consumers to provide their own LLVM.
+     if any([m.is_root and m.name == "iree_core" for m in module_ctx.modules]):
+@@ -26,6 +65,14 @@ def _iree_extension_impl(module_ctx):
+             path = "third_party/llvm-project",
+         )
+ 
++    maybe_iree_root = module_ctx.path(Label("//:MODULE.bazel")).dirname
++    iree_root = str(maybe_iree_root) if maybe_iree_root else "."
++
++    # iree_root = "."
++    # for mod in module_ctx.modules:
++    #     if mod.tags.location:
++    #         iree_root = mod.tags.location[-1].path
++
+     # Googletest
+     local_repository(
+         name = "com_google_googletest",
+@@ -99,8 +146,25 @@ def _iree_extension_impl(module_ctx):
+         iree_repo_alias = "@iree_core",
+     )
+ 
++    external_plugins = {}
++    for mod in module_ctx.modules:
++        for register_plugin in mod.tags.register_plugin:
++            external_plugins[register_plugin.plugin_id] = register_plugin.static_library
++
++    iree_external_plugins(
++        name = "iree_external_plugins",
++        plugins = external_plugins,
++    )
++
+ _location = tag_class(attrs = {"path": attr.string()})
++_register_plugin = tag_class(attrs = {
++    "plugin_id": attr.string(mandatory=True),
++    "static_library": attr.string(mandatory=True),
++})
+ iree_extension = module_extension(
+     implementation = _iree_extension_impl,
+-    tag_classes = {"location": _location},
++    tag_classes = {
++        "location": _location,
++        "register_plugin" : _register_plugin,
++    },
+ )
+diff --git a/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel b/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel
+index 92f83de0ea..33554b6e2a 100644
+--- a/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel
++++ b/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel
+@@ -14,12 +14,13 @@ package(
+ 
+ genrule(
+     name = "StaticLinkedPlugins_inc__generate",
++    srcs = ["@iree_external_plugins//:StaticLinkedExternalPlugins_inc__generate"],
+     outs = ["StaticLinkedPlugins.inc"],
+     # TODO: Should be pulling from a file generated in @iree_plugins which
+     # derives its content from the environment.
+     # For now, just enumerate all in-tree plugins.
+     cmd = (
+-        "echo '" +
++        "{ echo '" +
+         "HANDLE_PLUGIN_ID(hal_target_cuda)\n" +
+         "HANDLE_PLUGIN_ID(hal_target_llvm_cpu)\n" +
+         "HANDLE_PLUGIN_ID(hal_target_local)\n" +
+@@ -32,7 +33,10 @@ genrule(
+         # Samples
+         "HANDLE_PLUGIN_ID(example)\n" +
+         "HANDLE_PLUGIN_ID(simple_io_sample)\n" +
+-        "' > $@"
++        "' " +
++        # Out-of-tree plugins
++        " && cat $(location @iree_external_plugins//:StaticLinkedExternalPlugins_inc__generate); " +
++        "} > $@"
+     ),
+ )
+ 
+@@ -58,5 +62,6 @@ iree_compiler_cc_library(
+         "//compiler/plugins/input/TOSA:registration",
+         "//samples/compiler_plugins/example:registration",
+         "//samples/compiler_plugins/simple_io_sample:registration",
++        "@iree_external_plugins//:StaticLinkedExternalPlugins",
+     ],
+ )
+-- 
+2.53.0.851.ga537e3e6e9-goog
+
