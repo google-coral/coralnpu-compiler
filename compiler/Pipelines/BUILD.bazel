@@ -17,6 +17,8 @@ cc_library(
     deps = [
         "@iree_core//compiler/plugins/input/TOSA/InputConversion",
         "@iree_core//compiler/src/iree/compiler/Preprocessing/Common:Transforms",
+        "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
     ],
 )

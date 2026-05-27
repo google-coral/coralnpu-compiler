@@ -1,3 +1,30 @@
+From 734f520aeaf2596e2bda3449abaad6bcf9bbfb8a Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Thu, 28 May 2026 16:08:40 +0200
+Subject: [PATCH 3/4] fix iree compile for jax when used as submodule
+
+---
+ .../Preprocessing/Canonicalization.cpp        |  12 +-
+ .../Conversion/Preprocessing/Rewriters.h      |   5 +
+ .../Preprocessing/StableHLOToStableHLO.cpp    |  18 +++
+ .../Conversion/StableHLOCustomCalls.cpp       |  49 +++++-
+ .../StableHLOToIREEInputDialects.cpp          |   3 +-
+ .../Conversion/StableHLOToLinalgExt.cpp       | 146 +++++++++++++++++-
+ .../Dialect/Stream/Analysis/Affinity.cpp      |   3 +
+ .../Dialect/Util/Analysis/Explorer.cpp        |   6 +-
+ .../iree/compiler/Dialect/Util/IR/UtilTypes.h |   9 +-
+ .../pjrt/src/iree_pjrt/common/BUILD.bazel     |  94 +++++++++++
+ .../pjrt/src/iree_pjrt/common/api_impl.cc     |   8 +-
+ .../pjrt/src/iree_pjrt/cpu/BUILD.bazel        |  57 +++++++
+ integrations/pjrt/src/iree_pjrt/cpu/client.h  |   2 +-
+ .../src/iree_pjrt/partitioner_api/BUILD.bazel |  33 ++++
+ .../pjrt/third_party/pjrt_c_api/BUILD.bazel   |  38 +++++
+ 15 files changed, 467 insertions(+), 16 deletions(-)
+ create mode 100644 integrations/pjrt/src/iree_pjrt/common/BUILD.bazel
+ create mode 100644 integrations/pjrt/src/iree_pjrt/cpu/BUILD.bazel
+ create mode 100644 integrations/pjrt/src/iree_pjrt/partitioner_api/BUILD.bazel
+ create mode 100644 integrations/pjrt/third_party/pjrt_c_api/BUILD.bazel
+
 diff --git a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
 index 8a996a19d6..58da233241 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
@@ -678,3 +705,6 @@ index 0000000000..daa8d78835
 +    name = "compile_options_cc_proto",
 +    deps = [":compile_options-proto"],
 +)
+-- 
+2.54.0.794.g4f17f83d09-goog
+

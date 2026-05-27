@@ -26,7 +26,7 @@ apply_patch() {
 # Apply all patches
 apply_patch "third_party/iree" "iree-v3.10.0-0001-Bazel-fix-bazel-when-used-as-submodule.patch"
 apply_patch "third_party/iree" "iree-v3.10.0-0002-Bazel-add-support-for-out-of-tree-plugins.patch"
-apply_patch "third_party/iree" "iree-v3.10.0-0001-fix-iree-compile-for-jax-when-used-as-submodule.patch"
+apply_patch "third_party/iree" "iree-v3.10.0-0003-fix-iree-compile-for-jax-when-used-as-submodule.patch"
 apply_patch "third_party/llvm-project" "llvm-project-fix-for-jax-when-used-as-submodule.patch"
 
 # 2. Define consistent build directory path

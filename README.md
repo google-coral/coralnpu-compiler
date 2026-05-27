@@ -32,13 +32,26 @@ required commit hash by inspecting
 We use bazel. The version has to be backward compatible with IREE's requirements
 (i.e. [third_party/iree/.bazelversion](third_party/iree/.bazelversion)).
 
-To build the compiler, run:
+### Development build (initially long; incremental builds fast)
 
 ```shell
-# For a static iree-compile
-bazel build @iree_core//tools:iree-compile
-# Or, for dynamically linked with libIREECompiler.so
-# bazel build --@iree_core//compiler/src/iree/compiler/API:link_shared @iree_core//tools:iree-compile
+bazel build --config=dev @iree_core//tools:iree-compile
+```
+
+To keep incremental builds as fast as possible, we use `--fission=yes`, which
+splits dwarf information out of the .o files (see
+https://bazel.build/docs/user-manual). This substantially reduces the input size
+to links and reduces link times significantly.
+
+<!--
+For dynamiclly linked binary (with libIREECompiler.so):
+bazel build --config=dev --@iree_core//compiler/src/iree/compiler/API:link_shared @iree_core//tools:iree-compile
+-->
+
+### Release build
+
+```shell
+bazel build --config=release @iree_core//tools:iree-compile
 ```
 
 ## Run the compiler
@@ -62,10 +75,10 @@ scripts/format-code.sh
 
 ## Toolchain
 
-We use clang (and lld) 19.
+We use clang 19, and lld.
 
 Places that need to be updated when changing version/toolchain:
-- [toolchain/cc_toolchain_config.bzl](toolchain/cc_toolchain_config.bzl)
+- [.bazelrc](.bazelrc)
 - [scripts/foramt-code.sh](scripts/foramt-code.sh)
 
 ## Python

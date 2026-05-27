@@ -1,5 +1,4 @@
 load("@iree_core//build_tools/bazel:build_defs.oss.bzl", "iree_compiler_register_plugin")
-load("@rules_cc//cc:cc_static_library.bzl", "cc_static_library")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(
@@ -18,16 +17,6 @@ cc_library(
         "@iree_core//compiler/src/iree/compiler/Dialect/HAL/Target",
         "@iree_core//compiler/src/iree/compiler/PluginAPI",
         "@llvm-project//mlir:IR",
-    ],
-)
-
-# NB: This library is going to be cc_imported in a different module
-# (@iree_core), so we need to pack everything into a single file. cc_library
-# does not do that, but cc_static_library does.
-cc_static_library(
-    name = "static_registration",
-    deps = [
-        ":registration",
     ],
 )
 

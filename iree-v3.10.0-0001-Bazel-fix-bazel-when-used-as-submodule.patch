@@ -1,7 +1,7 @@
 From 54968f6720edcce6a9d8038f48b0a4424534117f Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Wed, 25 Feb 2026 16:26:55 +0100
-Subject: [PATCH 1/2] [Bazel] fix bazel when used as submodule
+Subject: [PATCH 1/4] [Bazel] fix bazel when used as submodule
 
 ---
  build_tools/bazel/extensions.bzl           | 27 ++++++++++++++--------
@@ -200,5 +200,5 @@ index 0198accacb..d006485114 100644
 +    srcs = glob(["**/*.fbs"]),
 +)
 -- 
-2.53.0.851.ga537e3e6e9-goog
+2.54.0.794.g4f17f83d09-goog
 

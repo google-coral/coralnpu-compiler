@@ -88,9 +88,7 @@ iree_ext = use_extension(
 iree_ext.location(path = "third_party/iree")
 iree_ext.register_plugin(
     plugin_id = "coralnpu",
-    # NB: as the library will be used by a different module, we have to use the
-    # canonical name here.
-    static_library = "@@//compiler:static_registration",
+    target = "//compiler:registration",
 )
 
 inject_repo(iree_ext, "llvm-raw")
@@ -125,11 +123,6 @@ pip.parse(
     # extra_pip_args = ["--index-url", "https://pypi.org/simple"],
 )
 use_repo(pip, "pip_deps")
-
-# See https://bazel.build/tutorials/ccp-toolchain-config
-register_toolchains(
-    "//toolchain:cc_toolchain_for_linux_x86_64",
-)
 
 # --- For LSP integration with clangd ---
 

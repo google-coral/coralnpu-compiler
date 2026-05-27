@@ -1,11 +1,18 @@
 # Enable bzlmod (required for LLVM integration as of Nov 2025)
 common --enable_bzlmod
 
+# Pin the repository environment PATH to prevent cache invalidation between
+# different shells (e.g. user and coding agent)
+build --repo_env=PATH=/usr/bin:/bin:/usr/local/bin
+build --incompatible_strict_action_env
+
+# Use system Clang-19 and LLD for autoconfigured toolchain
+build --repo_env=CC=/usr/bin/clang-19
+build --repo_env=CXX=/usr/bin/clang-19
+build --linkopt=-fuse-ld=lld
+
 # Prevent invalid caching if input files are modified during a build.
 # build --guard_against_concurrent_changes
-# Default to optimized builds
-# Override via: "-c dbg" or --compilation_mode=dbg
-build --compilation_mode=opt
 
 # build --dynamic_mode=off
 build --force_pic
@@ -25,7 +32,7 @@ build:generic_clang --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
 # TODO: OSS assert builds of TF became non functional around 1/27/2022. RIP.
 # Default to adding back asserts in optimized builds.
 # This is a good compromise between runtime and debugability.
-#build:generic_clang --copt=-UNDEBUG
+build:generic_clang --copt=-UNDEBUG
 
 # Treat warnings as errors...
 build:generic_clang --copt=-Werror --host_copt=-Werror
@@ -91,3 +98,29 @@ build:generic_clang --copt=-Wvla
 build:generic_clang --linkopt=-Wl,--fatal-warnings
 
 build --config=generic_clang
+
+###############################################################################
+# Options for debug builds:
+###############################################################################
+
+# Fast development
+build:dev -c fastbuild
+# Enables Fission (splits dwarf out of .o files, see
+# https://bazel.build/docs/user-manual). This substantially reduces the input
+# size to links and reduces link times significantly.
+build:dev --fission=yes
+
+# If you don't have a fast SSD, and compilation time is long, you can try
+# uncommenting these:
+# build:dev --strategy=CcArchive=local
+# build:dev --strategy=CppLink=local
+# build:dev --strategy=CppCompile=local
+
+###############################################################################
+# Options for release builds:
+###############################################################################
+
+# Production Release Profile (Fully optimized, no debug symbols anywhere)
+# Usage: bazel build --config=release <target>
+build:release -c opt
+build:release --strip=always
