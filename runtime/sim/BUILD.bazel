@@ -75,6 +75,7 @@ cc_library(
             ":mpact_simulator",
             "@iree_core//runtime/src/iree/base",
             "@iree_core//runtime/src/iree/base/internal",
+            "@iree_core//runtime/src/iree/hal",
             "@iree_core//runtime/src/iree/hal/local:executable_environment",
             "@iree_core//runtime/src/iree/hal/local:executable_library",
             "@iree_core//runtime/src/iree/hal/local:executable_loader",

@@ -27,7 +27,7 @@ required commit hash by inspecting
 [third_party/iree/third_party/llvm-project](third_party/iree/third_party/llvm-project)
 (e.g. `git -C third_party/iree/third_party/llvm-project/ rev-parse HEAD`).
 
-## Build
+## Build - bazel
 
 We use bazel. The version has to be backward compatible with IREE's requirements
 (i.e. [third_party/iree/.bazelversion](third_party/iree/.bazelversion)).
@@ -54,11 +54,28 @@ bazel build --config=dev --@iree_core//compiler/src/iree/compiler/API:link_share
 bazel build --config=release @iree_core//tools:iree-compile
 ```
 
-## Run the compiler
+### Run the compiler
 
 ```shell
 # NB: anything before the -- will be interperted by bazel and not iree-compile
 bazel run @iree_core//tools:iree-compile -- [iree-compile options]
+```
+
+## Build - cmake
+
+Set `BUILD_DIR` to some directory where you want the build results to be.
+For example `BUILD_DIR=../coralnpu-compiler-build`.
+
+Run once:
+
+```shell
+cmake -G Ninja -B "${BUILD_DIR}" -S .
+```
+
+Then, to build the compiler and runtime:
+
+```shell
+cmake --build "${BUILD_DIR}" --target iree-compile iree-run-module
 ```
 
 ## Code style
@@ -79,7 +96,8 @@ We use clang 19, and lld.
 
 Places that need to be updated when changing version/toolchain:
 - [.bazelrc](.bazelrc)
-- [scripts/foramt-code.sh](scripts/foramt-code.sh)
+- [CMakeLists.txt](CMakeLists.txt)
+- [scripts/format-code.sh](scripts/format-code.sh)
 
 ## Python
 

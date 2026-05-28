@@ -28,6 +28,7 @@ cc_library(
         "//runtime/driver:coralnpu",
         "@iree_core//integrations/pjrt/src/iree_pjrt/common",
         "@iree_core//runtime/src/iree/base",
+        "@iree_core//runtime/src/iree/hal/local/loaders:embedded_elf_loader",
         "@iree_core//runtime/src/iree/hal/local/loaders/registration",
         "@iree_core//runtime/src/iree/hal/local/plugins/registration",
     ],

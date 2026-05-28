@@ -32,27 +32,9 @@ apply_patch "third_party/llvm-project" "llvm-project-fix-for-jax-when-used-as-su
 # 2. Define consistent build directory path
 BUILD_DIR="${ROOT_DIR}/../coralnpu-compiler-build"
 
-# check if ccache is installed
-if command -v ccache &>/dev/null; then
-  echo "Found ccache, enabling it in the build"
-  LAUNCHER_OPTS="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
-else
-  LAUNCHER_OPTS=""
-fi
-
 echo "=== Configuring CMake ==="
 # Using the explicitly defined BUILD_DIR
-cmake -G Ninja -B "${BUILD_DIR}" -S . \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DIREE_ENABLE_SPLIT_DWARF=ON \
-  -DIREE_ENABLE_THIN_ARCHIVES=ON \
-  -DCMAKE_C_COMPILER=clang \
-  -DCMAKE_CXX_COMPILER=clang++ \
-  -DIREE_ENABLE_LLD=ON \
-  -DIREE_TARGET_BACKEND_DEFAULTS=OFF \
-  -DIREE_TARGET_BACKEND_LLVM_CPU=ON \
-  -DIREE_HAL_DRIVER_DEFAULTS=OFF \
-  -DIREE_HAL_DRIVER_LOCAL_TASK=OFF
+cmake -G Ninja -B "${BUILD_DIR}" -S .
 
 echo
 echo "=== Building Targets ==="

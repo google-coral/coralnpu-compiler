@@ -50,6 +50,8 @@ cc_library(
         "@iree_core//runtime/src/iree/base/internal:synchronization",
         "@iree_core//runtime/src/iree/hal",
         "@iree_core//runtime/src/iree/hal/local:executable_environment",
+        "@iree_core//runtime/src/iree/hal/local:executable_loader",
+        "@iree_core//runtime/src/iree/hal/local:executable_library",
         "@iree_core//runtime/src/iree/hal/utils:deferred_command_buffer",
         "@iree_core//runtime/src/iree/hal/utils:file_transfer",
         "@iree_core//runtime/src/iree/hal/utils:files",

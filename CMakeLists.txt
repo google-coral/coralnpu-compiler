@@ -14,6 +14,19 @@
 
 cmake_minimum_required(VERSION 3.21)
 
+# Set default compilers
+set(CMAKE_C_COMPILER "/usr/bin/clang-19" CACHE PATH "C compiler" FORCE)
+set(CMAKE_CXX_COMPILER "/usr/bin/clang++-19" CACHE PATH "C++ compiler" FORCE)
+
+set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build type" FORCE)
+
+# Enable ccache if available
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE PATH "C compiler launcher" FORCE)
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE PATH "C++ compiler launcher" FORCE)
+endif()
+
 project(CoralNPU LANGUAGES C CXX)
 
 # we don't checkout all submodules of iree as we don't use them
@@ -29,13 +42,21 @@ set(IREE_TARGET_BACKEND_DEFAULTS OFF)
 set(IREE_TARGET_BACKEND_LLVM_CPU ON)
 # disable the default runtime HAL drivers
 set(IREE_HAL_DRIVER_DEFAULTS OFF)
+# Explicitly disable local-task driver (should be off by default with DEFAULTS OFF)
+set(IREE_HAL_DRIVER_LOCAL_TASK OFF)
 # enable our hal driver in the runtime
 set(IREE_EXTERNAL_HAL_DRIVERS coralnpu)
 set(IREE_BUILD_TESTS OFF)
 set(IREE_BUILD_SAMPLES OFF)
 
+# Enable Split DWARF and Thin Archives for faster development builds
+set(IREE_ENABLE_SPLIT_DWARF ON)
+set(IREE_ENABLE_THIN_ARCHIVES ON)
+
 set(IREE_COMPILER_PLUGINS
     "coralnpu"
     CACHE STRING "Statically linked IREE compiler plugins" FORCE)
+
+set(IREE_ENABLE_LLD ON CACHE BOOL "Override the system's default linker to lld" FORCE)
 
 add_subdirectory(third_party/iree)

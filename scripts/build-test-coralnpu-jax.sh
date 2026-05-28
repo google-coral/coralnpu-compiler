@@ -32,7 +32,7 @@ apply_patch "third_party/llvm-project" "llvm-project-fix-for-jax-when-used-as-su
 echo
 echo "=== Building Targets ==="
 # Combine bazel targets to save Bazel analysis time
-bazel build \
+bazel build --config=dev \
   @iree_core//lib:libIREECompiler.so \
   //pjrt_plugin:iree_pjrt_coralnpu_dylib
 
