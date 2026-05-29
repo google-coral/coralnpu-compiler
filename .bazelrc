@@ -100,6 +100,12 @@ build:generic_clang --linkopt=-Wl,--fatal-warnings
 build --config=generic_clang
 
 ###############################################################################
+# IREE options:
+###############################################################################
+
+build --@iree_core//runtime/src/iree/hal/drivers:enabled_drivers=local-sync,local-task,null
+
+###############################################################################
 # Options for debug builds:
 ###############################################################################
 

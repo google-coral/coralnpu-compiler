@@ -58,7 +58,7 @@ bazel build --config=release @iree_core//tools:iree-compile
 
 ```shell
 # NB: anything before the -- will be interperted by bazel and not iree-compile
-bazel run @iree_core//tools:iree-compile -- [iree-compile options]
+bazel run --config={dev|release} @iree_core//tools:iree-compile -- [iree-compile options]
 ```
 
 ## Build - cmake

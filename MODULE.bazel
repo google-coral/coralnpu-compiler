@@ -90,6 +90,11 @@ iree_ext.register_plugin(
     plugin_id = "coralnpu",
     target = "//compiler:registration",
 )
+iree_ext.register_driver(
+    driver_name = "coralnpu",
+    register_fn = "iree_hal_coralnpu_driver_module_register",
+    target = "//runtime/driver/registration",
+)
 
 inject_repo(iree_ext, "llvm-raw")
 

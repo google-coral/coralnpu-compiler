@@ -1,0 +1,160 @@
+From 0be39477fe33d0069ffc1900538bbc45e47e649e Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Fri, 29 May 2026 16:11:43 +0200
+Subject: [PATCH 4/5] [Bazel] add support for out-of-tree drivers
+
+---
+ MODULE.bazel                             |  1 +
+ build_tools/bazel/extensions.bzl         | 95 ++++++++++++++++++++++++
+ runtime/src/iree/hal/drivers/BUILD.bazel |  1 +
+ 3 files changed, 97 insertions(+)
+
+diff --git a/MODULE.bazel b/MODULE.bazel
+index a4d23ed5b9..0b623bd5a9 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -84,6 +84,7 @@ use_repo(
+     "vulkan_headers",
+     "webgpu_headers",
+     "iree_external_plugins",
++    "iree_external_drivers",
+ )
+ 
+ # Configure LLVM using the llvm-raw repo (creates llvm-project)
+diff --git a/build_tools/bazel/extensions.bzl b/build_tools/bazel/extensions.bzl
+index e743bb4080..448b310967 100644
+--- a/build_tools/bazel/extensions.bzl
++++ b/build_tools/bazel/extensions.bzl
+@@ -40,6 +40,79 @@ iree_external_plugins = repository_rule(
+     attrs = { "plugins": attr.string_dict(mandatory=True) }
+ )
+ 
++def _iree_external_drivers_impl(repository_ctx):
++    drivers = repository_ctx.attr.drivers
++
++    if not drivers:
++        repository_ctx.file("BUILD.bazel", """
++load("@rules_cc//cc:defs.bzl", "cc_library")
++
++package(
++    default_visibility = ["//visibility:public"],
++)
++
++cc_library(
++    name = "ExternalDrivers",
++)
++""")
++        return
++
++    decls = []
++    calls = []
++    targets = []
++    for _driver_name, driver_json in drivers.items():
++        driver_info = json.decode(driver_json)
++        register_fn = driver_info["register_fn"]
++        target = driver_info["target"]
++
++        decls.append("extern iree_status_t %s(iree_hal_driver_registry_t* registry);" % register_fn)
++        calls.append("  IREE_RETURN_IF_ERROR(%s(registry));" % register_fn)
++        targets.append(target)
++
++    init_external_c = """
++#include "iree/base/api.h"
++#include "iree/hal/api.h"
++
++%s
++
++iree_status_t iree_hal_register_external_drivers(
++    iree_hal_driver_registry_t* registry) {
++%s
++  return iree_ok_status();
++}
++""" % ("\n".join(decls), "\n".join(calls))
++
++    repository_ctx.file("init_external.c", init_external_c)
++
++    deps = ", ".join(["\"%s\"" % target for target in targets])
++
++    repository_ctx.file("BUILD.bazel", """
++load("@rules_cc//cc:defs.bzl", "cc_library")
++
++package(
++    default_visibility = ["//visibility:public"],
++)
++
++cc_library(
++    name = "ExternalDrivers",
++    srcs = ["init_external.c"],
++    deps = [
++        "@iree_core//runtime/src/iree/base",
++        "@iree_core//runtime/src/iree/hal",
++        %s
++    ],
++    defines = ["IREE_HAVE_HAL_EXTERNAL_DRIVERS=1"],
++)
++""" % deps)
++
++iree_external_drivers = repository_rule(
++    implementation = _iree_external_drivers_impl,
++    attrs = {
++        "drivers": attr.string_dict(mandatory=True), # driver_name -> JSON string
++    }
++)
++
++
+ def _iree_extension_impl(module_ctx):
+     """Implementation of the IREE module extension."""
+ 
+@@ -143,15 +216,37 @@ def _iree_extension_impl(module_ctx):
+         plugins = external_plugins,
+     )
+ 
++    external_drivers = {}
++    for mod in module_ctx.modules:
++        for register_driver in mod.tags.register_driver:
++            external_drivers[register_driver.driver_name] = json.encode({
++                "register_fn": register_driver.register_fn,
++                "target": str(register_driver.target),
++            })
++
++    iree_external_drivers(
++        name = "iree_external_drivers",
++        drivers = external_drivers,
++    )
++
+ _location = tag_class(attrs = {"path": attr.string()})
++
+ _register_plugin = tag_class(attrs = {
+     "plugin_id": attr.string(mandatory=True),
+     "target": attr.label(mandatory=True),
+ })
++
++_register_driver = tag_class(attrs = {
++    "driver_name": attr.string(mandatory=True),
++    "register_fn": attr.string(mandatory=True),
++    "target": attr.label(mandatory=True),
++})
++
+ iree_extension = module_extension(
+     implementation = _iree_extension_impl,
+     tag_classes = {
+         "location": _location,
+         "register_plugin" : _register_plugin,
++        "register_driver" : _register_driver,
+     },
+ )
+diff --git a/runtime/src/iree/hal/drivers/BUILD.bazel b/runtime/src/iree/hal/drivers/BUILD.bazel
+index 8f5de2abf5..abaea88cbc 100644
+--- a/runtime/src/iree/hal/drivers/BUILD.bazel
++++ b/runtime/src/iree/hal/drivers/BUILD.bazel
+@@ -66,6 +66,7 @@ iree_runtime_cc_library(
+     deps = [
+                "//runtime/src/iree/base",
+                "//runtime/src/iree/hal",
++               "@iree_external_drivers//:ExternalDrivers",
+            ] + select({
+                ":amdgpu_enabled": ["//runtime/src/iree/hal/drivers/amdgpu/registration"],
+                "//conditions:default": [],
+-- 
+2.54.0.823.g6e5bcc1fc9-goog
+
