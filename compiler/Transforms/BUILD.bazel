@@ -1,0 +1,53 @@
+load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+td_library(
+    name = "PassesTdFiles",
+    srcs = ["Passes.td"],
+    deps = [
+        "@llvm-project//mlir:PassBaseTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "PassesIncGen",
+    tbl_outs = [
+        (
+            ["--gen-pass-decls"],
+            "Passes.h.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "Passes.td",
+    deps = [
+        ":PassesTdFiles",
+    ],
+)
+
+cc_library(
+    name = "Transforms",
+    srcs = [
+        "CoralNPUAffinityAnnotation.cpp",
+        "Passes.cpp",
+    ],
+    hdrs = [
+        "Passes.h",
+        "Passes.h.inc",
+    ],
+    deps = [
+        ":PassesIncGen",
+        "@iree_core//compiler/src/iree/compiler/Dialect/HAL/Analysis",
+        "@iree_core//compiler/src/iree/compiler/Dialect/HAL/IR",
+        "@iree_core//compiler/src/iree/compiler/Dialect/Util/IR",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:LinalgDialect",
+        "@llvm-project//mlir:Pass",
+    ],
+)

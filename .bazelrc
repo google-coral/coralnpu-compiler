@@ -103,7 +103,7 @@ build --config=generic_clang
 # IREE options:
 ###############################################################################
 
-build --@iree_core//runtime/src/iree/hal/drivers:enabled_drivers=local-sync,local-task,null
+build --@iree_core//runtime/src/iree/hal/drivers:enabled_drivers=local-sync,local-task,null,vmvx
 
 ###############################################################################
 # Options for debug builds:

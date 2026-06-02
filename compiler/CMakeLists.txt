@@ -18,24 +18,6 @@ iree_setup_c_src_root(
 )
 
 add_subdirectory(Pipelines)
+add_subdirectory(Transforms)
+add_subdirectory(target)
 
-iree_cc_library(
-  NAME
-    registration
-  SRCS
-    PluginRegistration.cpp
-  DEPS
-    coralnpu_compiler::Pipelines
-    iree::compiler::Dialect::HAL::Target
-    iree::compiler::PluginAPI
-    MLIRIR
-  PUBLIC
-  ALWAYSLINK
-)
-
-iree_compiler_register_plugin(
-  PLUGIN_ID
-    coralnpu
-  TARGET
-    ::registration
-)

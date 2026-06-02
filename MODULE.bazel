@@ -88,7 +88,7 @@ iree_ext = use_extension(
 iree_ext.location(path = "third_party/iree")
 iree_ext.register_plugin(
     plugin_id = "coralnpu",
-    target = "//compiler:registration",
+    target = "//compiler/target:CoralNPUTarget",
 )
 iree_ext.register_driver(
     driver_name = "coralnpu",

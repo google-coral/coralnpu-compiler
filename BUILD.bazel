@@ -24,8 +24,10 @@ refresh_compile_commands(
     # Specify the targets of interest.
     # For example, specify a dict of targets and any flags required to build.
     targets = {
-        "//compiler:registration": "--config=dev",
+        "//compiler/target:CoralNPUTarget": "--config=dev",
+        "//runtime/driver/registration": "--config=dev",
         "@iree_core//tools:iree-compile": "--config=dev",
+        "@iree_core//tools:iree-run-module": "--config=dev",
         "@iree_core//lib:libIREECompiler.so": "--config=dev",
     },
     # No need to add flags already in .bazelrc. They're automatically picked up.

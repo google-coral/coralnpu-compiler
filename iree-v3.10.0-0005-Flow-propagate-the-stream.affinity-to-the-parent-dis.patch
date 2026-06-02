@@ -1,0 +1,52 @@
+From a4aa47d3b5bbb25becdd1a12d11c9a7eb413db6e Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Tue, 2 Jun 2026 19:52:49 +0200
+Subject: [PATCH] [Flow] propagate the stream.affinity to the parent dispatch
+ region
+
+---
+ .../compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp    | 8 ++++++++
+ .../iree/compiler/DispatchCreation/CollapseDimensions.cpp | 1 +
+ 2 files changed, 9 insertions(+)
+
+diff --git a/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp b/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp
+index 445560f0cf..b074128614 100644
+--- a/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp
++++ b/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp
+@@ -587,6 +587,9 @@ FailureOr<IREE::Flow::DispatchRegionOp>
+ wrapOpInDispatchRegion(RewriterBase &rewriter, Operation *op) {
+   OpBuilder::InsertionGuard g(rewriter);
+ 
++  // Extract the affinity attribute from the root operation before moving it.
++  Attribute affinity = op->getAttr("stream.affinity");
++
+   SmallVector<Value> workload;
+   bool useWorkloadCountFromDagRootMode = checkShapeIsDataDependant(op);
+   if (useWorkloadCountFromDagRootMode) {
+@@ -601,6 +604,11 @@ wrapOpInDispatchRegion(RewriterBase &rewriter, Operation *op) {
+   // Move the op into the dispatch region.
+   auto newRegionOp = movePrecedingOpsIntoDispatchRegion(rewriter, op, regionOp);
+ 
++  if (succeeded(newRegionOp) && affinity) {
++    // Propagate the affinity to the parent dispatch region.
++    (*newRegionOp)->setAttr("stream.affinity", affinity);
++  }
++
+   if (succeeded(newRegionOp) && useWorkloadCountFromDagRootMode) {
+     auto newWorkload = newRegionOp->getWorkload();
+     auto workloadTypes =
+diff --git a/compiler/src/iree/compiler/DispatchCreation/CollapseDimensions.cpp b/compiler/src/iree/compiler/DispatchCreation/CollapseDimensions.cpp
+index 28ae827d99..eeaa6a75c9 100644
+--- a/compiler/src/iree/compiler/DispatchCreation/CollapseDimensions.cpp
++++ b/compiler/src/iree/compiler/DispatchCreation/CollapseDimensions.cpp
+@@ -868,6 +868,7 @@ hoistTensorReshapesOutOfDispatchRegion(
+   // 5. Create the new dispatch op.
+   auto newDispatchOp = IREE::Flow::DispatchRegionOp::create(
+       rewriter, loc, newReturnTypes, newDynamicDims, dispatchOp.getWorkload());
++  newDispatchOp->setDialectAttrs(dispatchOp->getDialectAttrs());
+ 
+   // 5a. Move the body over, but replace the `flow.return` to use the new yield
+   // values.
+-- 
+2.54.0.1013.g208068f2d8-goog
+

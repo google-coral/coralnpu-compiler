@@ -3,4 +3,7 @@
 /bazel-coralnpu-compiler
 /bazel-out
 /bazel-testlogs
+
+/output
+
 MODULE.bazel.lock
