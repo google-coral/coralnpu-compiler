@@ -24,7 +24,7 @@ refresh_compile_commands(
     # Specify the targets of interest.
     # For example, specify a dict of targets and any flags required to build.
     targets = {
-        "//compiler/target:CoralNPUTarget": "--config=dev",
+        "//compiler/Target:CoralNPUTarget": "--config=dev",
         "//runtime/driver/registration": "--config=dev",
         "@iree_core//tools:iree-compile": "--config=dev",
         "@iree_core//tools:iree-run-module": "--config=dev",

@@ -75,10 +75,9 @@ iree_status_t CORALNPUClientInstance::CreateDriver(iree_hal_driver_t** out_drive
 
 bool CORALNPUClientInstance::SetDefaultCompilerFlags(CompilerJob* compiler_job) {
   return compiler_job->SetFlag("--iree-hal-target-device=coralnpu") &&
-         compiler_job->SetFlag("--iree-llvmcpu-target-triple=riscv32") &&
-         compiler_job->SetFlag("--iree-llvmcpu-target-abi=ilp32") &&
+         compiler_job->SetFlag("--coralnpu-target-abi=ilp32") &&
          // TODO(b/507532766): Make this compiler flag configurable.
-         compiler_job->SetFlag("--iree-llvmcpu-target-cpu-features=+m,+f,+zvl128b,+zve32f")
+         compiler_job->SetFlag("--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f")
          ;
 }
 

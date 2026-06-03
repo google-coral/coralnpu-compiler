@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef CORALNPU_COMPILER_TARGET_CORALNPUTARGETBACKEND_H_
-#define CORALNPU_COMPILER_TARGET_CORALNPUTARGETBACKEND_H_
+#ifndef COMPILER_TARGET_CORALNPUTARGETBACKEND_H_
+#define COMPILER_TARGET_CORALNPUTARGETBACKEND_H_
 
 // IREE headers
 #include "compiler/plugins/target/LLVMCPU/LLVMTargetOptions.h"
@@ -121,4 +121,4 @@ private:
 
 } // namespace mlir::coralnpu_compiler
 
-#endif // CORALNPU_COMPILER_TARGET_CORALNPUTARGETBACKEND_H_
+#endif // COMPILER_TARGET_CORALNPUTARGETBACKEND_H_

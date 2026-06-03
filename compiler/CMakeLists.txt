@@ -19,5 +19,4 @@ iree_setup_c_src_root(
 
 add_subdirectory(Pipelines)
 add_subdirectory(Transforms)
-add_subdirectory(target)
-
+add_subdirectory(Target)

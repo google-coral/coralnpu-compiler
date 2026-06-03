@@ -2,11 +2,13 @@
 # Exit immediately on error, undefined variables, or pipeline failures
 set -euo pipefail
 
-# 1. Establish project root
+# Establish project root
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-echo "=== Setting up Repositories ==="
+usage() {
+  echo "Usage: $0 {--bazel|--cmake}"
+}
 
 # Helper function to apply a patch only if it hasn't been applied yet
 apply_patch() {
@@ -23,49 +25,122 @@ apply_patch() {
   fi
 }
 
-# Apply all patches
-apply_patch "third_party/iree" "iree-v3.10.0-0001-Bazel-fix-bazel-when-used-as-submodule.patch"
-apply_patch "third_party/iree" "iree-v3.10.0-0002-Bazel-add-support-for-out-of-tree-plugins.patch"
-apply_patch "third_party/iree" "iree-v3.10.0-0003-fix-iree-compile-for-jax-when-used-as-submodule.patch"
-apply_patch "third_party/iree" "iree-v3.10.0-0004-Bazel-add-support-for-out-of-tree-drivers.patch"
-apply_patch "third_party/llvm-project" "llvm-project-fix-for-jax-when-used-as-submodule.patch"
+setup-bazel() {
+  BUILD_TARGETS=(bazel build --config=dev @iree_core//tools:iree-compile @iree_core//tools:iree-run-module)
+  IREE_COMPILE=(bazel run --config=dev @iree_core//tools:iree-compile --)
+  IREE_RUN_MODULE=(bazel run --config=dev @iree_core//tools:iree-run-module --)
+}
 
-# 2. Define consistent build directory path
-BUILD_DIR="${ROOT_DIR}/../coralnpu-compiler-build"
+setup-cmake() {
+  local build_dir="../coralnpu-compiler-build"
+  if [[ ! -d "${build_dir}" ]]; then
+    cmake -G Ninja -B "${build_dir}" -S . \
+      -DIREE_HAL_DRIVER_LOCAL_SYNC=ON
+  fi
 
-echo "=== Configuring CMake ==="
-# Using the explicitly defined BUILD_DIR
-cmake -G Ninja -B "${BUILD_DIR}" -S .
+  BUILD_TARGETS=(cmake --build "${build_dir}" --target iree-compile iree-run-module)
+  IREE_COMPILE=("${build_dir}"/third_party/iree/tools/iree-compile)
+  IREE_RUN_MODULE=("${build_dir}"/third_party/iree/tools/iree-run-module)
+}
 
-echo
-echo "=== Building Targets ==="
-cmake --build "${BUILD_DIR}" --target iree-compile iree-run-module
+main() {
+  if [[ $# -ne 1 ]]; then
+    setup-cmake
+  elif [[ "$1" == "--bazel" ]]; then
+    setup-bazel
+  else
+    setup-cmake
+  fi
 
-echo
-echo "=== Compiling MLIR to VMFB ==="
-# Define paths to tools and files explicitly for readability
-IREE_COMPILE="${BUILD_DIR}/third_party/iree/tools/iree-compile"
-INPUT_MLIR="${ROOT_DIR}/scripts/test.mlir"
-OUTPUT_VMFB="${BUILD_DIR}/test_coralnpu.vmfb"
+  # Apply all patches
+  echo "=== Setting up Repositories ==="
+  apply_patch "third_party/iree" "iree-v3.10.0-0001-Bazel-fix-bazel-when-used-as-submodule.patch"
+  apply_patch "third_party/iree" "iree-v3.10.0-0002-Bazel-add-support-for-out-of-tree-plugins.patch"
+  apply_patch "third_party/iree" "iree-v3.10.0-0003-fix-iree-compile-for-jax-when-used-as-submodule.patch"
+  apply_patch "third_party/iree" "iree-v3.10.0-0004-Bazel-add-support-for-out-of-tree-drivers.patch"
+  apply_patch "third_party/iree" "iree-v3.10.0-0005-Flow-propagate-the-stream.affinity-to-the-parent-dis.patch"
+  apply_patch "third_party/llvm-project" "llvm-project-fix-for-jax-when-used-as-submodule.patch"
 
-"${IREE_COMPILE}" \
-  --iree-hal-target-device=coralnpu \
-  --iree-llvmcpu-target-triple=riscv32 \
-  --iree-llvmcpu-target-abi=ilp32 \
-  --iree-llvmcpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
-  "${INPUT_MLIR}" \
-  -o "${OUTPUT_VMFB}"
+  echo "=== Building Targets ==="
+  "${BUILD_TARGETS[@]}"
 
-echo
-echo "=== Running IREE Module ==="
-IREE_RUN_MODULE="${BUILD_DIR}/third_party/iree/tools/iree-run-module"
+  echo
+  echo "=== Compiling MLIR to VMFB: add.mlir ==="
 
-"${IREE_RUN_MODULE}" \
-  --device=coralnpu \
-  --module="${OUTPUT_VMFB}" \
-  --function=add \
-  --input="8xi32=[1,2,3,4,5,6,7,8]" \
-  --input="8xi32=[10,20,30,40,50,60,70,80]"
+  local input_mlir="tests/models/stablehlo/add.mlir"
+  output_vmfb="output/stablehlo/add.vmfb"
 
-echo
-echo "=== Done! ==="
+  mkdir -p "$(dirname "${output_vmfb}")"
+
+  iree_compile_options=()
+
+  # Input file
+  iree_compile_options+=("${PWD}/${input_mlir}")
+  # Output file
+  iree_compile_options+=(-o "${PWD}/${output_vmfb}")
+
+  # Configure the CoralNPU device
+  iree_compile_options+=(--iree-hal-target-device=coralnpu)
+  iree_compile_options+=(--coralnpu-target-abi=ilp32)
+  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32f")
+
+  "${IREE_COMPILE[@]}" "${iree_compile_options[@]}"
+
+  echo
+  echo "=== Running IREE Module: CoralNPU only ==="
+
+  "${IREE_RUN_MODULE[@]}" \
+    --device=coralnpu \
+    --module="${PWD}/${output_vmfb}" \
+    --function=main \
+    --input=8xi32="[$(echo {1..8})]" \
+    --input=8xi32="[$(echo {10..80..10})]"
+
+  echo
+  echo "=== Done! ==="
+
+  echo
+  echo "=== Compiling MLIR to VMFB: matmul_add.mlir ==="
+
+  local input_mlir="tests/models/stablehlo/matmul_add.mlir"
+  output_vmfb="output/stablehlo/matmul_add.vmfb"
+
+  mkdir -p "$(dirname "${output_vmfb}")"
+
+  iree_compile_options=()
+
+  # Input file
+  iree_compile_options+=("${PWD}/${input_mlir}")
+  # Output file
+  iree_compile_options+=(-o "${PWD}/${output_vmfb}")
+
+  # Configure the local device
+  iree_compile_options+=(--iree-hal-target-device=local)
+  iree_compile_options+=(--iree-hal-local-target-device-backends=llvm-cpu)
+  iree_compile_options+=(--iree-llvmcpu-target-cpu-features=host)
+
+  # Configure the CoralNPU device
+  iree_compile_options+=(--iree-hal-target-device=coralnpu)
+  iree_compile_options+=(--coralnpu-target-abi=ilp32)
+  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32f")
+
+  "${IREE_COMPILE[@]}" "${iree_compile_options[@]}"
+
+  echo
+  echo "=== Running IREE Module: CoralNPU and Local CPU ==="
+
+  "${IREE_RUN_MODULE[@]}" \
+    --device=local-sync \
+    --device=coralnpu \
+    --module="${PWD}/${output_vmfb}" \
+    --function=main \
+    --input=4x8xi32="[$(echo {1..32})]" \
+    --input=8x4xi32="[$(echo {1..32})]" \
+    --input=4x4xi32="[$(echo {1..16})]" \
+    --input=4x4xi32=10
+
+  echo
+  echo "=== Done! ==="
+}
+
+main "$@"

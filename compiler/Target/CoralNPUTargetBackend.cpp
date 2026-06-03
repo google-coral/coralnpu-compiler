@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "compiler/target/CoralNPUTargetBackend.h"
+#include "compiler/Target/CoralNPUTargetBackend.h"
 
 // IREE headers
 #include "compiler/plugins/target/LLVMCPU/Builtins/Device.h"

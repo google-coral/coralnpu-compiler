@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "compiler/Target/CoralNPUTargetBackend.h"
 #include "compiler/Transforms/Passes.h"
-#include "compiler/target/CoralNPUTargetBackend.h"
 
 // IREE headers
 #include "iree/compiler/Dialect/HAL/IR/HALTypes.h"
