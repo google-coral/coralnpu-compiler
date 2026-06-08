@@ -28,6 +28,7 @@ refresh_compile_commands(
     targets = {
         "//compiler/Target:CoralNPUTarget": "--config=dev",
         "//runtime/driver/registration": "--config=dev",
+        "//tools/check_gen": "--config=dev",
         "@iree_core//tools:iree-compile": "--config=dev",
         "@iree_core//tools:iree-run-module": "--config=dev",
         "@iree_core//lib:libIREECompiler.so": "--config=dev",

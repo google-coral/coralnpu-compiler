@@ -29,6 +29,10 @@
 
 // LLVM headers
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
+
+#define DEBUG_TYPE "coralnpu-target"
 
 using namespace mlir;
 using namespace mlir::iree_compiler;
@@ -87,7 +91,7 @@ struct CoralNPUSession
   }
 
   LogicalResult onActivate() override {
-    llvm::dbgs() << "Coral plugin activated\n";
+    LLVM_DEBUG(llvm::dbgs() << "Coral plugin activated\n");
     return success();
   }
 

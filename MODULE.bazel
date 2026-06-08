@@ -110,7 +110,7 @@ use_repo(
     # "com_github_dvidelabs_flatcc",
     # "com_google_benchmark",
     # "com_google_googletest",
-    # "stablehlo",
+    "stablehlo",
     # "hsa_runtime_headers",
     # "iree_cuda",
     # "llvm-raw",

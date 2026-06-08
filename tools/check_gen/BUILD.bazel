@@ -1,0 +1,38 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+package(
+    default_visibility = ["//visibility:public"],
+)
+
+cc_binary(
+    name = "check_gen",
+    srcs = [
+        "CheckTestGenerator.cpp",
+        "CheckTestGenerator.h",
+        "CompileUtils.cpp",
+        "CompileUtils.h",
+        "ParseUtils.cpp",
+        "ParseUtils.h",
+        "PrecompiledBinary.cpp",
+        "PrecompiledBinary.h",
+        "main.cpp",
+    ],
+    deps = [
+        "@iree_core//compiler/bindings/c:headers",
+        "@iree_core//compiler/src/iree/compiler/API:Impl",
+        "@iree_core//compiler/src/iree/compiler/ConstEval:Runtime",
+        "@iree_core//compiler/src/iree/compiler/Tools:init_passes_and_dialects",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:CAPIIR",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TensorDialect",
+        "@llvm-project//mlir:Transforms",
+        "@stablehlo//:chlo_ops",
+        "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:stablehlo_passes",
+    ],
+)

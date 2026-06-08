@@ -15,6 +15,7 @@ main() {
   dirs+=(runtime)
   dirs+=(scripts)
   dirs+=(tests)
+  dirs+=(tools)
 
   echo 'Formatting bazel files'
   bazel --quiet run //:buildifier

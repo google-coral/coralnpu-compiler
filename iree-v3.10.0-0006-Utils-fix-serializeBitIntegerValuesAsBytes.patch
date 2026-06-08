@@ -1,0 +1,55 @@
+From de34ec99ace7e1dfba658d6e24f768f04a190fa0 Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Mon, 8 Jun 2026 14:53:24 +0200
+Subject: [PATCH 6/6] [Utils] fix serializeBitIntegerValuesAsBytes
+
+---
+ .../compiler/Dialect/Util/IR/UtilAttrs.cpp    | 30 ++++++++++++-------
+ 1 file changed, 19 insertions(+), 11 deletions(-)
+
+diff --git a/compiler/src/iree/compiler/Dialect/Util/IR/UtilAttrs.cpp b/compiler/src/iree/compiler/Dialect/Util/IR/UtilAttrs.cpp
+index 12b2127db6..5c88937bb7 100644
+--- a/compiler/src/iree/compiler/Dialect/Util/IR/UtilAttrs.cpp
++++ b/compiler/src/iree/compiler/Dialect/Util/IR/UtilAttrs.cpp
+@@ -360,19 +360,27 @@ static LogicalResult serializeGenericFloatElements(DenseFPElementsAttr attr,
+ static LogicalResult serializeBitIntegerValuesAsBytes(DenseIntElementsAttr attr,
+                                                       llvm::raw_ostream &os) {
+   auto rawData = attr.getRawData();
+-  char bytes[8];
++  int64_t numElements = attr.getNumElements();
++  int64_t elementsWritten = 0;
+   for (size_t i = 0; i < rawData.size(); ++i) {
+     int32_t bits = rawData[i];
+-    bytes[i * 8 + 0] = bits & 0x1;
+-    bytes[i * 8 + 1] = (bits & 0x2) >> 1;
+-    bytes[i * 8 + 2] = (bits & 0x4) >> 2;
+-    bytes[i * 8 + 3] = (bits & 0x8) >> 3;
+-    bytes[i * 8 + 4] = (bits & 0x10) >> 4;
+-    bytes[i * 8 + 5] = (bits & 0x20) >> 5;
+-    bytes[i * 8 + 6] = (bits & 0x40) >> 6;
+-    bytes[i * 8 + 7] = (bits & 0x80) >> 7;
+-  }
+-  os.write(bytes, sizeof(bytes));
++    char bytes[8];
++    bytes[0] = bits & 0x1;
++    bytes[1] = (bits & 0x2) >> 1;
++    bytes[2] = (bits & 0x4) >> 2;
++    bytes[3] = (bits & 0x8) >> 3;
++    bytes[4] = (bits & 0x10) >> 4;
++    bytes[5] = (bits & 0x20) >> 5;
++    bytes[6] = (bits & 0x40) >> 6;
++    bytes[7] = (bits & 0x80) >> 7;
++
++    int64_t toWrite = std::min<int64_t>(8, numElements - elementsWritten);
++    os.write(bytes, toWrite);
++    elementsWritten += toWrite;
++    if (elementsWritten >= numElements) {
++      break;
++    }
++  }
+   return success();
+ }
+ 
+-- 
+2.54.0.1064.gd145956f57-goog
+

@@ -1,0 +1,19 @@
+load("@iree_core//build_tools/bazel:iree_bytecode_module.bzl", "iree_bytecode_module")
+
+package(
+    default_visibility = ["//visibility:public"],
+)
+
+exports_files(glob(["*.mlir"]))
+
+[
+    iree_bytecode_module(
+        name = f.split(".")[0] + "_vmfb",
+        src = f,
+        compile_tool = "@iree_core//tools:iree-compile",
+        flags = [
+            "--iree-hal-target-backends=vmvx",
+        ],
+    )
+    for f in glob(["*.mlir"])
+]

@@ -1,0 +1,157 @@
+load("@iree_core//build_tools/bazel:iree_bytecode_module.bzl", "iree_bytecode_module")
+load("@iree_core//build_tools/bazel:native_binary.bzl", "native_test")
+load("//tools/check_gen:def.bzl", "check_gen_test_generator", "check_gen_tests")
+
+package(
+    default_visibility = ["//visibility:public"],
+)
+
+# Example 1: Using the check_gen_tests macro (Recommended for integration)
+# This macro runs check_gen once for all instances and defines compilation and test targets automatically.
+check_gen_tests(
+    name = "add_rank2_i32_macro",
+    arg_gens = [
+        "//tools/check_gen/generators:sequential_vmfb",
+        "//tools/check_gen/generators:sequential_vmfb",
+    ],
+    compiler_flags = [
+        "--iree-hal-target-backends=vmvx",
+    ],
+    instances = ["(2,16)(2,16)"],
+    runner_args = [
+        "--device=local-task",
+    ],
+    test = "add_rank2_i32.mlir",
+)
+
+# Example 2: Using precompiled VMFB generators (compiled in Bazel first)
+# We use a different instance (8,4)(8,4) to avoid output file conflict with Example 1 in the same package.
+check_gen_test_generator(
+    name = "add_rank2_i32_mlir",
+    arg_gens = [
+        "//tools/check_gen/generators:sequential_vmfb",
+        "//tools/check_gen/generators:sequential_vmfb",
+    ],
+    instances = ["(8,4)(8,4)"],
+    test = "add_rank2_i32.mlir",
+)
+
+iree_bytecode_module(
+    name = "add_rank2_i32_8_4-8_4_vmfb_bytecode",
+    src = ":add_rank2_i32_mlir_8_4-8_4",
+    compile_tool = "@iree_core//tools:iree-compile",
+    flags = [
+        "--iree-hal-target-backends=vmvx",
+    ],
+)
+
+native_test(
+    name = "add_rank2_i32_8_4-8_4_vmfb_test",
+    src = "@iree_core//tools:iree-check-module",
+    args = [
+        "--module=$(location :add_rank2_i32_8_4-8_4_vmfb_bytecode)",
+    ],
+    data = [":add_rank2_i32_8_4-8_4_vmfb_bytecode"],
+)
+
+# Example 3: Using MLIR generators directly (JIT compiled inside check_gen)
+check_gen_test_generator(
+    name = "add_rank2_i32_jit_mlir",
+    arg_gens = [
+        "//tools/check_gen/generators:sequential.mlir",
+        "//tools/check_gen/generators:sequential.mlir",
+    ],
+    instances = ["(4,8)(4,8)"],
+    test = "add_rank2_i32.mlir",
+)
+
+iree_bytecode_module(
+    name = "add_rank2_i32_4_8-4_8_bytecode",
+    src = ":add_rank2_i32_jit_mlir_4_8-4_8",
+    compile_tool = "@iree_core//tools:iree-compile",
+    flags = [
+        "--iree-hal-target-backends=vmvx",
+    ],
+)
+
+native_test(
+    name = "add_rank2_i32_4_8-4_8_test",
+    src = "@iree_core//tools:iree-check-module",
+    args = [
+        "--module=$(location :add_rank2_i32_4_8-4_8_bytecode)",
+    ],
+    data = [":add_rank2_i32_4_8-4_8_bytecode"],
+)
+
+# Example 4: Using a precompiled generator that takes a fill value and shape
+check_gen_tests(
+    name = "test_fill",
+    arg_gens = [
+        "//tools/check_gen/generators:fill_vmfb",
+    ],
+    compiler_flags = [
+        "--iree-hal-target-backends=vmvx",
+    ],
+    instances = [
+        "(42, 4, 8)",
+    ],
+    runner_args = [
+        "--device=local-task",
+    ],
+    test = "test_fill.mlir",
+)
+
+# Example 5: Using a JIT generator with floats and expect_almost_eq verification
+check_gen_tests(
+    name = "test_float",
+    arg_gens = [
+        "fill_rank_2_f32.mlir",
+    ],
+    compiler_flags = [
+        "--iree-hal-target-backends=vmvx",
+    ],
+    instances = [
+        "(42, 4, 8)",
+    ],
+    runner_args = [
+        "--device=local-task",
+    ],
+    test = "test_float.mlir",
+)
+
+# Example 6: Using "default" placeholders
+check_gen_tests(
+    name = "add_rank2_i32_default_placeholder",
+    arg_gens = [
+        "default",
+        "default",
+    ],
+    compiler_flags = [
+        "--iree-hal-target-backends=vmvx",
+    ],
+    default_gen = "//tools/check_gen/generators:sequential_vmfb",
+    instances = [
+        "(3,5)(3,5)",
+    ],
+    runner_args = [
+        "--device=local-task",
+    ],
+    test = "add_rank2_i32.mlir",
+)
+
+# Example 7: Using auto-completion (omitted generators)
+check_gen_tests(
+    name = "add_rank2_i32_default_autocomplete",
+    arg_gens = [],
+    compiler_flags = [
+        "--iree-hal-target-backends=vmvx",
+    ],
+    default_gen = "//tools/check_gen/generators:sequential_vmfb",
+    instances = [
+        "(6,7)(6,7)",
+    ],
+    runner_args = [
+        "--device=local-task",
+    ],
+    test = "add_rank2_i32.mlir",
+)
