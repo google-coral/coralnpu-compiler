@@ -40,14 +40,25 @@ set(IREE_CMAKE_PLUGIN_PATHS ${CMAKE_CURRENT_LIST_DIR})
 set(IREE_TARGET_BACKEND_DEFAULTS OFF)
 # enable IREE llvm-cpu backed plugin that is used to compile code for CSS
 set(IREE_TARGET_BACKEND_LLVM_CPU ON)
+set(IREE_TARGET_BACKEND_VMVX ON)
+set(IREE_TARGET_BACKEND_CORALNPU ON)
 # disable the default runtime HAL drivers
 set(IREE_HAL_DRIVER_DEFAULTS OFF)
-# Explicitly disable local-task driver (should be off by default with DEFAULTS OFF)
-set(IREE_HAL_DRIVER_LOCAL_TASK OFF)
+# Explicitly enable local-sync driver (needed for VMVX tests)
+set(IREE_HAL_DRIVER_LOCAL_SYNC ON CACHE BOOL "Enable local-sync driver" FORCE)
+# Explicitly disable local-task driver
+set(IREE_HAL_DRIVER_LOCAL_TASK OFF CACHE BOOL "Disable local-task driver" FORCE)
 # enable our hal driver in the runtime
 set(IREE_EXTERNAL_HAL_DRIVERS coralnpu)
-set(IREE_BUILD_TESTS OFF)
-set(IREE_BUILD_SAMPLES OFF)
+if(NOT DEFINED IREE_BUILD_TESTS)
+  set(IREE_BUILD_TESTS OFF)
+endif()
+if(IREE_BUILD_TESTS)
+  enable_testing()
+endif()
+if(NOT DEFINED IREE_BUILD_SAMPLES)
+  set(IREE_BUILD_SAMPLES OFF)
+endif()
 
 # Enable Split DWARF and Thin Archives for faster development builds
 set(IREE_ENABLE_SPLIT_DWARF ON)
@@ -60,3 +71,11 @@ set(IREE_COMPILER_PLUGINS
 set(IREE_ENABLE_LLD ON CACHE BOOL "Override the system's default linker to lld" FORCE)
 
 add_subdirectory(third_party/iree)
+
+list(APPEND CMAKE_MODULE_PATH
+  "${CMAKE_CURRENT_LIST_DIR}/third_party/iree/build_tools/cmake"
+)
+include(iree_copts)
+
+add_subdirectory(tools)
+add_subdirectory(tests)
