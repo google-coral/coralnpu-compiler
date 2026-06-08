@@ -112,6 +112,50 @@ Then, to build the compiler and runtime:
 cmake --build "${BUILD_DIR}" --target iree-compile iree-run-module
 ```
 
+## Testing
+
+### Running Tests with Bazel
+
+To run the stablehlo model tests with Bazel:
+
+```shell
+bazel test --config=dev //tests/models/stablehlo/...
+```
+
+You can also run all tests in the repository:
+
+```shell
+bazel test --config=dev //tests/...
+```
+
+### Running Tests with CMake
+
+To run the tests with CMake, you need to configure CMake with testing enabled (`-DIREE_BUILD_TESTS=ON`):
+
+```shell
+cmake -G Ninja -B "${BUILD_DIR}" -S . -DIREE_BUILD_TESTS=ON
+```
+
+Then build the compiler, runtime, and test dependencies. Note that `iree-check-module` (required for running tests) is not built by default and must be built explicitly:
+
+```shell
+# Build default targets (compiler, runtime, generated tests)
+cmake --build "${BUILD_DIR}" -j $(nproc)
+
+# Build test runner dependency
+cmake --build "${BUILD_DIR}" --target iree-check-module -j $(nproc)
+```
+
+Finally, run the tests using `ctest`. It is recommended to run tests in parallel:
+
+```shell
+# Run only stablehlo model tests
+ctest --test-dir "${BUILD_DIR}" -R "tests/models/stablehlo/.*" -j $(nproc)
+
+# Run all tests
+ctest --test-dir "${BUILD_DIR}" -j $(nproc)
+```
+
 ## Code style
 
 We use Google style, enforced by scripts/format-code.sh.

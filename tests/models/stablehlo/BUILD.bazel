@@ -1,0 +1,3 @@
+load("//tests/models/stablehlo:op_tests.bzl", "stablehlo_op_tests")
+
+stablehlo_op_tests()
