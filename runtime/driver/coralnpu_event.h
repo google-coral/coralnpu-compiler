@@ -22,14 +22,14 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 iree_status_t iree_hal_coralnpu_event_create(
     iree_hal_queue_affinity_t queue_affinity, iree_hal_event_flags_t flags,
     iree_allocator_t host_allocator, iree_hal_event_t **out_event);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_DRIVER_CORALNPU_EVENT_H_
+#endif  // RUNTIME_DRIVER_CORALNPU_EVENT_H_

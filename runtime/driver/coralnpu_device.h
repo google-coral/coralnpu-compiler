@@ -23,7 +23,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 // Parameters configuring an iree_hal_coralnpu_device_t.
 // Must be initialized with iree_hal_coralnpu_device_params_initialize prior to
@@ -50,7 +50,7 @@ iree_status_t iree_hal_coralnpu_device_create(
     iree_hal_device_t **out_device);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_DRIVER_CORALNPU_DEVICE_H_
+#endif  // RUNTIME_DRIVER_CORALNPU_DEVICE_H_

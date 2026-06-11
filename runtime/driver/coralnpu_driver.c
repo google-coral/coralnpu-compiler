@@ -35,8 +35,8 @@ typedef struct iree_hal_coralnpu_driver_t {
 
 static const iree_hal_driver_vtable_t iree_hal_coralnpu_driver_vtable;
 
-static iree_hal_coralnpu_driver_t *
-iree_hal_coralnpu_driver_cast(iree_hal_driver_t *base_value) {
+static iree_hal_coralnpu_driver_t *iree_hal_coralnpu_driver_cast(
+    iree_hal_driver_t *base_value) {
   IREE_HAL_ASSERT_TYPE(base_value, &iree_hal_coralnpu_driver_vtable);
   return (iree_hal_coralnpu_driver_t *)base_value;
 }
@@ -67,9 +67,9 @@ iree_status_t iree_hal_coralnpu_driver_create(
     driver->device_allocator = device_allocator;
     iree_hal_allocator_retain(device_allocator);
 
-    iree_string_view_append_to_buffer(identifier, &driver->identifier,
-                                      (char *)driver + total_size -
-                                          identifier.size);
+    iree_string_view_append_to_buffer(
+        identifier, &driver->identifier,
+        (char *)driver + total_size - identifier.size);
     memcpy(&driver->default_params, default_params,
            sizeof(driver->default_params));
 
@@ -123,10 +123,9 @@ static iree_status_t iree_hal_coralnpu_driver_query_available_devices(
       (void **)out_device_infos);
 }
 
-static iree_status_t
-iree_hal_coralnpu_driver_dump_device_info(iree_hal_driver_t *base_driver,
-                                          iree_hal_device_id_t device_id,
-                                          iree_string_builder_t *builder) {
+static iree_status_t iree_hal_coralnpu_driver_dump_device_info(
+    iree_hal_driver_t *base_driver, iree_hal_device_id_t device_id,
+    iree_string_builder_t *builder) {
   iree_hal_coralnpu_driver_t *driver =
       iree_hal_coralnpu_driver_cast(base_driver);
   // TODO: dump detailed device info.

@@ -66,8 +66,8 @@ typedef struct iree_hal_coralnpu_semaphore_t {
 
 static const iree_hal_semaphore_vtable_t iree_hal_coralnpu_semaphore_vtable;
 
-static iree_hal_coralnpu_semaphore_t *
-iree_hal_coralnpu_semaphore_cast(iree_hal_semaphore_t *base_value) {
+static iree_hal_coralnpu_semaphore_t *iree_hal_coralnpu_semaphore_cast(
+    iree_hal_semaphore_t *base_value) {
   IREE_HAL_ASSERT_TYPE(base_value, &iree_hal_coralnpu_semaphore_vtable);
   return (iree_hal_coralnpu_semaphore_t *)base_value;
 }
@@ -100,8 +100,8 @@ iree_status_t iree_hal_coralnpu_semaphore_create(
   return status;
 }
 
-static void
-iree_hal_coralnpu_semaphore_destroy(iree_hal_semaphore_t *base_semaphore) {
+static void iree_hal_coralnpu_semaphore_destroy(
+    iree_hal_semaphore_t *base_semaphore) {
   iree_hal_coralnpu_semaphore_t *semaphore =
       iree_hal_coralnpu_semaphore_cast(base_semaphore);
   iree_allocator_t host_allocator = semaphore->host_allocator;
@@ -116,9 +116,8 @@ iree_hal_coralnpu_semaphore_destroy(iree_hal_semaphore_t *base_semaphore) {
   IREE_TRACE_ZONE_END(z0);
 }
 
-static iree_status_t
-iree_hal_coralnpu_semaphore_query(iree_hal_semaphore_t *base_semaphore,
-                                  uint64_t *out_value) {
+static iree_status_t iree_hal_coralnpu_semaphore_query(
+    iree_hal_semaphore_t *base_semaphore, uint64_t *out_value) {
   iree_hal_coralnpu_semaphore_t *semaphore =
       iree_hal_coralnpu_semaphore_cast(base_semaphore);
 
@@ -155,9 +154,8 @@ static iree_status_t iree_hal_coralnpu_semaphore_signal_unsafe(
   return iree_ok_status();
 }
 
-static iree_status_t
-iree_hal_coralnpu_semaphore_signal(iree_hal_semaphore_t *base_semaphore,
-                                   uint64_t new_value) {
+static iree_status_t iree_hal_coralnpu_semaphore_signal(
+    iree_hal_semaphore_t *base_semaphore, uint64_t new_value) {
   iree_hal_coralnpu_semaphore_t *semaphore =
       iree_hal_coralnpu_semaphore_cast(base_semaphore);
 
@@ -184,9 +182,8 @@ iree_hal_coralnpu_semaphore_signal(iree_hal_semaphore_t *base_semaphore,
   return iree_ok_status();
 }
 
-static void
-iree_hal_coralnpu_semaphore_fail(iree_hal_semaphore_t *base_semaphore,
-                                 iree_status_t status) {
+static void iree_hal_coralnpu_semaphore_fail(
+    iree_hal_semaphore_t *base_semaphore, iree_status_t status) {
   iree_hal_coralnpu_semaphore_t *semaphore =
       iree_hal_coralnpu_semaphore_cast(base_semaphore);
   const iree_status_code_t status_code = iree_status_code(status);
@@ -273,10 +270,9 @@ static bool iree_hal_coralnpu_semaphore_is_signaled(
   return is_signaled;
 }
 
-static iree_status_t
-iree_hal_coralnpu_semaphore_wait(iree_hal_semaphore_t *base_semaphore,
-                                 uint64_t value, iree_timeout_t timeout,
-                                 iree_hal_wait_flags_t flags) {
+static iree_status_t iree_hal_coralnpu_semaphore_wait(
+    iree_hal_semaphore_t *base_semaphore, uint64_t value,
+    iree_timeout_t timeout, iree_hal_wait_flags_t flags) {
   iree_hal_coralnpu_semaphore_t *semaphore =
       iree_hal_coralnpu_semaphore_cast(base_semaphore);
 
@@ -338,8 +334,7 @@ static bool iree_hal_coralnpu_semaphore_any_signaled(
         semaphore->current_value >= semaphore_list->payload_values[i] ||
         !iree_status_is_ok(semaphore->failure_status);
     iree_slim_mutex_unlock(&semaphore->mutex);
-    if (is_signaled)
-      return true;
+    if (is_signaled) return true;
   }
   return false;
 }
@@ -356,8 +351,7 @@ static bool iree_hal_coralnpu_semaphore_all_signaled(
         semaphore->current_value >= semaphore_list->payload_values[i] ||
         !iree_status_is_ok(semaphore->failure_status);
     iree_slim_mutex_unlock(&semaphore->mutex);
-    if (!is_signaled)
-      return false;
+    if (!is_signaled) return false;
   }
   return true;
 }
@@ -396,13 +390,15 @@ static iree_status_t iree_hal_coralnpu_semaphore_result_from_state(
     return iree_status_from_code(IREE_STATUS_ABORTED);
   }
   switch (wait_mode) {
-  default:
-  case IREE_HAL_WAIT_MODE_ALL:
-    return all_signaled ? iree_ok_status()
-                        : iree_status_from_code(IREE_STATUS_DEADLINE_EXCEEDED);
-  case IREE_HAL_WAIT_MODE_ANY:
-    return any_signaled ? iree_ok_status()
-                        : iree_status_from_code(IREE_STATUS_DEADLINE_EXCEEDED);
+    default:
+    case IREE_HAL_WAIT_MODE_ALL:
+      return all_signaled
+                 ? iree_ok_status()
+                 : iree_status_from_code(IREE_STATUS_DEADLINE_EXCEEDED);
+    case IREE_HAL_WAIT_MODE_ANY:
+      return any_signaled
+                 ? iree_ok_status()
+                 : iree_status_from_code(IREE_STATUS_DEADLINE_EXCEEDED);
   }
 }
 

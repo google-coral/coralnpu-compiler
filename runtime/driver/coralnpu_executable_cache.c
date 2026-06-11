@@ -62,9 +62,9 @@ iree_status_t iree_hal_coralnpu_executable_cache_create(
     iree_hal_resource_initialize(&iree_hal_coralnpu_executable_cache_vtable,
                                  &executable_cache->resource);
     executable_cache->host_allocator = host_allocator;
-    iree_string_view_append_to_buffer(identifier, &executable_cache->identifier,
-                                      (char *)executable_cache + total_size -
-                                          identifier.size);
+    iree_string_view_append_to_buffer(
+        identifier, &executable_cache->identifier,
+        (char *)executable_cache + total_size - identifier.size);
     executable_cache->worker_capacity = worker_capacity;
 
     executable_cache->loader_count = loader_count;

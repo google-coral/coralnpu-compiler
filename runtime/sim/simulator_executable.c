@@ -27,8 +27,8 @@ typedef struct iree_hal_simulator_executable_t {
   iree_host_size_t export_count;
 } iree_hal_simulator_executable_t;
 
-static iree_hal_simulator_executable_t *
-iree_hal_simulator_executable_cast(iree_hal_executable_t *base_executable) {
+static iree_hal_simulator_executable_t *iree_hal_simulator_executable_cast(
+    iree_hal_executable_t *base_executable) {
   return (iree_hal_simulator_executable_t *)base_executable;
 }
 
@@ -36,8 +36,7 @@ static const iree_hal_coralnpu_executable_vtable_t
     iree_hal_simulator_executable_vtable;
 
 bool iree_hal_simulator_executable_isa(iree_hal_executable_t *base_executable) {
-  if (!base_executable)
-    return false;
+  if (!base_executable) return false;
 
   iree_hal_coralnpu_executable_t *coralnpu_executable =
       iree_hal_coralnpu_executable_cast(base_executable);
@@ -53,8 +52,8 @@ iree_const_byte_span_t iree_hal_simulator_executable_dispatch_image(
   return executable->dispatch_image;
 }
 
-static void
-iree_hal_simulator_executable_destroy(iree_hal_executable_t *base_executable) {
+static void iree_hal_simulator_executable_destroy(
+    iree_hal_executable_t *base_executable) {
   iree_hal_simulator_executable_t *executable =
       iree_hal_simulator_executable_cast(base_executable);
   iree_allocator_t host_allocator = executable->base.host_allocator;
@@ -113,8 +112,7 @@ static iree_status_t iree_hal_simulator_executable_lookup_export_by_name(
     iree_hal_executable_export_ordinal_t *out_export_ordinal) {
   (void)base_executable;
   (void)name;
-  if (out_export_ordinal)
-    *out_export_ordinal = 0;
+  if (out_export_ordinal) *out_export_ordinal = 0;
   return iree_make_status(IREE_STATUS_NOT_FOUND, "export lookup unsupported");
 }
 

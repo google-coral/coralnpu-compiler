@@ -24,7 +24,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 // Creates a new synchronous local CPU driver that creates devices that perform
 // execution inline on threads issuing submissions. |loaders| is the set of
@@ -37,7 +37,7 @@ iree_status_t iree_hal_coralnpu_driver_create(
     iree_hal_driver_t **out_driver);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_DRIVER_CORALNPU_DRIVER_H_
+#endif  // RUNTIME_DRIVER_CORALNPU_DRIVER_H_

@@ -1,9 +1,7 @@
 #include "Pipelines.h"
 
 #include "compiler/plugins/input/TOSA/InputConversion/Passes.h"
-
 #include "iree/compiler/Preprocessing/Common/Passes.h"
-
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Pass/PassManager.h"
 
@@ -22,7 +20,7 @@ void registerTOSAConversionPassPipeline() {
       });
 }
 
-} // namespace
+}  // namespace
 
 void buildTOSAInputConversionPassPipeline(OpPassManager &passManager) {
   // TODO(sflur): do any specialzed lowering from TOSA
@@ -44,4 +42,4 @@ void registerTOSAConversionPasses() {
   registerTOSAConversionPassPipeline();
 }
 
-} // namespace mlir::coralnpu_compiler
+}  // namespace mlir::coralnpu_compiler

@@ -22,7 +22,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 iree_status_t iree_hal_simulator_issue_dispatch_inline(
     iree_const_byte_span_t dispatch_image,
@@ -30,7 +30,7 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
     iree_host_size_t ordinal, iree_byte_span_t local_memory);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_SIM_SIMULATOR_INLINE_H_
+#endif  // RUNTIME_SIM_SIMULATOR_INLINE_H_

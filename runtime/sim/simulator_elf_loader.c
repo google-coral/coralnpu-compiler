@@ -21,20 +21,17 @@
 
 #include "runtime/sim/simulator_api.h"
 
-static bool
-iree_hal_coralnpu_simulator_is_elf32(iree_const_byte_span_t elf_image) {
-  if (elf_image.data_length < sizeof(Elf32_Ehdr))
-    return false;
+static bool iree_hal_coralnpu_simulator_is_elf32(
+    iree_const_byte_span_t elf_image) {
+  if (elf_image.data_length < sizeof(Elf32_Ehdr)) return false;
   const uint8_t *ident = (const uint8_t *)elf_image.data;
   return ident[0] == 0x7f && ident[1] == 'E' && ident[2] == 'L' &&
          ident[3] == 'F' && ident[4] == ELFCLASS32;
 }
 
-static iree_status_t
-iree_hal_coralnpu_simulator_copy_segment(uint32_t paddr, const uint8_t *src,
-                                         size_t filesz) {
-  if (filesz == 0)
-    return iree_ok_status();
+static iree_status_t iree_hal_coralnpu_simulator_copy_segment(
+    uint32_t paddr, const uint8_t *src, size_t filesz) {
+  if (filesz == 0) return iree_ok_status();
 
   // ITCM region
   if (paddr >= coralnpu_itcm_start &&
@@ -56,9 +53,8 @@ iree_hal_coralnpu_simulator_copy_segment(uint32_t paddr, const uint8_t *src,
                           paddr, filesz);
 }
 
-iree_status_t
-iree_hal_coralnpu_simulator_load_elf(iree_const_byte_span_t elf_image,
-                                     uint32_t *out_start_pc) {
+iree_status_t iree_hal_coralnpu_simulator_load_elf(
+    iree_const_byte_span_t elf_image, uint32_t *out_start_pc) {
   IREE_ASSERT_ARGUMENT(out_start_pc);
   *out_start_pc = 0;
 
@@ -108,10 +104,8 @@ iree_hal_coralnpu_simulator_load_elf(iree_const_byte_span_t elf_image,
       fallback_entry_pc = phdr->p_paddr;
     }
 
-    if (phdr->p_type != PT_LOAD)
-      continue;
-    if (phdr->p_filesz == 0)
-      continue;
+    if (phdr->p_type != PT_LOAD) continue;
+    if (phdr->p_filesz == 0) continue;
 
     size_t segment_end = (size_t)phdr->p_offset + (size_t)phdr->p_filesz;
     if (segment_end > elf_image.data_length) {

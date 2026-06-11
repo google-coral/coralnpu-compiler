@@ -35,7 +35,7 @@
 #include <vector>
 namespace mlir {
 class OpPassManager;
-} // namespace mlir
+}  // namespace mlir
 
 namespace mlir::coralnpu_compiler {
 
@@ -64,7 +64,7 @@ struct CoralNPUOptions {
 
 class CoralNPUTargetBackend final
     : public iree_compiler::IREE::HAL::TargetBackend {
-public:
+ public:
   explicit CoralNPUTargetBackend(const CoralNPUOptions &options);
 
   std::string getLegacyDefaultDeviceID() const override;
@@ -74,9 +74,9 @@ public:
       SmallVectorImpl<iree_compiler::IREE::HAL::ExecutableTargetAttr>
           &executableTargetAttrs) const override;
 
-  iree_compiler::IREE::HAL::ExecutableTargetAttr
-  getExecutableTarget(MLIRContext *context,
-                      const iree_compiler::IREE::HAL::LLVMTarget &target) const;
+  iree_compiler::IREE::HAL::ExecutableTargetAttr getExecutableTarget(
+      MLIRContext *context,
+      const iree_compiler::IREE::HAL::LLVMTarget &target) const;
 
   void getDependentDialects(DialectRegistry &registry) const override;
 
@@ -90,14 +90,14 @@ public:
 
   void buildLinkingPassPipeline(OpPassManager &passManager) override;
 
-  LogicalResult
-  serializeExecutable(const SerializationOptions &options,
-                      iree_compiler::IREE::HAL::ExecutableVariantOp variantOp,
-                      OpBuilder &executableBuilder) override;
+  LogicalResult serializeExecutable(
+      const SerializationOptions &options,
+      iree_compiler::IREE::HAL::ExecutableVariantOp variantOp,
+      OpBuilder &executableBuilder) override;
 
-private:
-  std::optional<iree_compiler::IREE::HAL::LLVMTarget>
-  getVariantTarget(iree_compiler::IREE::HAL::ExecutableVariantOp variantOp);
+ private:
+  std::optional<iree_compiler::IREE::HAL::LLVMTarget> getVariantTarget(
+      iree_compiler::IREE::HAL::ExecutableVariantOp variantOp);
 
   LogicalResult serializeStaticLibraryExecutable(
       const SerializationOptions &options,
@@ -119,6 +119,6 @@ private:
   iree_compiler::IREE::HAL::LLVMTargetOptions defaultOptions_;
 };
 
-} // namespace mlir::coralnpu_compiler
+}  // namespace mlir::coralnpu_compiler
 
-#endif // COMPILER_TARGET_CORALNPUTARGETBACKEND_H_
+#endif  // COMPILER_TARGET_CORALNPUTARGETBACKEND_H_

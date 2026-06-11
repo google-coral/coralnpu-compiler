@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-#include "runtime/sim/simulator_api.h"
-
 #include <cstdio>
+
+#include "runtime/sim/simulator_api.h"
 
 struct CoralNPUMailbox {
   uint32_t message[4] = {0, 0, 0, 0};
 };
 
 class CoralNPUSimulator {
-public:
+ public:
   static CoralNPUSimulator *Create();
 
   virtual ~CoralNPUSimulator() = default;
@@ -47,13 +47,11 @@ static CoralNPUSimulator *sim = NULL;
 void simulator_create(void) { sim = CoralNPUSimulator::Create(); }
 
 void simulator_load_itcm(uint32_t offset, const void *data, size_t size) {
-
   sim->WriteTCM(coralnpu_itcm_start + offset, size,
                 static_cast<const char *>(data));
 }
 
 void simulator_load_dtcm(uint32_t offset, const void *data, size_t size) {
-
   sim->WriteTCM(coralnpu_dtcm_start + offset, size,
                 static_cast<const char *>(data));
 }

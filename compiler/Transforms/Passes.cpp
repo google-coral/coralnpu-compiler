@@ -21,8 +21,8 @@ namespace mlir::coralnpu_compiler {
 namespace {
 #define GEN_PASS_REGISTRATION
 #include "compiler/Transforms/Passes.h.inc"
-} // namespace
+}  // namespace
 
 void registerCoralNPUPasses() { registerPasses(); }
 
-} // namespace mlir::coralnpu_compiler
+}  // namespace mlir::coralnpu_compiler

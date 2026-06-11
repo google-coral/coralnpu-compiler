@@ -27,9 +27,9 @@ void registerCoralNPUPasses();
 #include "compiler/Transforms/Passes.h.inc"
 
 std::unique_ptr<OperationPass<ModuleOp>> createCoralNPUAffinityAnnotationPass();
-std::unique_ptr<OperationPass<ModuleOp>>
-createCoralNPUAffinityAnnotationPass(CoralNPUAffinityAnnotationOptions options);
+std::unique_ptr<OperationPass<ModuleOp>> createCoralNPUAffinityAnnotationPass(
+    CoralNPUAffinityAnnotationOptions options);
 
-} // namespace mlir::coralnpu_compiler
+}  // namespace mlir::coralnpu_compiler
 
-#endif // COMPILER_TRANSFORMS_PASSES_H_
+#endif  // COMPILER_TRANSFORMS_PASSES_H_

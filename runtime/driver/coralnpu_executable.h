@@ -23,7 +23,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 typedef struct iree_hal_coralnpu_executable_t {
   iree_hal_resource_t resource;
@@ -58,8 +58,8 @@ void iree_hal_coralnpu_executable_initialize(
 void iree_hal_coralnpu_executable_deinitialize(
     iree_hal_coralnpu_executable_t *base_executable);
 
-iree_hal_coralnpu_executable_t *
-iree_hal_coralnpu_executable_cast(iree_hal_executable_t *base_value);
+iree_hal_coralnpu_executable_t *iree_hal_coralnpu_executable_cast(
+    iree_hal_executable_t *base_value);
 
 iree_status_t iree_hal_coralnpu_executable_issue_call(
     iree_hal_coralnpu_executable_t *executable, iree_host_size_t ordinal,
@@ -73,7 +73,7 @@ iree_status_t iree_hal_coralnpu_executable_issue_dispatch_inline(
     uint32_t processor_id, iree_byte_span_t local_memory);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_DRIVER_CORALNPU_EXECUTABLE_H_
+#endif  // RUNTIME_DRIVER_CORALNPU_EXECUTABLE_H_

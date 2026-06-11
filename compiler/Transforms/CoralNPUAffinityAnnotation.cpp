@@ -13,10 +13,8 @@
 // limitations under the License.
 
 #include "compiler/Transforms/Passes.h"
-
 #include "iree/compiler/Dialect/HAL/Analysis/DeviceAnalysis.h"
 #include "iree/compiler/Dialect/HAL/IR/HALTypes.h"
-
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -102,8 +100,8 @@ int64_t estimateIOBytes(Operation *op) {
 }
 
 // Discover the NPU device alias.
-IREE::HAL::DeviceAffinityAttr
-getCoralNPUDeviceAffinityAttr(MLIRContext *context, ModuleOp moduleOp) {
+IREE::HAL::DeviceAffinityAttr getCoralNPUDeviceAffinityAttr(
+    MLIRContext *context, ModuleOp moduleOp) {
   IREE::HAL::DeviceAnalysis deviceAnalysis(moduleOp);
   if (failed(deviceAnalysis.run())) {
     return nullptr;
@@ -111,8 +109,7 @@ getCoralNPUDeviceAffinityAttr(MLIRContext *context, ModuleOp moduleOp) {
 
   for (auto globalOp : deviceAnalysis.getDeviceGlobals()) {
     auto deviceSet = deviceAnalysis.lookupDeviceTargets(globalOp);
-    if (!deviceSet)
-      continue;
+    if (!deviceSet) continue;
     for (auto targetAttr : deviceSet->getValues()) {
       if (targetAttr.getDeviceID().getValue() == "coralnpu") {
         return IREE::HAL::DeviceAffinityAttr::get(
@@ -127,15 +124,12 @@ getCoralNPUDeviceAffinityAttr(MLIRContext *context, ModuleOp moduleOp) {
 struct CoralNPUAffinityAnnotationPass
     : public impl::CoralNPUAffinityAnnotationBase<
           CoralNPUAffinityAnnotationPass> {
-
   using CoralNPUAffinityAnnotationBase::CoralNPUAffinityAnnotationBase;
 
   bool shouldExecuteOnCoralNPU(Operation *op) {
-    if (!isSupportedComputeOp(op))
-      return false;
+    if (!isSupportedComputeOp(op)) return false;
 
-    if (!isSupportedOperandAndResultTypes(op))
-      return false;
+    if (!isSupportedOperandAndResultTypes(op)) return false;
 
     return ioMinThresholdBytes < estimateIOBytes(op);
   }
@@ -146,21 +140,19 @@ struct CoralNPUAffinityAnnotationPass
 
     iree_compiler::IREE::HAL::DeviceAffinityAttr coralnpuAffinityAttr =
         getCoralNPUDeviceAffinityAttr(context, moduleOp);
-    if (!coralnpuAffinityAttr)
-      return;
+    if (!coralnpuAffinityAttr) return;
 
     // TODO: decide which operations should execute on coralnpu
     moduleOp.walk([&](Operation *op) {
       // If op already has affinity, don't change it
-      if (op->getAttr("stream.affinity"))
-        return;
+      if (op->getAttr("stream.affinity")) return;
 
       if (shouldExecuteOnCoralNPU(op))
         op->setAttr("stream.affinity", coralnpuAffinityAttr);
     });
   }
 };
-} // namespace
+}  // namespace
 
 std::unique_ptr<OperationPass<ModuleOp>>
 createCoralNPUAffinityAnnotationPass() {
@@ -172,4 +164,4 @@ std::unique_ptr<OperationPass<ModuleOp>> createCoralNPUAffinityAnnotationPass(
   return std::make_unique<CoralNPUAffinityAnnotationPass>(std::move(options));
 }
 
-} // namespace mlir::coralnpu_compiler
+}  // namespace mlir::coralnpu_compiler

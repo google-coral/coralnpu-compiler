@@ -25,8 +25,8 @@ typedef struct iree_hal_coralnpu_event_t {
 
 static const iree_hal_event_vtable_t iree_hal_coralnpu_event_vtable;
 
-static iree_hal_coralnpu_event_t *
-iree_hal_coralnpu_event_cast(iree_hal_event_t *base_value) {
+static iree_hal_coralnpu_event_t *iree_hal_coralnpu_event_cast(
+    iree_hal_event_t *base_value) {
   IREE_HAL_ASSERT_TYPE(base_value, &iree_hal_coralnpu_event_vtable);
   return (iree_hal_coralnpu_event_t *)base_value;
 }

@@ -19,10 +19,10 @@
 
 #include "iree/base/api.h"
 
-static inline bool
-iree_hal_coralnpu_is_simulator_format(iree_string_view_t executable_format) {
+static inline bool iree_hal_coralnpu_is_simulator_format(
+    iree_string_view_t executable_format) {
   return iree_string_view_equal(executable_format,
                                 IREE_SV("embedded-elf-riscv_32"));
 }
 
-#endif // RUNTIME_CORALNPU_SIM_SIMULATOR_FORMAT_H_
+#endif  // RUNTIME_CORALNPU_SIM_SIMULATOR_FORMAT_H_

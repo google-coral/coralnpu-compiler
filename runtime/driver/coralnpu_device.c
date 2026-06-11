@@ -15,8 +15,6 @@
  */
 
 #include "runtime/driver/coralnpu_device.h"
-#include "runtime/driver/coralnpu_command_buffer.h"
-#include "runtime/driver/coralnpu_executable_cache.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -28,7 +26,9 @@
 #include "iree/hal/utils/file_registry.h"
 #include "iree/hal/utils/file_transfer.h"
 #include "iree/hal/utils/queue_emulation.h"
+#include "runtime/driver/coralnpu_command_buffer.h"
 #include "runtime/driver/coralnpu_event.h"
+#include "runtime/driver/coralnpu_executable_cache.h"
 #include "runtime/driver/coralnpu_semaphore.h"
 #include "runtime/sim/simulator_api.h"
 #include "runtime/sim/simulator_format.h"
@@ -58,8 +58,8 @@ typedef struct iree_hal_coralnpu_device_t {
 
 static const iree_hal_device_vtable_t iree_hal_coralnpu_device_vtable;
 
-static iree_hal_coralnpu_device_t *
-iree_hal_coralnpu_device_cast(iree_hal_device_t *base_value) {
+static iree_hal_coralnpu_device_t *iree_hal_coralnpu_device_cast(
+    iree_hal_device_t *base_value) {
   IREE_HAL_ASSERT_TYPE(base_value, &iree_hal_coralnpu_device_vtable);
   return (iree_hal_coralnpu_device_t *)base_value;
 }
@@ -156,22 +156,22 @@ static void iree_hal_coralnpu_device_destroy(iree_hal_device_t *base_device) {
   IREE_TRACE_ZONE_END(z0);
 }
 
-static iree_string_view_t
-iree_hal_coralnpu_device_id(iree_hal_device_t *base_device) {
+static iree_string_view_t iree_hal_coralnpu_device_id(
+    iree_hal_device_t *base_device) {
   iree_hal_coralnpu_device_t *device =
       iree_hal_coralnpu_device_cast(base_device);
   return device->identifier;
 }
 
-static iree_allocator_t
-iree_hal_coralnpu_device_host_allocator(iree_hal_device_t *base_device) {
+static iree_allocator_t iree_hal_coralnpu_device_host_allocator(
+    iree_hal_device_t *base_device) {
   iree_hal_coralnpu_device_t *device =
       iree_hal_coralnpu_device_cast(base_device);
   return device->host_allocator;
 }
 
-static iree_hal_allocator_t *
-iree_hal_coralnpu_device_allocator(iree_hal_device_t *base_device) {
+static iree_hal_allocator_t *iree_hal_coralnpu_device_allocator(
+    iree_hal_device_t *base_device) {
   iree_hal_coralnpu_device_t *device =
       iree_hal_coralnpu_device_cast(base_device);
   return device->device_allocator;
@@ -195,17 +195,16 @@ static void iree_hal_coralnpu_replace_channel_provider(
   device->channel_provider = new_provider;
 }
 
-static iree_status_t
-iree_hal_coralnpu_device_trim(iree_hal_device_t *base_device) {
+static iree_status_t iree_hal_coralnpu_device_trim(
+    iree_hal_device_t *base_device) {
   iree_hal_coralnpu_device_t *device =
       iree_hal_coralnpu_device_cast(base_device);
   return iree_hal_allocator_trim(device->device_allocator);
 }
 
-static iree_status_t
-iree_hal_coralnpu_device_query_i64(iree_hal_device_t *base_device,
-                                   iree_string_view_t category,
-                                   iree_string_view_t key, int64_t *out_value) {
+static iree_status_t iree_hal_coralnpu_device_query_i64(
+    iree_hal_device_t *base_device, iree_string_view_t category,
+    iree_string_view_t key, int64_t *out_value) {
   iree_hal_coralnpu_device_t *device =
       iree_hal_coralnpu_device_cast(base_device);
   *out_value = 0;
@@ -217,7 +216,6 @@ iree_hal_coralnpu_device_query_i64(iree_hal_device_t *base_device,
   }
 
   if (iree_string_view_equal(category, IREE_SV("hal.executable.format"))) {
-
     if (iree_hal_coralnpu_is_simulator_format(key)) {
       *out_value = 1;
       return iree_ok_status();
@@ -530,9 +528,8 @@ static iree_status_t iree_hal_coralnpu_device_queue_execute(
   return iree_ok_status();
 }
 
-static iree_status_t
-iree_hal_coralnpu_device_queue_flush(iree_hal_device_t *base_device,
-                                     iree_hal_queue_affinity_t queue_affinity) {
+static iree_status_t iree_hal_coralnpu_device_queue_flush(
+    iree_hal_device_t *base_device, iree_hal_queue_affinity_t queue_affinity) {
   // Currently unused; we flush as submissions are made.
   return iree_ok_status();
 }
@@ -561,14 +558,14 @@ static iree_status_t iree_hal_coralnpu_device_profiling_begin(
   return iree_ok_status();
 }
 
-static iree_status_t
-iree_hal_coralnpu_device_profiling_flush(iree_hal_device_t *base_device) {
+static iree_status_t iree_hal_coralnpu_device_profiling_flush(
+    iree_hal_device_t *base_device) {
   // Unimplemented (and that's ok).
   return iree_ok_status();
 }
 
-static iree_status_t
-iree_hal_coralnpu_device_profiling_end(iree_hal_device_t *base_device) {
+static iree_status_t iree_hal_coralnpu_device_profiling_end(
+    iree_hal_device_t *base_device) {
   // Unimplemented (and that's ok).
   return iree_ok_status();
 }

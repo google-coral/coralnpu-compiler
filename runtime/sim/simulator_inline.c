@@ -97,7 +97,7 @@ static iree_status_t iree_hal_coralnpu_simulator_install_trampoline(
   memset(tramp, 0, sizeof(tramp));
 
   // ra = halt_pc
-  tramp[W_AUIPC_RA] = 0x00000097u; // auipc ra, 0
+  tramp[W_AUIPC_RA] = 0x00000097u;  // auipc ra, 0
   tramp[W_ADDI_RA] = iree_rv32_encode_addi(
       /*rd=*/1, /*rs1=*/1, (int32_t)(halt_pc - (tramp_pc + W_AUIPC_RA * 4u)));
 
@@ -196,8 +196,7 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
     size_t binding_length = dispatch_state->binding_lengths[i];
     binding_dtcm_offsets[i] = dtcm_offset;
 
-    if (binding_length == 0)
-      continue;
+    if (binding_length == 0) continue;
     if (!binding_ptr) {
       return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                               "binding pointer is null");
@@ -224,7 +223,7 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
   dtcm_offset = iree_align_u32(dtcm_offset, 16);
 
   const uint32_t dispatch_state_dtcm = dtcm_offset;
-  const uint32_t dispatch_state_size = 32u; // enough for byte offset 28
+  const uint32_t dispatch_state_size = 32u;  // enough for byte offset 28
   dtcm_offset += dispatch_state_size;
 
   if (dtcm_offset > coralnpu_dtcm_size) {
@@ -239,9 +238,9 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
 
   // bindings_table[i] = absolute simulator address of binding i
   for (uint32_t i = 0; i < dispatch_state->binding_count; ++i) {
-    iree_hal_coralnpu_simulator_write_dtcm_u32(bindings_table_dtcm + i * 4u,
-                                               coralnpu_dtcm_start +
-                                                   binding_dtcm_offsets[i]);
+    iree_hal_coralnpu_simulator_write_dtcm_u32(
+        bindings_table_dtcm + i * 4u,
+        coralnpu_dtcm_start + binding_dtcm_offsets[i]);
   }
 
   // dispatch_state[7] = absolute simulator address of bindings table
@@ -277,8 +276,7 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
   // Optional debug dump before execution.
   for (uint32_t i = 0; i < dispatch_state->binding_count; ++i) {
     size_t binding_length = dispatch_state->binding_lengths[i];
-    if (binding_length == 0)
-      continue;
+    if (binding_length == 0) continue;
 
     int32_t temp[32];
     memset(temp, 0, sizeof(temp));
@@ -291,8 +289,7 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
   for (uint32_t i = 0; i < dispatch_state->binding_count; ++i) {
     void *binding_ptr = dispatch_state->binding_ptrs[i];
     size_t binding_length = dispatch_state->binding_lengths[i];
-    if (binding_length == 0)
-      continue;
+    if (binding_length == 0) continue;
 
     simulator_read_dtcm(binding_dtcm_offsets[i], binding_ptr, binding_length);
   }

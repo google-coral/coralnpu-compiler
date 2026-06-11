@@ -75,9 +75,8 @@ static void iree_hal_coralnpu_command_buffer_reset(
       command_buffer->state.binding_length_storage;
 }
 
-iree_host_size_t
-iree_hal_coralnpu_command_buffer_size(iree_hal_command_buffer_mode_t mode,
-                                      iree_host_size_t binding_capacity) {
+iree_host_size_t iree_hal_coralnpu_command_buffer_size(
+    iree_hal_command_buffer_mode_t mode, iree_host_size_t binding_capacity) {
   return sizeof(iree_hal_coralnpu_command_buffer_t) +
          iree_hal_command_buffer_validation_state_size(mode, binding_capacity);
 }

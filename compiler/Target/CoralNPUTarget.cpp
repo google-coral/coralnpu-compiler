@@ -67,7 +67,6 @@ struct CoralNPUTargetDevice final : public IREE::HAL::TargetDevice {
 struct CoralNPUSession
     : public PluginSession<CoralNPUSession, CoralNPUOptions,
                            PluginActivationPolicy::DefaultActivated> {
-
   static void registerPasses() { registerCoralNPUPasses(); }
 
   void populateHALTargetDevices(IREE::HAL::TargetDeviceList &targets) override {
@@ -76,8 +75,8 @@ struct CoralNPUSession
     });
   }
 
-  virtual void
-  populateHALTargetBackends(IREE::HAL::TargetBackendList &targets) override {
+  virtual void populateHALTargetBackends(
+      IREE::HAL::TargetBackendList &targets) override {
     targets.add("coralnpu", [=]() {
       return std::make_shared<CoralNPUTargetBackend>(options);
     });
@@ -99,8 +98,8 @@ struct CoralNPUSession
   }
 };
 
-} // namespace
-} // namespace mlir::coralnpu_compiler
+}  // namespace
+}  // namespace mlir::coralnpu_compiler
 
 IREE_DEFINE_COMPILER_OPTION_FLAGS(mlir::coralnpu_compiler::CoralNPUOptions);
 

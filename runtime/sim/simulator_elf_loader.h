@@ -21,14 +21,13 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
-iree_status_t
-iree_hal_coralnpu_simulator_load_elf(iree_const_byte_span_t elf_image,
-                                     uint32_t *out_start_pc);
+iree_status_t iree_hal_coralnpu_simulator_load_elf(
+    iree_const_byte_span_t elf_image, uint32_t *out_start_pc);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_SIM_SIMULATOR_ELF_LOADER_H_
+#endif  // RUNTIME_SIM_SIMULATOR_ELF_LOADER_H_

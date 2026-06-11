@@ -23,7 +23,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 // TODO: when we refactor executable caches this can become something
 // more specialized; like nop_executable_cache (does nothing but pass through)
@@ -40,7 +40,7 @@ iree_status_t iree_hal_coralnpu_executable_cache_create(
     iree_hal_executable_cache_t **out_executable_cache);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_DRIVER_CORALNPU_EXECUTABLE_CACHE_H_
+#endif  // RUNTIME_DRIVER_CORALNPU_EXECUTABLE_CACHE_H_

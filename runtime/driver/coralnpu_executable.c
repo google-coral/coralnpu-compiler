@@ -36,8 +36,8 @@ void iree_hal_coralnpu_executable_initialize(
 void iree_hal_coralnpu_executable_deinitialize(
     iree_hal_coralnpu_executable_t *base_executable) {}
 
-iree_hal_coralnpu_executable_t *
-iree_hal_coralnpu_executable_cast(iree_hal_executable_t *base_value) {
+iree_hal_coralnpu_executable_t *iree_hal_coralnpu_executable_cast(
+    iree_hal_executable_t *base_value) {
   return (iree_hal_coralnpu_executable_t *)base_value;
 }
 
@@ -75,7 +75,7 @@ iree_status_t iree_hal_coralnpu_executable_issue_dispatch_inline(
                       workgroup_count_x, workgroup_count_y, workgroup_count_z);
     IREE_TRACE_ZONE_APPEND_TEXT(z0, xyz_string, xyz_string_length);
   });
-#endif // IREE_HAL_VERBOSE_TRACING_ENABLE
+#endif  // IREE_HAL_VERBOSE_TRACING_ENABLE
 
   iree_status_t status = iree_ok_status();
 
@@ -96,8 +96,7 @@ iree_status_t iree_hal_coralnpu_executable_issue_dispatch_inline(
         status = iree_hal_coralnpu_executable_issue_call(
             executable, ordinal, dispatch_state, &workgroup_state,
             /*worker_id=*/0);
-        if (!iree_status_is_ok(status))
-          break;
+        if (!iree_status_is_ok(status)) break;
       }
     }
   }

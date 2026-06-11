@@ -23,7 +23,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 iree_status_t iree_hal_simulator_executable_create(
     const iree_hal_executable_params_t *executable_params,
@@ -35,7 +35,7 @@ iree_const_byte_span_t iree_hal_simulator_executable_dispatch_image(
     iree_hal_executable_t *base_executable);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_SIM_SIMULATOR_EXECUTABLE_H_
+#endif  // RUNTIME_SIM_SIMULATOR_EXECUTABLE_H_

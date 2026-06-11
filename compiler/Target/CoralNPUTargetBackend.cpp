@@ -110,9 +110,8 @@ static void fixupVisibility(llvm::Module &module,
 
 // Appends the |debugDatabase| to the end of |baseFile| and writes the footer
 // so the runtime can find it.
-static LogicalResult
-appendDebugDatabase(std::vector<int8_t> &baseFile,
-                    IREE::HAL::Artifact &debugFileArtifact) {
+static LogicalResult appendDebugDatabase(
+    std::vector<int8_t> &baseFile, IREE::HAL::Artifact &debugFileArtifact) {
   auto debugFileOr = debugFileArtifact.read();
   if (!debugFileOr.has_value()) {
     return failure();
@@ -125,7 +124,7 @@ appendDebugDatabase(std::vector<int8_t> &baseFile,
 
   // Matches iree_hal_system_executable_footer_t.
   struct Footer {
-    uint8_t magic[8]; // IREEDBG\0
+    uint8_t magic[8];  // IREEDBG\0
     uint32_t version;
     uint32_t flags;
     uint64_t libraryOffset;
@@ -150,7 +149,7 @@ appendDebugDatabase(std::vector<int8_t> &baseFile,
 static constexpr char kQueryFunctionName[] =
     "iree_hal_executable_library_query";
 
-} // namespace
+}  // namespace
 
 CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options) {
   IREE::HAL::LLVMCPUTargetCLOptions clOptions;
@@ -193,21 +192,21 @@ IREE::HAL::ExecutableTargetAttr CoralNPUTargetBackend::getExecutableTarget(
     } else {
       format += "system-";
       switch (targetTriple.getObjectFormat()) {
-      case llvm::Triple::ObjectFormatType::COFF:
-        format += "dll-";
-        break;
-      case llvm::Triple::ObjectFormatType::ELF:
-        format += "elf-";
-        break;
-      case llvm::Triple::ObjectFormatType::MachO:
-        format += "dylib-";
-        break;
-      case llvm::Triple::ObjectFormatType::Wasm:
-        format += "wasm-";
-        break;
-      default:
-        format += "unknown-";
-        break;
+        case llvm::Triple::ObjectFormatType::COFF:
+          format += "dll-";
+          break;
+        case llvm::Triple::ObjectFormatType::ELF:
+          format += "elf-";
+          break;
+        case llvm::Triple::ObjectFormatType::MachO:
+          format += "dylib-";
+          break;
+        case llvm::Triple::ObjectFormatType::Wasm:
+          format += "wasm-";
+          break;
+        default:
+          format += "unknown-";
+          break;
       }
     }
     format += getIreeArchNameForTargetTriple(targetTriple);
@@ -255,8 +254,7 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
     IREE::HAL::ExecutableVariantOp variantOp, OpBuilder &executableBuilder) {
   llvm::LLVMContext context;
   auto maybeTarget = getVariantTarget(variantOp);
-  if (!maybeTarget)
-    return failure();
+  if (!maybeTarget) return failure();
   const IREE::HAL::LLVMTarget &target = *maybeTarget;
   LLVM_DEBUG(dbgs() << "CoralNPU SerializeExecutable:\n"
                     << "-----------------------------\n";
@@ -304,25 +302,25 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
       IREE::HAL::LibraryBuilder::Version::LATEST);
 
   switch (target.sanitizerKind) {
-  case IREE::HAL::SanitizerKind::kNone: {
-    libraryBuilder.setSanitizerKind(
-        IREE::HAL::LibraryBuilder::SanitizerKind::NONE);
-    break;
-  }
-  case IREE::HAL::SanitizerKind::kAddress: {
-    libraryBuilder.setSanitizerKind(
-        IREE::HAL::LibraryBuilder::SanitizerKind::ADDRESS);
-    for (auto &function : llvmModule->getFunctionList()) {
-      function.addFnAttr(llvm::Attribute::SanitizeAddress);
+    case IREE::HAL::SanitizerKind::kNone: {
+      libraryBuilder.setSanitizerKind(
+          IREE::HAL::LibraryBuilder::SanitizerKind::NONE);
+      break;
     }
-  } break;
-  case IREE::HAL::SanitizerKind::kThread: {
-    libraryBuilder.setSanitizerKind(
-        IREE::HAL::LibraryBuilder::SanitizerKind::THREAD);
-    for (auto &function : llvmModule->getFunctionList()) {
-      function.addFnAttr(llvm::Attribute::SanitizeThread);
-    }
-  } break;
+    case IREE::HAL::SanitizerKind::kAddress: {
+      libraryBuilder.setSanitizerKind(
+          IREE::HAL::LibraryBuilder::SanitizerKind::ADDRESS);
+      for (auto &function : llvmModule->getFunctionList()) {
+        function.addFnAttr(llvm::Attribute::SanitizeAddress);
+      }
+    } break;
+    case IREE::HAL::SanitizerKind::kThread: {
+      libraryBuilder.setSanitizerKind(
+          IREE::HAL::LibraryBuilder::SanitizerKind::THREAD);
+      for (auto &function : llvmModule->getFunctionList()) {
+        function.addFnAttr(llvm::Attribute::SanitizeThread);
+      }
+    } break;
   }
 
   auto importsAttrName =
@@ -340,8 +338,7 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
   for (auto exportOp :
        variantOp.getBlock().getOps<IREE::HAL::ExecutableExportOp>()) {
     auto *llvmFunc = llvmModule->getFunction(exportOp.getName());
-    if (!llvmFunc)
-      continue;
+    if (!llvmFunc) continue;
     llvmFunc->setLinkage(llvm::GlobalValue::LinkageTypes::InternalLinkage);
     llvmFunc->setDSOLocal(true);
 
@@ -513,8 +510,7 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
   }
 
   auto *llvmIdent = llvmModule->getNamedMetadata("llvm.ident");
-  if (llvmIdent)
-    llvmIdent->clearOperands();
+  if (llvmIdent) llvmIdent->clearOperands();
 
   if (!options.dumpIntermediatesPath.empty()) {
     dumpLLVMModuleToPath(options.dumpIntermediatesPath, options.dumpBaseName,
@@ -627,7 +623,7 @@ LogicalResult CoralNPUTargetBackend::serializeStaticLibraryExecutable(
 
   std::vector<uint8_t> libraryNameVector(libraryName.begin(),
                                          libraryName.end());
-  libraryNameVector.push_back(0); // NUL
+  libraryNameVector.push_back(0);  // NUL
   IREE::HAL::ExecutableBinaryOp::create(executableBuilder, variantOp.getLoc(),
                                         variantOp.getSymName(), "static",
                                         libraryNameVector);
@@ -684,25 +680,25 @@ LogicalResult CoralNPUTargetBackend::serializeDynamicLibraryExecutable(
     const char *mimeType = nullptr;
     const char *extension = "";
     switch (targetTriple.getObjectFormat()) {
-    case llvm::Triple::ObjectFormatType::COFF:
-      mimeType = "application/x-msdownload";
-      extension = ".dll";
-      break;
-    case llvm::Triple::ObjectFormatType::ELF:
-      mimeType = "application/x-elf";
-      extension = ".so";
-      break;
-    case llvm::Triple::ObjectFormatType::MachO:
-      mimeType = "application/x-dylib";
-      extension = ".dylib";
-      break;
-    case llvm::Triple::ObjectFormatType::Wasm:
-      mimeType = "application/wasm";
-      extension = ".wasm";
-      break;
-    default:
-      mimeType = "application/octet-stream";
-      break;
+      case llvm::Triple::ObjectFormatType::COFF:
+        mimeType = "application/x-msdownload";
+        extension = ".dll";
+        break;
+      case llvm::Triple::ObjectFormatType::ELF:
+        mimeType = "application/x-elf";
+        extension = ".so";
+        break;
+      case llvm::Triple::ObjectFormatType::MachO:
+        mimeType = "application/x-dylib";
+        extension = ".dylib";
+        break;
+      case llvm::Triple::ObjectFormatType::Wasm:
+        mimeType = "application/wasm";
+        extension = ".wasm";
+        break;
+      default:
+        mimeType = "application/octet-stream";
+        break;
     }
 
     auto dylibFile = linkArtifacts.libraryFile.read();
@@ -742,4 +738,4 @@ LogicalResult CoralNPUTargetBackend::serializeDynamicLibraryExecutable(
   return success();
 }
 
-} // namespace mlir::coralnpu_compiler
+}  // namespace mlir::coralnpu_compiler

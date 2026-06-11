@@ -17,20 +17,19 @@
 #ifndef PJRT_PLUGIN__CLIENT_H_
 #define PJRT_PLUGIN__CLIENT_H_
 
-#include "iree_pjrt/common/api_impl.h"
-
 #include "iree/hal/local/loaders/registration/init.h"
+#include "iree_pjrt/common/api_impl.h"
 
 namespace iree::pjrt::coralnpu {
 
 class CORALNPUClientInstance final : public ClientInstance {
-public:
+ public:
   CORALNPUClientInstance(std::unique_ptr<Platform> platform);
   ~CORALNPUClientInstance();
   iree_status_t CreateDriver(iree_hal_driver_t **out_driver) override;
   bool SetDefaultCompilerFlags(CompilerJob *compiler_job) override;
 
-private:
+ private:
   iree_status_t InitializeDeps();
 
   // Deps.
@@ -39,6 +38,6 @@ private:
   iree_hal_allocator_t *device_allocator_ = nullptr;
 };
 
-} // namespace iree::pjrt::coralnpu
+}  // namespace iree::pjrt::coralnpu
 
-#endif // PJRT_PLUGIN__CLIENT_H_
+#endif  // PJRT_PLUGIN__CLIENT_H_

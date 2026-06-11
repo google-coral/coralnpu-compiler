@@ -8,4 +8,4 @@ void buildTOSAInputConversionPassPipeline(OpPassManager &passManager);
 
 void registerTOSAConversionPasses();
 
-} // namespace mlir::coralnpu_compiler
+}  // namespace mlir::coralnpu_compiler

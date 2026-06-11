@@ -22,13 +22,13 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 IREE_API_EXPORT iree_status_t
 iree_hal_coralnpu_driver_module_register(iree_hal_driver_registry_t *registry);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // IREE_HAL_DRIVER_CORALNPU_REGISTRATION_DRIVER_MODULE_H_
+#endif  // IREE_HAL_DRIVER_CORALNPU_REGISTRATION_DRIVER_MODULE_H_

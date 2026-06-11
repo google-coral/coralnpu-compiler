@@ -25,7 +25,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 //===----------------------------------------------------------------------===//
 // iree_hal_coralnpu_semaphore_state_t
@@ -79,7 +79,7 @@ iree_status_t iree_hal_coralnpu_semaphore_multi_wait(
     iree_hal_wait_flags_t flags);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_DRIVER_CORALNPU_SEMAPHORE_H_
+#endif  // RUNTIME_DRIVER_CORALNPU_SEMAPHORE_H_

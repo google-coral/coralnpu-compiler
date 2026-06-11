@@ -22,14 +22,13 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 // Returns the size, in bytes, of an inline command buffer.
 // This can be used for arena/stack allocations along with
 // iree_hal_inline_command_buffer_initialize/iree_hal_inline_command_buffer_deinitialize.
-iree_host_size_t
-iree_hal_coralnpu_command_buffer_size(iree_hal_command_buffer_mode_t mode,
-                                      iree_host_size_t binding_capacity);
+iree_host_size_t iree_hal_coralnpu_command_buffer_size(
+    iree_hal_command_buffer_mode_t mode, iree_host_size_t binding_capacity);
 
 // Initializes an inline synchronous one-shot single-threaded command "buffer".
 // This is equivalent to iree_hal_inline_command_buffer_create but uses
@@ -72,7 +71,7 @@ bool iree_hal_coralnpu_command_buffer_isa(
     iree_hal_command_buffer_t *command_buffer);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_DRIVER_CORALNPU_COMMAND_BUFFER_H_
+#endif  // RUNTIME_DRIVER_CORALNPU_COMMAND_BUFFER_H_

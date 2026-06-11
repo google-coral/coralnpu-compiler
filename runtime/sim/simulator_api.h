@@ -22,12 +22,12 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif  // __cplusplus
 
 static const uint32_t coralnpu_itcm_start = 0x00000000u;
-static const uint32_t coralnpu_itcm_size = 0x00004000u; // 8 KB
+static const uint32_t coralnpu_itcm_size = 0x00004000u;  // 8 KB
 static const uint32_t coralnpu_dtcm_start = 0x00010000u;
-static const uint32_t coralnpu_dtcm_size = 0x00008000u; // 32 KB
+static const uint32_t coralnpu_dtcm_size = 0x00008000u;  // 32 KB
 
 void simulator_create(void);
 void simulator_load_itcm(uint32_t offset, const void *data, size_t size);
@@ -37,7 +37,7 @@ void simulator_read_dtcm(uint32_t offset, void *data, size_t size);
 void simulator_run(uint32_t start_pc);
 
 #ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
-#endif // RUNTIME_SIM_SIMULATOR_API_H_
+#endif  // RUNTIME_SIM_SIMULATOR_API_H_
