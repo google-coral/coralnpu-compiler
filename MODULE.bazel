@@ -52,11 +52,13 @@ use_repo(
     # "gmp",
     # "mpc",
     # "mpfr",
-    # "nanobind",
+    "nanobind",
     # "pfm",
     # "pybind11",
     # "vulkan_sdk",
 )
+
+inject_repo(llvm_repos_ext, "llvm-raw")
 
 # Configure LLVM using the llvm-raw repo (creates llvm-project)
 llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_configure")
@@ -97,6 +99,11 @@ iree_ext.register_driver(
 )
 
 inject_repo(iree_ext, "llvm-raw")
+
+override_repo(
+    iree_ext,
+    pip = "pip_deps",
+)
 
 use_repo(
     iree_ext,

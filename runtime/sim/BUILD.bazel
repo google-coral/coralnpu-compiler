@@ -21,6 +21,8 @@ package(
     licenses = ["notice"],  # Apache 2.0
 )
 
+exports_files(["libcoralnpu_simulator_mpact.so"])
+
 # Equivalent to the CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" check
 config_setting(
     name = "linux_x86_64",

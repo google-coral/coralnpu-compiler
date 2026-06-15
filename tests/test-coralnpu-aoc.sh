@@ -75,7 +75,6 @@ main() {
   echo
   echo "=== Running IREE Module ==="
 
-
   "${IREE_RUN_MODULE[@]}" \
     --device=local-sync \
     --device=coralnpu \

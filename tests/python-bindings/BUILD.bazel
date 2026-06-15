@@ -1,0 +1,51 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "hal_test",
+    srcs = ["@iree_core//runtime/bindings/python:tests/hal_test.py"],
+    data = [
+        "//runtime/sim:libcoralnpu_simulator_mpact.so",
+    ],
+    env = {
+        "LD_LIBRARY_PATH": "runtime/sim:_main/runtime/sim",
+        "LD_PRELOAD": "libstdc++.so.6",
+    },
+    legacy_create_init = False,
+    main = "@iree_core//runtime/bindings/python:tests/hal_test.py",
+    deps = [
+        "@iree_core//compiler/bindings/python:compiler",
+        "@iree_core//runtime/bindings/python:runtime",
+    ],
+)
+
+py_test(
+    name = "import_test",
+    srcs = ["import_test.py"],
+    data = [
+        "//runtime/sim:libcoralnpu_simulator_mpact.so",
+    ],
+    env = {
+        "LD_LIBRARY_PATH": "runtime/sim:_main/runtime/sim",
+        "LD_PRELOAD": "libstdc++.so.6",
+    },
+    legacy_create_init = False,
+    main = "import_test.py",
+    deps = [
+        "@iree_core//compiler/bindings/python:compiler",
+        "@iree_core//runtime/bindings/python:runtime",
+    ],
+)

@@ -1,0 +1,654 @@
+From 1f53c96b337dc43ee1871d5875b863605792b197 Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Thu, 11 Jun 2026 20:29:51 +0200
+Subject: [PATCH] [bazel] add python binding support
+
+This might be a bit hackish.
+---
+ MODULE.bazel                                  |  10 +-
+ build_tools/bazel/extensions.bzl              |  27 +++
+ build_tools/bazel/iree_python.bzl             |  82 +++++++
+ build_tools/bazel/numpy_configure.bzl         |  28 +++
+ build_tools/bazel/requirements.txt            |   1 +
+ compiler/bindings/python/BUILD.bazel          | 227 ++++++++++++++++++
+ .../iree-dialects/BUILD.bazel                 |   8 +
+ runtime/bindings/python/BUILD.bazel           | 125 ++++++++++
+ tools/BUILD.bazel                             |  10 +
+ 9 files changed, 514 insertions(+), 4 deletions(-)
+ create mode 100644 build_tools/bazel/iree_python.bzl
+ create mode 100644 build_tools/bazel/numpy_configure.bzl
+ create mode 100644 compiler/bindings/python/BUILD.bazel
+ create mode 100644 runtime/bindings/python/BUILD.bazel
+
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 0b623bd5a9..b5a20e9597 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -21,11 +21,11 @@ bazel_dep(name = "rules_python", version = "1.6.3")
+ # Python pip dependencies
+ pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+ pip.parse(
+-    hub_name = "pip",
++    hub_name = "pip_internal",
+     python_version = "3.11",
+     requirements_lock = "//build_tools/bazel:requirements.txt",
+ )
+-use_repo(pip, "pip")
++use_repo(pip, "pip_internal")
+ 
+ bazel_dep(name = "rules_shell", version = "0.6.1")
+ 
+@@ -76,15 +76,17 @@ use_repo(
+     "com_google_googletest",
+     "hsa_runtime_headers",
+     "iree_cuda",
++    "iree_external_drivers",
++    "iree_external_plugins",
+     "llvm-raw",
+     "nccl",
++    "numpy_configure",
++    "pip",
+     "spirv_cross",
+     "stablehlo",
+     "tracy_client",
+     "vulkan_headers",
+     "webgpu_headers",
+-    "iree_external_plugins",
+-    "iree_external_drivers",
+ )
+ 
+ # Configure LLVM using the llvm-raw repo (creates llvm-project)
+diff --git a/build_tools/bazel/extensions.bzl b/build_tools/bazel/extensions.bzl
+index 448b310967..aa1359c0f8 100644
+--- a/build_tools/bazel/extensions.bzl
++++ b/build_tools/bazel/extensions.bzl
+@@ -8,6 +8,7 @@
+ 
+ load("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository", "new_local_repository")
+ load("//build_tools/bazel:workspace.bzl", "cuda_auto_configure")
++load("//build_tools/bazel:numpy_configure.bzl", "numpy_configure")
+ 
+ def _iree_external_plugins_impl(repository_ctx):
+     handle_plugin_ids = "".join(["HANDLE_PLUGIN_ID(%s)\\n" % plugin_id for plugin_id in repository_ctx.attr.plugins])
+@@ -112,6 +113,26 @@ iree_external_drivers = repository_rule(
+     }
+ )
+ 
++def _pip_alias_repository_impl(repository_ctx):
++    target_hub = repository_ctx.attr.target_hub
++    packages = repository_ctx.attr.packages
++
++    build_content = "package(default_visibility = [\"//visibility:public\"])\n\n"
++    for pkg in packages:
++        build_content += "alias(\n    name = \"{pkg}\",\n    actual = \"{target_hub}//{pkg}\",\n)\n\n".format(
++            pkg = pkg,
++            target_hub = target_hub,
++        )
++
++    repository_ctx.file("BUILD.bazel", build_content)
++
++pip_alias_repository = repository_rule(
++    implementation = _pip_alias_repository_impl,
++    attrs = {
++        "target_hub": attr.string(mandatory = True),
++        "packages": attr.string_list(mandatory = True),
++    },
++)
+ 
+ def _iree_extension_impl(module_ctx):
+     """Implementation of the IREE module extension."""
+@@ -124,6 +145,12 @@ def _iree_extension_impl(module_ctx):
+             build_file_content = "# empty",
+             path = "third_party/llvm-project",
+         )
++    numpy_configure(name = "numpy_configure")
++    pip_alias_repository(
++        name = "pip",
++        target_hub = "@pip_internal",
++        packages = ["numpy", "ml_dtypes"],
++    )
+ 
+     maybe_iree_root = module_ctx.path(Label("//:MODULE.bazel")).dirname
+     iree_root = str(maybe_iree_root) if maybe_iree_root else "."
+diff --git a/build_tools/bazel/iree_python.bzl b/build_tools/bazel/iree_python.bzl
+new file mode 100644
+index 0000000000..9ba5c9ce25
+--- /dev/null
++++ b/build_tools/bazel/iree_python.bzl
+@@ -0,0 +1,82 @@
++# Copyright 2026 The IREE Authors
++#
++# Licensed under the Apache License v2.0 with LLVM Exceptions.
++# See https://llvm.org/LICENSE.txt for license information.
++# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++load("@rules_cc//cc:defs.bzl", "cc_binary")
++load("@llvm-project//mlir:tblgen.bzl", "gentbl_filegroup")
++
++def iree_py_extension(name, srcs = [], deps = [], copts = [], **kwargs):
++    """Compiles a C++ Python extension module with RTTI/Exceptions enabled.
++
++    Handles Windows (.pyd) vs. Linux/macOS (.so) naming.
++    """
++    native.cc_binary(
++        name = name + ".so",
++        srcs = srcs,
++        copts = copts + [
++            "-fexceptions",
++            "-frtti",
++        ],
++        features = ["exceptions"],
++        linkshared = True,
++        linkstatic = True,
++        target_compatible_with = select({
++            "@platforms//os:windows": ["@platforms//:incompatible"],
++            "//conditions:default": [],
++        }),
++        deps = deps + [
++            "@nanobind",
++            "@rules_python//python/cc:current_py_cc_headers",
++        ],
++        **kwargs
++    )
++
++    native.cc_binary(
++        name = name + ".pyd",
++        srcs = srcs,
++        copts = copts + ["/EHsc", "/GR"],
++        features = ["exceptions"],
++        linkshared = True,
++        linkstatic = True,
++        target_compatible_with = ["@platforms//os:windows"],
++        deps = deps + [
++            "@nanobind",
++            "@rules_python//python/cc:current_py_cc_headers",
++        ],
++        **kwargs
++    )
++
++    native.filegroup(
++        name = name,
++        srcs = select({
++            "@platforms//os:windows": [":" + name + ".pyd"],
++            "//conditions:default": [":" + name + ".so"],
++        }),
++        visibility = ["//visibility:public"],
++    )
++
++def iree_py_dialect_bindings(name, td_file, dialect_name, gen_enums = True, output_name = None, deps = [], **kwargs):
++    """Generates Python bindings for an IREE dialect from TableGen."""
++    out_base = output_name if output_name else dialect_name
++    tbl_outs = {
++        "iree/compiler/dialects/_" + out_base + "_ops_gen.py": [
++            "-gen-python-op-bindings",
++            "-bind-dialect=" + dialect_name,
++        ],
++    }
++    if gen_enums:
++        tbl_outs["iree/compiler/dialects/_" + out_base + "_enum_gen.py"] = [
++            "-gen-python-enum-bindings",
++            "-bind-dialect=" + dialect_name,
++        ]
++
++    gentbl_filegroup(
++        name = name,
++        tbl_outs = tbl_outs,
++        tblgen = "@llvm-project//mlir:mlir-tblgen",
++        td_file = td_file,
++        deps = deps,
++        **kwargs
++    )
+diff --git a/build_tools/bazel/numpy_configure.bzl b/build_tools/bazel/numpy_configure.bzl
+new file mode 100644
+index 0000000000..94a3ca89c7
+--- /dev/null
++++ b/build_tools/bazel/numpy_configure.bzl
+@@ -0,0 +1,28 @@
++# Copyright 2026 The IREE Authors
++#
++# Licensed under the Apache License v2.0 with LLVM Exceptions.
++# See https://llvm.org/LICENSE.txt for license information.
++# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++def _numpy_configure_impl(repository_ctx):
++    # Run python to get the numpy include path.
++    result = repository_ctx.execute(["python3", "-c", "import numpy; print(numpy.get_include())"])
++    if result.return_code != 0:
++        fail("Failed to get numpy include path: %s" % result.stderr)
++
++    numpy_include = result.stdout.strip()
++    repository_ctx.symlink(numpy_include, "include")
++
++    repository_ctx.file("BUILD", """
++cc_library(
++    name = "numpy_headers",
++    hdrs = glob(["include/numpy/**/*.h"]),
++    includes = ["include"],
++    visibility = ["//visibility:public"],
++)
++""")
++
++numpy_configure = repository_rule(
++    implementation = _numpy_configure_impl,
++    local = True,
++)
+diff --git a/build_tools/bazel/requirements.txt b/build_tools/bazel/requirements.txt
+index 24ce15ab7e..6f269cda44 100644
+--- a/build_tools/bazel/requirements.txt
++++ b/build_tools/bazel/requirements.txt
+@@ -1 +1,2 @@
+ numpy
++ml_dtypes
+diff --git a/compiler/bindings/python/BUILD.bazel b/compiler/bindings/python/BUILD.bazel
+new file mode 100644
+index 0000000000..08e74aebe7
+--- /dev/null
++++ b/compiler/bindings/python/BUILD.bazel
+@@ -0,0 +1,227 @@
++# Copyright 2026 The IREE Authors
++#
++# Licensed under the Apache License v2.0 with LLVM Exceptions.
++# See https://llvm.org/LICENSE.txt for license information.
++# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++load("@rules_python//python:defs.bzl", "py_library")
++load("//build_tools/bazel:iree_python.bzl", "iree_py_dialect_bindings", "iree_py_extension")
++
++package(
++    default_visibility = ["//visibility:public"],
++    licenses = ["notice"],  # Apache 2.0
++)
++
++#===------------------------------------------------------------------------===#
++# Dialect Bindings Generation
++#===------------------------------------------------------------------------===#
++
++iree_py_dialect_bindings(
++    name = "flow_bindings",
++    dialect_name = "flow",
++    td_file = "iree/compiler/dialects/FlowBinding.td",
++    deps = [
++        "//compiler/src/iree/compiler/Dialect/Flow/IR:td_files",
++    ],
++)
++
++iree_py_dialect_bindings(
++    name = "hal_bindings",
++    dialect_name = "hal",
++    td_file = "iree/compiler/dialects/HALBinding.td",
++    deps = [
++        "//compiler/src/iree/compiler/Dialect/HAL/IR:td_files",
++    ],
++)
++
++iree_py_dialect_bindings(
++    name = "stream_bindings",
++    dialect_name = "stream",
++    td_file = "iree/compiler/dialects/StreamBinding.td",
++    deps = [
++        "//compiler/src/iree/compiler/Dialect/Stream/IR:td_files",
++    ],
++)
++
++iree_py_dialect_bindings(
++    name = "util_bindings",
++    dialect_name = "util",
++    td_file = "iree/compiler/dialects/UtilBinding.td",
++    deps = [
++        "//compiler/src/iree/compiler/Dialect/Util/IR:td_files",
++    ],
++)
++
++iree_py_dialect_bindings(
++    name = "vm_bindings",
++    dialect_name = "vm",
++    td_file = "iree/compiler/dialects/VMBinding.td",
++    deps = [
++        "//compiler/src/iree/compiler/Dialect/VM/IR:td_files",
++    ],
++)
++
++iree_py_dialect_bindings(
++    name = "iree_codegen_bindings",
++    dialect_name = "iree_codegen",
++    td_file = "iree/compiler/dialects/IREECodegenBinding.td",
++    deps = [
++        "//compiler/src/iree/compiler/Codegen/Dialect/Codegen/IR:td_files",
++    ],
++)
++
++iree_py_dialect_bindings(
++    name = "iree_gpu_bindings",
++    dialect_name = "iree_gpu",
++    td_file = "iree/compiler/dialects/IREEGPUBinding.td",
++    deps = [
++        "//compiler/src/iree/compiler/Codegen/Dialect/GPU/IR:td_files",
++    ],
++)
++
++iree_py_dialect_bindings(
++    name = "iree_tensor_ext_bindings",
++    dialect_name = "iree_tensor_ext",
++    td_file = "iree/compiler/dialects/TensorExtBinding.td",
++    deps = [
++        "//compiler/src/iree/compiler/Dialect/TensorExt/IR:td_files",
++    ],
++)
++
++iree_py_dialect_bindings(
++    name = "preprocessing_transform_bindings",
++    dialect_name = "transform",
++    gen_enums = False,
++    output_name = "preprocessing_transform",
++    td_file = "iree/compiler/dialects/PreprocessingTransformExtensionsBinding.td",
++    deps = [
++        "//compiler/src/iree/compiler/Preprocessing/TransformExtensions:td_files",
++    ],
++)
++
++iree_py_dialect_bindings(
++    name = "iree_structured_transform_bindings",
++    dialect_name = "transform",
++    gen_enums = False,
++    output_name = "iree_structured_transform",
++    td_file = "//llvm-external-projects/iree-dialects:python/iree/compiler/dialects/IreeStructuredTransformOps.td",
++    deps = [
++        "//llvm-external-projects/iree-dialects:TdFiles",
++    ],
++)
++
++#===------------------------------------------------------------------------===#
++# C++ Extensions
++#===------------------------------------------------------------------------===#
++
++iree_py_extension(
++    name = "_site_initialize_0",
++    srcs = ["IREECompilerRegistration.cpp"],
++    defines = ["MLIR_PYTHON_PACKAGE_PREFIX=iree.compiler."],
++    deps = [
++        "//compiler/src/iree/compiler/API:Impl",
++        "@llvm-project//llvm:Support",
++        "@llvm-project//mlir:MLIRBindingsPythonNanobindHeadersAndDeps",
++    ],
++)
++
++iree_py_extension(
++    name = "_ireeCompilerDialects",
++    srcs = ["IREECompilerDialectsModule.cpp"],
++    defines = ["MLIR_PYTHON_PACKAGE_PREFIX=iree.compiler."],
++    deps = [
++        "//compiler/src/iree/compiler/API:Impl",
++        "@llvm-project//llvm:Support",
++        "@llvm-project//mlir:MLIRBindingsPythonNanobindHeadersAndDeps",
++    ],
++)
++
++iree_py_extension(
++    name = "_ireeDialects",
++    srcs = ["//llvm-external-projects/iree-dialects:python/IREEDialectsModule.cpp"],
++    defines = ["MLIR_PYTHON_PACKAGE_PREFIX=iree.compiler."],
++    deps = [
++        "//llvm-external-projects/iree-dialects:CAPI",
++        "@llvm-project//mlir:CAPIIR",
++        "@llvm-project//mlir:MLIRBindingsPythonNanobindHeadersAndDeps",
++    ],
++)
++
++# Recompile MLIR Core Python Bindings with IREE Prefix
++# MLIR Core defines MLIRBindingsPythonSourceFiles and CAPI targets
++iree_py_extension(
++    name = "_mlir",
++    srcs = [
++        "@llvm-project//mlir:MLIRBindingsPythonSourceFiles",
++        "@llvm-project//mlir:lib/Bindings/Python/MainModule.cpp",
++    ],
++    defines = ["MLIR_PYTHON_PACKAGE_PREFIX=iree.compiler."],
++    deps = [
++        "@llvm-project//mlir:MLIRBindingsPythonCore",
++        "@llvm-project//mlir:MLIRBindingsPythonNanobindHeadersAndDeps",
++    ],
++)
++
++#===------------------------------------------------------------------------===#
++# Python Package Definition
++#===------------------------------------------------------------------------===#
++
++genrule(
++    name = "copy_compiler_libs",
++    srcs = [
++        ":_mlir.so",
++        ":_site_initialize_0.so",
++        ":_ireeCompilerDialects.so",
++        ":_ireeDialects.so",
++        "//tools:iree-compile",
++        "//tools:iree-opt",
++        "//tools:iree-lld",
++        "//tools:iree-link",
++    ],
++    outs = [
++        "iree/compiler/_mlir_libs/_mlir.so",
++        "iree/compiler/_mlir_libs/_site_initialize_0.so",
++        "iree/compiler/_mlir_libs/_ireeCompilerDialects.so",
++        "iree/compiler/_mlir_libs/_ireeDialects.so",
++        "iree/compiler/_mlir_libs/iree-compile",
++        "iree/compiler/_mlir_libs/iree-opt",
++        "iree/compiler/_mlir_libs/iree-lld",
++        "iree/compiler/_mlir_libs/iree-link",
++        "iree/compiler/_mlir_libs/__init__.py",
++    ],
++    cmd = """
++        cp $(location :_mlir.so) $(location iree/compiler/_mlir_libs/_mlir.so)
++        cp $(location :_site_initialize_0.so) $(location iree/compiler/_mlir_libs/_site_initialize_0.so)
++        cp $(location :_ireeCompilerDialects.so) $(location iree/compiler/_mlir_libs/_ireeCompilerDialects.so)
++        cp $(location :_ireeDialects.so) $(location iree/compiler/_mlir_libs/_ireeDialects.so)
++        cp $(location //tools:iree-compile) $(location iree/compiler/_mlir_libs/iree-compile)
++        cp $(location //tools:iree-opt) $(location iree/compiler/_mlir_libs/iree-opt)
++        cp $(location //tools:iree-lld) $(location iree/compiler/_mlir_libs/iree-lld)
++        cp $(location //tools:iree-link) $(location iree/compiler/_mlir_libs/iree-link)
++        touch $(location iree/compiler/_mlir_libs/__init__.py)
++    """,
++)
++
++py_library(
++    name = "compiler",
++    srcs = glob([
++        "iree/compiler/**/*.py",
++    ]),
++    data = [
++        ":copy_compiler_libs",
++        ":flow_bindings",
++        ":hal_bindings",
++        ":iree_codegen_bindings",
++        ":iree_gpu_bindings",
++        ":iree_structured_transform_bindings",
++        ":iree_tensor_ext_bindings",
++        ":preprocessing_transform_bindings",
++        ":stream_bindings",
++        ":util_bindings",
++        ":vm_bindings",
++    ],
++    imports = ["."],
++    deps = [
++        "//llvm-external-projects/iree-dialects:python_bindings",
++    ],
++)
+diff --git a/llvm-external-projects/iree-dialects/BUILD.bazel b/llvm-external-projects/iree-dialects/BUILD.bazel
+index 2dd253482e..ecb1c25815 100644
+--- a/llvm-external-projects/iree-dialects/BUILD.bazel
++++ b/llvm-external-projects/iree-dialects/BUILD.bazel
+@@ -1,5 +1,6 @@
+ load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
++load("@rules_python//python:defs.bzl", "py_library")
+ 
+ package(
+     default_visibility = ["//visibility:public"],
+@@ -21,6 +22,13 @@ filegroup(
+     srcs = glob(["python/iree/compiler/dialects/**/*.py"]),
+ )
+ 
++py_library(
++    name = "python_bindings",
++    srcs = glob(["python/iree/compiler/**/*.py"]),
++    imports = ["python"],
++    visibility = ["//visibility:public"],
++)
++
+ ################################################################################
+ # Tablegen exports
+ ################################################################################
+diff --git a/runtime/bindings/python/BUILD.bazel b/runtime/bindings/python/BUILD.bazel
+new file mode 100644
+index 0000000000..92e01303c3
+--- /dev/null
++++ b/runtime/bindings/python/BUILD.bazel
+@@ -0,0 +1,125 @@
++# Copyright 2026 The IREE Authors
++#
++# Licensed under the Apache License v2.0 with LLVM Exceptions.
++# See https://llvm.org/LICENSE.txt for license information.
++# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++load("@rules_python//python:defs.bzl", "py_library", "py_test")
++load("//build_tools/bazel:iree_python.bzl", "iree_py_extension")
++
++package(
++    default_visibility = ["//visibility:public"],
++    licenses = ["notice"],  # Apache 2.0
++)
++
++iree_py_extension(
++    name = "_runtime",
++    srcs = [
++        "binding.h",
++        "buffer_interop.h",  # Included this in case it's needed, wait! Let's check if it was in the CMake source list.
++        "initialize_module.cc",
++        "invoke.cc",
++        "invoke.h",
++        "io.cc",
++        "io.h",
++        "hal.cc",
++        "hal.h",
++        "local_dlpack.h",
++        "loop.cc",
++        "loop.h",
++        "numpy_interop.cc",
++        "numpy_interop.h",
++        "py_module.cc",
++        "py_module.h",
++        "status_utils.cc",
++        "status_utils.h",
++        "vm.cc",
++        "vm.h",
++    ],
++    deps = [
++        "//runtime/src/iree/base",
++        "//runtime/src/iree/base/internal:flags",
++        "//runtime/src/iree/base/internal:path",
++        "//runtime/src/iree/hal",
++        "//runtime/src/iree/hal/drivers",
++        "//runtime/src/iree/hal/utils:allocators",
++        "//runtime/src/iree/io:file_handle",
++        "//runtime/src/iree/io:parameter_index",
++        "//runtime/src/iree/io:parameter_index_provider",
++        "//runtime/src/iree/io:parameter_provider",
++        "//runtime/src/iree/io:scope_map",
++        "//runtime/src/iree/io/formats/irpa",
++        "//runtime/src/iree/io/formats:parser_registry",
++        "//runtime/src/iree/modules/hal",
++        "//runtime/src/iree/modules/hal:debugging",
++        "//runtime/src/iree/modules/hal:types",
++        "//runtime/src/iree/modules/io/parameters",
++        "//runtime/src/iree/schemas:parameter_archive",
++        "//runtime/src/iree/tooling:device_util",
++        "//runtime/src/iree/tooling/modules",
++        "//runtime/src/iree/vm",
++        "//runtime/src/iree/vm/bytecode:module",
++        "@numpy_configure//:numpy_headers",
++    ],
++)
++
++genrule(
++    name = "copy_runtime_libs",
++    srcs = [
++        ":_runtime.so",
++        "//tools:iree-run-module",
++        "//tools:iree-cpuinfo",
++        "//tools:iree-benchmark-executable",
++        "//tools:iree-benchmark-module",
++        "//tools:iree-convert-parameters",
++        "//tools:iree-create-parameters",
++        "//tools:iree-dump-module",
++        "//tools:iree-dump-parameters",
++        "//build_tools/embed_data:iree-c-embed-data",
++        "@com_github_dvidelabs_flatcc//:flatcc",
++    ],
++    outs = [
++        "iree/_runtime_libs/_runtime.so",
++        "iree/_runtime_libs/iree-run-module",
++        "iree/_runtime_libs/iree-cpuinfo",
++        "iree/_runtime_libs/iree-benchmark-executable",
++        "iree/_runtime_libs/iree-benchmark-module",
++        "iree/_runtime_libs/iree-convert-parameters",
++        "iree/_runtime_libs/iree-create-parameters",
++        "iree/_runtime_libs/iree-dump-module",
++        "iree/_runtime_libs/iree-dump-parameters",
++        "iree/_runtime_libs/iree-c-embed-data",
++        "iree/_runtime_libs/iree-flatcc-cli",
++        "iree/_runtime_libs/__init__.py",
++    ],
++    cmd = """
++        cp $(location :_runtime.so) $(location iree/_runtime_libs/_runtime.so)
++        cp $(location //tools:iree-run-module) $(location iree/_runtime_libs/iree-run-module)
++        cp $(location //tools:iree-cpuinfo) $(location iree/_runtime_libs/iree-cpuinfo)
++        cp $(location //tools:iree-benchmark-executable) $(location iree/_runtime_libs/iree-benchmark-executable)
++        cp $(location //tools:iree-benchmark-module) $(location iree/_runtime_libs/iree-benchmark-module)
++        cp $(location //tools:iree-convert-parameters) $(location iree/_runtime_libs/iree-convert-parameters)
++        cp $(location //tools:iree-create-parameters) $(location iree/_runtime_libs/iree-create-parameters)
++        cp $(location //tools:iree-dump-module) $(location iree/_runtime_libs/iree-dump-module)
++        cp $(location //tools:iree-dump-parameters) $(location iree/_runtime_libs/iree-dump-parameters)
++        cp $(location //build_tools/embed_data:iree-c-embed-data) $(location iree/_runtime_libs/iree-c-embed-data)
++        cp $(location @com_github_dvidelabs_flatcc//:flatcc) $(location iree/_runtime_libs/iree-flatcc-cli)
++        touch $(location iree/_runtime_libs/__init__.py)
++    """,
++)
++
++py_library(
++    name = "runtime",
++    srcs = glob([
++        "iree/runtime/**/*.py",
++        "iree/_runtime/**/*.py",
++    ]),
++    data = [":copy_runtime_libs"] + glob(["iree/runtime/**/*.pyi"]),
++    imports = ["."],
++    deps = [
++        "@pip//ml_dtypes",
++        "@pip//numpy",
++    ],
++)
++
++exports_files(glob(["tests/**/*.py"]))
+diff --git a/tools/BUILD.bazel b/tools/BUILD.bazel
+index d12121651b..171dc12fc9 100644
+--- a/tools/BUILD.bazel
++++ b/tools/BUILD.bazel
+@@ -244,6 +244,16 @@ iree_compiler_cc_binary(
+     ],
+ )
+ 
++iree_compiler_cc_binary(
++    name = "iree-lld",
++    srcs = ["iree-lld-main.cc"],
++    tags = ["hostonly"],
++    deps = [
++        "//compiler/bindings/c:headers",
++        "//compiler/src/iree/compiler/API:Impl",
++    ],
++)
++
+ iree_compiler_cc_binary(
+     name = "iree-link",
+     srcs = ["iree-link-main.cc"],
+-- 
+2.54.0.1136.gdb2ca164c4-goog
+

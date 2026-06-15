@@ -1,0 +1,32 @@
+From 463fdc215da7ad5accf55a7fc4e1b9e217e3dcce Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Thu, 11 Jun 2026 20:42:27 +0200
+Subject: [PATCH] [bazel] for python bindings
+
+---
+ utils/bazel/third_party_build/nanobind.BUILD | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/utils/bazel/third_party_build/nanobind.BUILD b/utils/bazel/third_party_build/nanobind.BUILD
+index 262d14a040b8..5634d6d89b78 100644
+--- a/utils/bazel/third_party_build/nanobind.BUILD
++++ b/utils/bazel/third_party_build/nanobind.BUILD
+@@ -14,9 +14,15 @@ cc_library(
+     textual_hdrs = glob(
+         [
+             "include/**/*.h",
++            "include/**/*.inl",
+             "src/*.h",
+         ],
+     ),
++    copts = [
++        "-fexceptions",
++        "-frtti",
++    ],
++    features = ["exceptions"],
+     visibility = ["//visibility:public"],
+     deps = [
+         "@robin_map",
+-- 
+2.54.0.1136.gdb2ca164c4-goog
+
