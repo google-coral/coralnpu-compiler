@@ -1,6 +1,40 @@
 # CoralNPU Compiler
 
-An IREE compiler plugin for Coral NPU 
+An IREE compiler plugin for Coral NPU
+
+## Cloning
+
+The project includes a few submodules which need to be cloned as well.
+To clone the project and its submodules (**very big**, read ahead):
+
+```shell
+git clone --recurse-submodules sso://spacebeaker/coralnpu-compiler
+```
+
+If you already cloned without `--recurse-submodules` (**very big**, read ahead):
+
+```shell
+git submodule update --init --recursive sso://spacebeaker/coralnpu-compiler
+```
+
+To reduce the size of submodules (especially `third_party/llvm-project`) you can
+add `--shallow-submodules` to `git clone`, or `--depth=1` to `git submodule update`.
+These will create a shallow clone of the submodules, with a history truncated to 1 revision.
+
+### Patching submodules
+
+*This is a temporary solution; we should have git forks of iree and llvm-project,
+that we can patch normally.*
+
+At the root of the project there are patches for `third_part/iree` and
+`third_part/llvm-project`.
+Those can be applied using the script `scripts/patch-third_party.sh`:
+
+```shell
+./scripts/patche-third_party.sh --restore-first all
+```
+
+See the `--help` option for more details.
 
 ## Prerequisites
 

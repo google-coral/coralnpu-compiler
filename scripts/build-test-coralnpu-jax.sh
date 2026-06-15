@@ -6,32 +6,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-echo "=== Setting up Repositories ==="
-
-# Helper function to apply a patch only if it hasn't been applied yet
-apply_patch() {
-  local target_repo="$1"
-  local patch_file="${ROOT_DIR}/$2"
-
-  echo "Checking patch: $2 -> $target_repo"
-  # --check will fail if the patch is already applied or has conflicts
-  if git -C "${target_repo}" apply --check "${patch_file}" &>/dev/null; then
-    git -C "${target_repo}" apply "${patch_file}"
-    echo "  [SUCCESS] Patch applied."
-  else
-    echo "  [SKIPPED] Patch already applied or has conflicts."
-  fi
-}
-
-# Apply all patches
-apply_patch "third_party/iree" "iree-v3.10.0-0001-Bazel-fix-bazel-when-used-as-submodule.patch"
-apply_patch "third_party/iree" "iree-v3.10.0-0002-Bazel-add-support-for-out-of-tree-plugins.patch"
-apply_patch "third_party/iree" "iree-v3.10.0-0003-fix-iree-compile-for-jax-when-used-as-submodule.patch"
-apply_patch "third_party/iree" "iree-v3.10.0-0004-Bazel-add-support-for-out-of-tree-drivers.patch"
-apply_patch "third_party/iree" "iree-v3.10.0-0005-Flow-propagate-the-stream.affinity-to-the-parent-dis.patch"
-apply_patch "third_party/llvm-project" "llvm-project-fix-for-jax-when-used-as-submodule.patch"
-
-echo
 echo "=== Building Targets ==="
 # Combine bazel targets to save Bazel analysis time
 bazel build --config=dev \
