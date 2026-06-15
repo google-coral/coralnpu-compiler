@@ -1,3 +1,6 @@
-yapf
-numpy
+gemma
+jax
+jaxlib
 ml_dtypes
+numpy
+yapf

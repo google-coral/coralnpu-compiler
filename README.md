@@ -56,14 +56,17 @@ sudo apt install git bash bazel-8.6.0 clang-19 shfmt cmake-format
 In-tree dependencies are located in the [third_party](third_party) directory.
 
 Iree requires a specific commit of llvm-project. We have it checked out in
-[third_party/llvm-project](third_party/llvm-project). You can check the
-required commit hash by inspecting
+[third_party/llvm-project](third_party/llvm-project).
+If you want to use a different revision of IREE, after checking it out in
+[third_party/iree](third_party/iree), you can check the required llvm-project
+commit hash by inspecting
 [third_party/iree/third_party/llvm-project](third_party/iree/third_party/llvm-project)
-(e.g. `git -C third_party/iree/third_party/llvm-project/ rev-parse HEAD`).
+(e.g. `git -C third_party/iree/third_party/llvm-project/ rev-parse HEAD`), and
+then checking it out in [third_party/llvm-project](third_party/llvm-project).
 
 ## Build - bazel
 
-We use bazel. The version has to be backward compatible with IREE's requirements
+Bazel's version has to be backward compatible with IREE's requirements
 (i.e. [third_party/iree/.bazelversion](third_party/iree/.bazelversion)).
 
 ### Development build (initially long; incremental builds fast)
@@ -96,6 +99,15 @@ bazel run --config={dev|release} @iree_core//tools:iree-compile -- [iree-compile
 ```
 
 ## Build - cmake
+
+Create a python venv with the required dependnecies:
+
+```shell
+python3.12 -m venv venv
+. venv/bin/activate
+pip install -r requirements_lock.txt
+# if the above failes, try it with requirements.txt
+```
 
 Set `BUILD_DIR` to some directory where you want the build results to be.
 For example `BUILD_DIR=../coralnpu-compiler-build`.
