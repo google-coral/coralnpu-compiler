@@ -22,6 +22,7 @@ Targets:
   all                  Patch both iree and llvm-project submodules
   iree                 Patch only the iree submodule
   llvm-project         Patch only the llvm-project submodule
+  stablehlo            Patch only the stablehlo submodule
 EOF
 }
 
@@ -113,7 +114,8 @@ main() {
   case "$1" in
     all | iree) patch_submodule "third_party/iree" "iree-*.patch" ;;&
     all | llvm-project) patch_submodule "third_party/llvm-project" "llvm-project-*.patch" ;;&
-    all | iree | llvm-project) ;;
+    all | stablehlo) patch_submodule "third_party/iree/third_party/stablehlo" "stablehlo-*.patch" ;;&
+    all | iree | llvm-project | stablehlo) ;;
     *)
       echo "Error: $0: unrecognized option: $1" >&2
       usage >&2

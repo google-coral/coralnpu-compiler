@@ -1,0 +1,41 @@
+From 92908b6c3d29c690b43acea7045ad2a12e91e9b7 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jelle=20Sch=C3=BChmacher?= <schuehmacher@roofline.ai>
+Date: Mon, 2 Mar 2026 19:07:41 +0100
+Subject: [PATCH] fix: convolution conversion with uniform strides/dilations
+ fails (#2904)
+
+Conversion of stablehlo.convolution to linalg with uniform
+strides/dilations fails
+
+As reported in iree-org/iree#23545, lowering stablehlo convolutions
+fails due to a wrong shape for the strides and dilations in case of a
+default dilation or stride.
+
+Signed-off-by: Jelle Schuhmacher <schuehmacher@roofline.ai>
+---
+ .../linalg/transforms/StablehloToLinalgConvolution.cpp     | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/stablehlo/conversions/linalg/transforms/StablehloToLinalgConvolution.cpp b/stablehlo/conversions/linalg/transforms/StablehloToLinalgConvolution.cpp
+index ccbf43fb..3755f5c8 100644
+--- a/stablehlo/conversions/linalg/transforms/StablehloToLinalgConvolution.cpp
++++ b/stablehlo/conversions/linalg/transforms/StablehloToLinalgConvolution.cpp
+@@ -250,10 +250,13 @@ struct NormalConvolutionOpConversion final
+     linalg::LinalgOp res;
+     auto s = op.getWindowStrides();
+     Attribute strides =
+-        s ? rewriter.getI64TensorAttr(*s) : rewriter.getI64TensorAttr({1});
++        s ? rewriter.getI64TensorAttr(*s)
++          : rewriter.getI64TensorAttr(SmallVector<int64_t>(rank - 2, 1));
++
+     auto d = op.getRhsDilation();
+     Attribute dilations =
+-        d ? rewriter.getI64TensorAttr(*d) : rewriter.getI64TensorAttr({1});
++        d ? rewriter.getI64TensorAttr(*d)
++          : rewriter.getI64TensorAttr(SmallVector<int64_t>(rank - 2, 1));
+ 
+     // Apply padding and input dilation.
+     llvm::SmallVector<int64_t> spatialDimMapping(rank - 2);
+-- 
+2.54.0
+

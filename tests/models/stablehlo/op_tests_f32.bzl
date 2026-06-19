@@ -55,6 +55,7 @@ def stablehlo_op_tests_f32(name = "stablehlo_op_f32_tests", check_mlir_files = N
     op_tests_f32(name = "convolution_rank2_f32", instances = ["(4,8)(8,4)", "(120,256)(256,300)", "(300,100)(100,450)"], test = "convolution_rank2_f32.mlir")
     op_tests_f32(name = "convolution_rank3_f32", instances = ["(1,8,3)(3,3,16)", "(2,120,3)(5,3,32)", "(1,300,3)(3,3,8)"], test = "convolution_rank3_f32.mlir")
     op_tests_f32(name = "convolution_rank4_f32", instances = ["(1,8,8,3)(3,3,3,16)"], test = "convolution_rank4_f32.mlir")
+    op_tests_f32(name = "convolution_rank4_f32_default_dilation", instances = ["(1,4,4,3)(3,3,3,8)"], test = "convolution_rank4_f32_default_dilation.mlir")
     op_tests_f32(name = "divide_rank1_f32", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "divide_rank1_f32.mlir")
     op_tests_f32(name = "divide_rank2_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "divide_rank2_f32.mlir")
     op_tests_f32(name = "divide_rank3_f32", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "divide_rank3_f32.mlir")
