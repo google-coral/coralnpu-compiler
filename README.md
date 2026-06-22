@@ -42,13 +42,13 @@ We try to use bazel as much as possible to manage dependencies. The following
 are prerequisites that are not handled by bazel:
 - git
 - Bash
-- Bazel 8.5.1
+- Bazel 8.6.0
 - clang 19
 - shfmt, for bash scripts formatting (https://github.com/mvdan/sh)
 
 In a Debian based linux distro you can get all of the above like this:
 ```shell
-sudo apt install git bash bazel-8.5.1 clang-19 shfmt cmake-format
+sudo apt install git bash bazel-8.6.0 clang-19 shfmt cmake-format
 ```
 
 ## Dependencies
