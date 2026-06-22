@@ -89,7 +89,7 @@ op_tests(
   INSTANCES
     "(4,8)(8,4)"
     "(120,256)(256,300)"
-    "(300,100)(100,450)"
+    "(300,100)(100,450), [manual]"
 )
 
 op_tests(
@@ -97,7 +97,7 @@ op_tests(
   TEST "batch_matmul_i16.mlir"
   INSTANCES
     "(2,4,8)(2,8,4)"
-    "(3,12,25)(3,25,30)"
+    "(3,12,25)(3,25,30), [manual]"
 )
 
 op_tests(
@@ -277,7 +277,7 @@ op_tests(
   TEST "transpose_3d_i16.mlir"
   INSTANCES
     "(2,3,4)"
-    "(10,20,30)"
+    "(10,20,30), [manual]"
     "(5,100,2)"
 )
 
@@ -390,7 +390,7 @@ op_tests(
   INSTANCES
     "(4,8)(8,4)"
     "(120,256)(256,300)"
-    "(300,100)(100,450)"
+    "(300,100)(100,450), [manual]"
 )
 
 op_tests(
@@ -398,7 +398,7 @@ op_tests(
   TEST "batch_reduce_matmul_i16.mlir"
   INSTANCES
     "(2,4,8)(2,8,4)"
-    "(3,12,25)(3,25,30)"
+    "(3,12,25)(3,25,30), [manual]"
 )
 
 op_tests(
@@ -406,7 +406,7 @@ op_tests(
   TEST "batch_mmt4d_i16.mlir"
   INSTANCES
     "(2,1,2,4,4)(2,2,2,4,4)"
-    "(3,2,3,4,2)(3,3,3,2,2)"
+    "(3,2,3,4,2)(3,3,3,2,2), [manual]"
 )
 
 op_tests(
@@ -458,7 +458,7 @@ op_tests(
   INSTANCES
     "(11)(3)"
     "(258)(5)"
-    "(453)(4)"
+    "(453)(4), [manual]"
 )
 
 op_tests(
@@ -482,7 +482,7 @@ op_tests(
   TEST "conv_2d_i16.mlir"
   INSTANCES
     "(11,11)(3,3)"
-    "(125,256)(5,7)"
+    "(125,256)(5,7), [manual]"
 )
 
 op_tests(

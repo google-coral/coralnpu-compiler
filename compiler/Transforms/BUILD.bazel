@@ -35,6 +35,7 @@ cc_library(
     srcs = [
         "CoralNPUAffinityAnnotation.cpp",
         "CoralNPUDumpAffinityExecutionProfile.cpp",
+        "CoralNPUTileSizeSelection.cpp",
         "Passes.cpp",
     ],
     hdrs = [
@@ -43,14 +44,23 @@ cc_library(
     ],
     deps = [
         ":PassesIncGen",
+        "@iree_core//compiler/src/iree/compiler/Codegen/Dialect/CPU/IR:IREECPUDialect",
+        "@iree_core//compiler/src/iree/compiler/Codegen/Dialect/Codegen/IR:IREECodegenDialect",
+        "@iree_core//compiler/src/iree/compiler/Codegen/Utils",
         "@iree_core//compiler/src/iree/compiler/Dialect/HAL/Analysis",
         "@iree_core//compiler/src/iree/compiler/Dialect/HAL/IR",
         "@iree_core//compiler/src/iree/compiler/Dialect/Stream/IR",
         "@iree_core//compiler/src/iree/compiler/Dialect/TensorExt/IR",
         "@iree_core//compiler/src/iree/compiler/Dialect/Util/IR",
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:AffineDialect",
+        "@llvm-project//mlir:DialectUtils",
+        "@llvm-project//mlir:FunctionInterfaces",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:LinalgDialect",
+        "@llvm-project//mlir:LinalgUtils",
         "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TilingInterface",
     ],
 )

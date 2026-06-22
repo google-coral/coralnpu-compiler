@@ -63,5 +63,66 @@ def CoralNPUDumpAffinityExecutionProfile : Pass<"coralnpu-dump-affinity-executio
   ];
 }
 
+def CoralNPUTileSizeSelectionRegister : InterfacePass<"coralnpu-tile-size-selection-register", "mlir::FunctionOpInterface"> {
+  let summary = "Selects register-level tile sizes for CoralNPU operations";
+  let description = [{
+    This pass determines the optimal register-level tile sizes for CoralNPU.
+    It resolves target-specific register alignments (vector width, unroll factors)
+    and reduction alignments to ensure efficient vectorization and unrolling.
+  }];
+  let constructor = [{
+    ::mlir::coralnpu_compiler::createCoralNPUTileSizeSelectionRegisterPass()
+  }];
+  let options = [
+    Option<"numVectorRegisters", "num-vector-registers", "int",
+           /*default=*/"32",
+           "Number of vector registers.">,
+    Option<"vectorRegisterWidthBits", "vector-register-width-bits", "int",
+           /*default=*/"0",
+           "Vector register width in bits (0 for auto-detect from target).">,
+    Option<"vectorAlignment", "vector-alignment", "int",
+           /*default=*/"0",
+           "Alignment for vector parallel loops (0 for auto).">,
+    Option<"unrollAlignment", "unroll-alignment", "int",
+           /*default=*/"0",
+           "Alignment for unrolled parallel loops (0 for auto).">,
+    Option<"reductionAlignment", "reduction-alignment", "int",
+           /*default=*/"1",
+           "Alignment for reduction loops.">,
+    Option<"parallelAlignment", "parallel-alignment", "int",
+           /*default=*/"0",
+           "Alignment for generic parallel loops (0 for auto).">,
+  ];
+}
+
+def CoralNPUTileSizeSelectionDTCM : InterfacePass<"coralnpu-tile-size-selection-dtcm", "mlir::FunctionOpInterface"> {
+  let summary = "Selects DTCM-level tile sizes for CoralNPU operations";
+  let description = [{
+    This pass determines the optimal DTCM-level tile sizes for CoralNPU.
+    It uses a footprint estimation model to iteratively shrink the tile sizes
+    until the estimated working memory footprint fits within the DTCM budget,
+    using register tile sizes as alignment constraints.
+  }];
+  let constructor = [{
+    ::mlir::coralnpu_compiler::createCoralNPUTileSizeSelectionDTCMPass()
+  }];
+  let options = [
+    Option<"dtcmSizeKb", "dtcm-size-kb", "int",
+           /*default=*/"8",
+           "Size of the DTCM in KB.">,
+  ];
+}
+
+def CoralNPUTileSizeSelectionWorkgroup : InterfacePass<"coralnpu-tile-size-selection-workgroup", "mlir::FunctionOpInterface"> {
+  let summary = "Selects workgroup-level tile sizes for CoralNPU operations";
+  let description = [{
+    This pass determines the workgroup-level tile sizes for CoralNPU,
+    typically matching the DTCM parallel tile sizes.
+  }];
+  let constructor = [{
+    ::mlir::coralnpu_compiler::createCoralNPUTileSizeSelectionWorkgroupPass()
+  }];
+}
+
 #endif // IREE_CORALNPU_PASSES
 

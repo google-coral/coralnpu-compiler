@@ -16,6 +16,7 @@
 #define COMPILER_TRANSFORMS_PASSES_H_
 
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
 
 namespace mlir::coralnpu_compiler {
@@ -43,6 +44,21 @@ createCoralNPUDumpAffinityExecutionProfilePass();
 std::unique_ptr<OperationPass<ModuleOp>>
 createCoralNPUDumpAffinityExecutionProfilePass(
     CoralNPUDumpAffinityExecutionProfileOptions options);
+
+std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
+createCoralNPUTileSizeSelectionRegisterPass();
+std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
+createCoralNPUTileSizeSelectionRegisterPass(
+    CoralNPUTileSizeSelectionRegisterOptions options);
+
+std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
+createCoralNPUTileSizeSelectionDTCMPass();
+std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
+createCoralNPUTileSizeSelectionDTCMPass(
+    CoralNPUTileSizeSelectionDTCMOptions options);
+
+std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
+createCoralNPUTileSizeSelectionWorkgroupPass();
 
 }  // namespace mlir::coralnpu_compiler
 

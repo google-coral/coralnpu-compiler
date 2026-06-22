@@ -48,12 +48,13 @@ are prerequisites that are not handled by bazel/cmake:
 - Bash >= 4.0
 - Bazel 8.6.0
 - clang 19
+- lld 19
 - cmake >= 3.21
 - shfmt, for bash scripts formatting (https://github.com/mvdan/sh)
 
 In a Debian based linux distro you can get all of the above like this:
 ```shell
-sudo apt install git bash bazel-8.6.0 clang-19 shfmt cmake
+sudo apt install git bash bazel-8.6.0 clang-19 lld-19 shfmt cmake
 ```
 
 ## Dependencies

@@ -40,6 +40,15 @@ class OpPassManager;
 namespace mlir::coralnpu_compiler {
 
 struct CoralNPUOptions {
+  // CoralNPU specific options:
+  int dtcmSizeKb = 8;
+  int numVectorRegisters = 32;
+  int tileParallelAlignment = 0;
+  int tileVectorAlignment = 0;
+  int tileUnrollAlignment = 0;
+  int tileReductionAlignment = 1;
+
+  // LLVMCPU options:
   std::string targetABI = "ilp32";
   std::string targetCPUFeatures = "+m,+f,+zvl128b,+zve32f";
   bool linkEmbedded = true;
@@ -69,7 +78,34 @@ struct CoralNPUOptions {
     binder.opt<bool>("coralnpu-debug-symbols", debugSymbols,
                      llvm::cl::cat(category),
                      llvm::cl::desc("Generate and embed debug information"));
+    binder.opt<int>("coralnpu-dtcm-size-kb", dtcmSizeKb,
+                    llvm::cl::cat(category),
+                    llvm::cl::desc("Size of the DTCM in KB (default: 8)"));
+    binder.opt<int>("coralnpu-num-vector-registers", numVectorRegisters,
+                    llvm::cl::cat(category),
+                    llvm::cl::desc("Number of vector registers (default: 32)"));
+    binder.opt<int>(
+        "coralnpu-tile-vector-alignment", tileVectorAlignment,
+        llvm::cl::cat(category),
+        llvm::cl::desc(
+            "Tile alignment for vector parallel loops (0 for auto)"));
+    binder.opt<int>(
+        "coralnpu-tile-unroll-alignment", tileUnrollAlignment,
+        llvm::cl::cat(category),
+        llvm::cl::desc(
+            "Tile alignment for unrolled parallel loops (0 for auto)"));
+    binder.opt<int>(
+        "coralnpu-tile-reduction-alignment", tileReductionAlignment,
+        llvm::cl::cat(category),
+        llvm::cl::desc("Tile alignment for reduction loops (default: 1)"));
+    binder.opt<int>(
+        "coralnpu-tile-parallel-alignment", tileParallelAlignment,
+        llvm::cl::cat(category),
+        llvm::cl::desc(
+            "Tile alignment for generic parallel loops (0 for auto)"));
   }
+
+  LogicalResult validate(MLIRContext *context = nullptr) const;
 };
 
 class CoralNPUTargetBackend final
@@ -127,6 +163,7 @@ class CoralNPUTargetBackend final
       iree_compiler::IREE::HAL::LinkerTool *linkerTool);
 
   iree_compiler::IREE::HAL::LLVMTargetOptions defaultOptions_;
+  CoralNPUOptions options_;
 };
 
 }  // namespace mlir::coralnpu_compiler

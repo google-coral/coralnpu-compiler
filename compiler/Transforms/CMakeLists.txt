@@ -31,20 +31,28 @@ iree_cc_library(
   SRCS
     "CoralNPUAffinityAnnotation.cpp"
     "CoralNPUDumpAffinityExecutionProfile.cpp"
+    "CoralNPUTileSizeSelection.cpp"
     "Passes.cpp"
   INCLUDES
     "${CMAKE_SOURCE_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}"
   DEPS
     ::PassesIncGen
+    iree::compiler::Codegen::Dialect::CPU::IR::IREECPUDialect
+    iree::compiler::Codegen::Dialect::Codegen::IR::IREECodegenDialect
+    iree::compiler::Codegen::Utils
     iree::compiler::Dialect::HAL::Analysis
     iree::compiler::Dialect::HAL::IR
     iree::compiler::Dialect::Stream::IR
     iree::compiler::Dialect::TensorExt::IR
     iree::compiler::Dialect::Util::IR
     LLVMSupport
+    MLIRAffineDialect
+    MLIRFunctionInterfaces
     MLIRIR
     MLIRLinalgDialect
+    MLIRLinalgUtils
     MLIRPass
+    MLIRTilingInterface
   PUBLIC
 )

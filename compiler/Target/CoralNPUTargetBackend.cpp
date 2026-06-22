@@ -15,6 +15,7 @@
 #include "compiler/Target/CoralNPUTargetBackend.h"
 
 #include "compiler/Target/CoralNPULinkerTool.h"
+#include "compiler/Transforms/Passes.h"
 
 // IREE headers
 #include "compiler/plugins/target/LLVMCPU/Builtins/Device.h"
@@ -36,6 +37,7 @@
 #include "iree/compiler/Utils/ModuleUtils.h"
 
 // MLIR headers
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/PDL/IR/PDL.h"
 #include "mlir/Dialect/PDLInterp/IR/PDLInterp.h"
@@ -154,7 +156,42 @@ static constexpr char kQueryFunctionName[] =
 
 }  // namespace
 
-CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options) {
+LogicalResult CoralNPUOptions::validate(MLIRContext *context) const {
+  Location loc = context ? UnknownLoc::get(context) : UnknownLoc::get(nullptr);
+  if (dtcmSizeKb <= 0) {
+    return emitError(loc) << "coralnpu-dtcm-size-kb must be positive, got "
+                          << dtcmSizeKb;
+  }
+  if (numVectorRegisters <= 0) {
+    return emitError(loc)
+           << "coralnpu-num-vector-registers must be positive, got "
+           << numVectorRegisters;
+  }
+  if (tileVectorAlignment < 0) {
+    return emitError(loc)
+           << "coralnpu-tile-vector-alignment must be non-negative, got "
+           << tileVectorAlignment;
+  }
+  if (tileUnrollAlignment < 0) {
+    return emitError(loc)
+           << "coralnpu-tile-unroll-alignment must be non-negative, got "
+           << tileUnrollAlignment;
+  }
+  if (tileReductionAlignment <= 0) {
+    return emitError(loc)
+           << "coralnpu-tile-reduction-alignment must be positive, got "
+           << tileReductionAlignment;
+  }
+  if (tileParallelAlignment < 0) {
+    return emitError(loc)
+           << "coralnpu-tile-parallel-alignment must be non-negative, got "
+           << tileParallelAlignment;
+  }
+  return success();
+}
+
+CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options)
+    : options_(options) {
   IREE::HAL::LLVMCPUTargetCLOptions clOptions;
 
   clOptions.targetTriple = "riscv32";
@@ -235,6 +272,26 @@ void CoralNPUTargetBackend::getDependentDialects(
 
 void CoralNPUTargetBackend::buildConfigurationPassPipeline(
     IREE::HAL::ExecutableTargetAttr targetAttr, OpPassManager &passManager) {
+  CoralNPUTileSizeSelectionRegisterOptions registerOptions;
+  registerOptions.numVectorRegisters = options_.numVectorRegisters;
+  registerOptions.vectorAlignment = options_.tileVectorAlignment;
+  registerOptions.unrollAlignment = options_.tileUnrollAlignment;
+  registerOptions.reductionAlignment = options_.tileReductionAlignment;
+  registerOptions.parallelAlignment = options_.tileParallelAlignment;
+
+  OpPassManager &funcPassManager =
+      passManager.nest<ModuleOp>().nest<func::FuncOp>();
+
+  funcPassManager.addPass(
+      createCoralNPUTileSizeSelectionRegisterPass(registerOptions));
+
+  CoralNPUTileSizeSelectionDTCMOptions dtcmOptions;
+  dtcmOptions.dtcmSizeKb = options_.dtcmSizeKb;
+
+  funcPassManager.addPass(createCoralNPUTileSizeSelectionDTCMPass(dtcmOptions));
+
+  funcPassManager.addPass(createCoralNPUTileSizeSelectionWorkgroupPass());
+
   buildLLVMCPUCodegenConfigurationPassPipeline(passManager);
 }
 

@@ -92,6 +92,9 @@ struct CoralNPUSession
 
   LogicalResult onActivate() override {
     LLVM_DEBUG(llvm::dbgs() << "Coral plugin activated\n");
+    if (failed(options.validate(context))) {
+      return failure();
+    }
     return success();
   }
 

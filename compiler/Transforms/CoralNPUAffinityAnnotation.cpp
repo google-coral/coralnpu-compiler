@@ -143,6 +143,13 @@ struct CoralNPUAffinityAnnotationPass
     ModuleOp moduleOp = getOperation();
     MLIRContext *context = &getContext();
 
+    if (ioMinThresholdBytes < 0) {
+      moduleOp.emitError("io-min-threshold-bytes must be non-negative, got ")
+          << ioMinThresholdBytes;
+      signalPassFailure();
+      return;
+    }
+
     iree_compiler::IREE::HAL::DeviceAffinityAttr coralnpuAffinityAttr =
         getCoralNPUDeviceAffinityAttr(context, moduleOp);
     if (!coralnpuAffinityAttr) return;

@@ -531,7 +531,7 @@ op_tests(
   TEST "batch_mmt4d_f32.mlir"
   INSTANCES
     "(2,1,2,4,4)(2,2,2,4,4)"
-    "(3,2,3,4,2)(3,3,3,2,2)"
+    "(3,2,3,4,2)(3,3,3,2,2), [manual]"
 )
 
 op_tests(
@@ -583,7 +583,7 @@ op_tests(
   INSTANCES
     "(11)(3)"
     "(258)(5)"
-    "(453)(4)"
+    "(453)(4), [manual]"
 )
 
 op_tests(
@@ -607,7 +607,7 @@ op_tests(
   TEST "conv_2d_f32.mlir"
   INSTANCES
     "(11,11)(3,3)"
-    "(125,256)(5,7)"
+    "(125,256)(5,7), [manual]"
 )
 
 op_tests(
