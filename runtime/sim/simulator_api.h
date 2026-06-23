@@ -25,7 +25,7 @@ extern "C" {
 #endif  // __cplusplus
 
 static const uint32_t coralnpu_itcm_start = 0x00000000u;
-static const uint32_t coralnpu_itcm_size = 0x00004000u;  // 8 KB
+static const uint32_t coralnpu_itcm_size = 0x00002000u;  // 8 KB
 static const uint32_t coralnpu_dtcm_start = 0x00010000u;
 static const uint32_t coralnpu_dtcm_size = 0x00008000u;  // 32 KB
 

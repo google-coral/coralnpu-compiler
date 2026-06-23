@@ -10,11 +10,23 @@ package(
 cc_library(
     name = "CoralNPUTarget",
     srcs = [
+        "CoralNPULinkerTool.cpp",
         "CoralNPUTarget.cpp",
         "CoralNPUTargetBackend.cpp",
     ],
     hdrs = [
+        "CoralNPULinkerTool.h",
         "CoralNPUTargetBackend.h",
+    ],
+    data = [
+        "//crt:coralnpu_tcm_ld",
+        "//crt:libcoralnpu_crt",
+        "//crt:libcoralnpu_iree",
+        "@rv32_toolchain//:bin/riscv32-unknown-elf-ld",
+    ],
+    local_defines = [
+        "CORALNPU_LINKER_SCRIPT_PATH=\\\"$(rootpath //crt:coralnpu_tcm_ld)\\\"",
+        "CORALNPU_LINKER_PATH=\\\"$(rlocationpath @rv32_toolchain//:bin/riscv32-unknown-elf-ld)\\\"",
     ],
     deps = [
         "//compiler/Transforms",

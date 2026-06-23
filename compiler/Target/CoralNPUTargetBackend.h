@@ -43,19 +43,23 @@ struct CoralNPUOptions {
   std::string targetABI = "ilp32";
   std::string targetCPUFeatures = "+m,+f,+zvl128b,+zve32f";
   bool linkEmbedded = true;
-  bool debugSymbols = true;
+  bool debugSymbols = false;
 
   void bindOptions(iree_compiler::OptionsBinder &binder) {
     static llvm::cl::OptionCategory category("CoralNPU HAL Target");
+
     binder.opt<std::string>(
         "coralnpu-target-abi", targetABI, llvm::cl::cat(category),
         llvm::cl::desc("LLVM target machine ABI; specify for -mabi"));
+
     binder.opt<std::string>("coralnpu-target-cpu-features", targetCPUFeatures,
                             llvm::cl::cat(category),
                             llvm::cl::desc("LLVM target machine CPU features"));
+
     binder.opt<bool>(
         "coralnpu-link-embedded", linkEmbedded, llvm::cl::cat(category),
         llvm::cl::desc("Links binaries into a platform-agnostic ELF"));
+
     binder.opt<bool>("coralnpu-debug-symbols", debugSymbols,
                      llvm::cl::cat(category),
                      llvm::cl::desc("Generate and embed debug information"));

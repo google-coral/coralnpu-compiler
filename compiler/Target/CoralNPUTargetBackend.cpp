@@ -14,6 +14,8 @@
 
 #include "compiler/Target/CoralNPUTargetBackend.h"
 
+#include "compiler/Target/CoralNPULinkerTool.h"
+
 // IREE headers
 #include "compiler/plugins/target/LLVMCPU/Builtins/Device.h"
 #include "compiler/plugins/target/LLVMCPU/Builtins/Musl.h"
@@ -153,11 +155,13 @@ static constexpr char kQueryFunctionName[] =
 
 CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options) {
   IREE::HAL::LLVMCPUTargetCLOptions clOptions;
+
   clOptions.targetTriple = "riscv32";
   clOptions.targetABI = options.targetABI;
   clOptions.targetCPUFeatures = options.targetCPUFeatures;
   clOptions.linkEmbedded = options.linkEmbedded;
   clOptions.debugSymbols = options.debugSymbols;
+
   defaultOptions_ = clOptions.getTargetOptions();
 }
 
@@ -421,21 +425,29 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
   queryLibraryFunc->setDLLStorageClass(
       llvm::GlobalValue::DLLStorageClassTypes::DLLExportStorageClass);
 
-  std::unique_ptr<IREE::HAL::LinkerTool> linkerTool;
+  std::unique_ptr<iree_compiler::IREE::HAL::LinkerTool> linkerTool;
+
   if (!target.linkStatic) {
-    IREE::HAL::LLVMTargetOptions options = defaultOptions_;
-    options.target = target;
-    linkerTool = IREE::HAL::LinkerTool::getForTarget(targetTriple, options);
+    iree_compiler::IREE::HAL::LLVMTargetOptions targetOptions = defaultOptions_;
+    targetOptions.target = target;
+
+    if (target.getLinkEmbedded()) {
+      linkerTool = createCoralNPULinkerTool(targetTriple, targetOptions);
+    } else {
+      linkerTool = iree_compiler::IREE::HAL::LinkerTool::getForTarget(
+          targetTriple, targetOptions);
+    }
+
     if (!linkerTool) {
       return mlir::emitError(variantOp.getLoc())
-             << "failed to find a target linker for the given target triple '"
+             << "failed to find a CoralNPU linker for target triple '"
              << targetTriple.str() << "'";
     }
 
-    if (failed(linkerTool->configureModule(llvmModule.get(),
-                                           {queryLibraryFunc}))) {
+    if (mlir::failed(linkerTool->configureModule(llvmModule.get(),
+                                                 {queryLibraryFunc}))) {
       return variantOp.emitError()
-             << "failed to configure LLVM module for target linker";
+             << "failed to configure LLVM module for CoralNPU linker";
     }
   }
 

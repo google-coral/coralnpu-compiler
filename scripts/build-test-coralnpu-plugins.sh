@@ -10,15 +10,43 @@ usage() {
   echo "Usage: $0 {--bazel|--cmake}"
 }
 
+build-crt() {
+  if [[ "${MODE}" == "bazel" ]]; then
+    echo "=== Building CRT with Bazel ==="
+    bazel build //crt:coralnpu_tcm_ld //crt:libcoralnpu_crt //crt:libcoralnpu_iree
+    return
+  fi
+
+  local build_dir="../coralnpu-compiler-build"
+  local crt_build_dir="${build_dir}/crt"
+  local toolchain_file="${PWD}/crt/riscv32-toolchain.cmake"
+  local toolchain_root_abs
+  toolchain_root_abs=$(cd "${build_dir}" && pwd)/toolchain_rv32
+
+  if [[ ! -f "${crt_build_dir}/CMakeCache.txt" ]]; then
+    cmake -G Ninja \
+      -S "${PWD}/crt" \
+      -B "${crt_build_dir}" \
+      -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}" \
+      -DRISCV_TOOLCHAIN_ROOT="${toolchain_root_abs}" \
+      -DCMAKE_BUILD_TYPE=Release
+  fi
+
+  cmake --build "${crt_build_dir}" \
+    --target coralnpu_crt coralnpu_iree
+}
+
 setup-bazel() {
+  MODE="bazel"
   BUILD_TARGETS=(bazel build --config=dev @iree_core//tools:iree-compile @iree_core//tools:iree-run-module)
   IREE_COMPILE=(bazel run --config=dev @iree_core//tools:iree-compile --)
   IREE_RUN_MODULE=(bazel run --config=dev @iree_core//tools:iree-run-module --)
 }
 
 setup-cmake() {
+  MODE="cmake"
   local build_dir="../coralnpu-compiler-build"
-  if [[ ! -d "${build_dir}" ]]; then
+  if [[ ! -f "${build_dir}/CMakeCache.txt" ]]; then
     cmake -G Ninja -B "${build_dir}" -S . \
       -DIREE_HAL_DRIVER_LOCAL_SYNC=ON
   fi
@@ -36,6 +64,13 @@ main() {
   else
     setup-cmake
   fi
+
+  if [[ "${MODE}" == "bazel" ]]; then
+    echo "Bazel mode: toolchain download handled by Bazel."
+  else
+    echo "CMake mode: toolchain download handled by CMake."
+  fi
+  build-crt
 
   echo "=== Building Targets ==="
   "${BUILD_TARGETS[@]}"
@@ -58,7 +93,7 @@ main() {
   # Configure the CoralNPU device
   iree_compile_options+=(--iree-hal-target-device=coralnpu)
   iree_compile_options+=(--coralnpu-target-abi=ilp32)
-  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32f")
+  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32x")
 
   "${IREE_COMPILE[@]}" "${iree_compile_options[@]}"
 
@@ -98,7 +133,7 @@ main() {
   # Configure the CoralNPU device
   iree_compile_options+=(--iree-hal-target-device=coralnpu)
   iree_compile_options+=(--coralnpu-target-abi=ilp32)
-  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32f")
+  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32x")
 
   "${IREE_COMPILE[@]}" "${iree_compile_options[@]}"
 

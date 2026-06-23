@@ -12,4 +12,4 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/compiler coralnpu_compiler)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../compiler coralnpu_compiler)

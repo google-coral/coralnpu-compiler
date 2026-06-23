@@ -75,6 +75,7 @@ cc_library(
     deps = select({
         ":linux_x86_64": [
             ":mpact_simulator",
+            "//crt:coralnpu_dispatch_hdrs",
             "@iree_core//runtime/src/iree/base",
             "@iree_core//runtime/src/iree/base/internal",
             "@iree_core//runtime/src/iree/hal",

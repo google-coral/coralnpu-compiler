@@ -1,6 +1,6 @@
 """Rules and macros for generating IREE check tests from templates."""
 
-load("@iree_core//build_tools/bazel:iree_bytecode_module.bzl", "iree_bytecode_module")
+load("//build_tools/bazel:bytecode_module.bzl", "coralnpu_bytecode_module")
 load("@iree_core//build_tools/bazel:native_binary.bzl", "native_test")
 
 def parse_instance_to_suffix(inst_str):
@@ -243,7 +243,7 @@ def check_gen_tests(
         select_file_target_name = "generate_" + name + "_" + suffix
 
         # Compile the selected MLIR file
-        iree_bytecode_module(
+        coralnpu_bytecode_module(
             name = bytecode_module_name,
             src = ":" + select_file_target_name,  # Refer to the auto-generated target
             compile_tool = "@iree_core//tools:iree-compile",

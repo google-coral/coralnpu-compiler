@@ -16,8 +16,10 @@ iree_cc_library(
   NAME
     CoralNPUTarget
   HDRS
+    "CoralNPULinkerTool.h"
     "CoralNPUTargetBackend.h"
   SRCS
+    "CoralNPULinkerTool.cpp"
     "CoralNPUTarget.cpp"
     "CoralNPUTargetBackend.cpp"
   INCLUDES
@@ -59,6 +61,9 @@ iree_cc_library(
     MLIRPass
     MLIRTargetLLVMIRExport
     MLIRTransformDialect
+  DEFINES
+    "CORALNPU_LINKER_SCRIPT_PATH=\"${CORALNPU_LINKER_SCRIPT_PATH}\""
+    "CORALNPU_LINKER_PATH=\"${CORALNPU_LINKER_PATH}\""
   PUBLIC
 )
 

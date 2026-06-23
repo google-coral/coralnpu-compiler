@@ -1,0 +1,94 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+RV32_COPTS = "-march=rv32imf_zicsr_zifencei_zbb -mabi=ilp32 -mcmodel=medany -ffreestanding -fno-builtin -I. -Ithird_party/iree/runtime/src"
+
+# Generate linker script from template
+expand_template(
+    name = "coralnpu_tcm_ld",
+    out = "coralnpu_tcm.ld",
+    substitutions = {
+        "@@ITCM_LENGTH@@": "8",
+        "@@DTCM_ORIGIN@@": "0x00010000",
+        "@@DTCM_LENGTH@@": "32",
+        "@@STACK_SIZE@@": "4096",
+        "@@HEAP_LOCATION@@": "DTCM",
+        "@@HEAP_SIZE_SPEC@@": ". = ORIGIN(DTCM) + LENGTH(DTCM) - STACK_SIZE;",
+        "@@STACK_START_SPEC@@": "",
+    },
+    template = "coralnpu_tcm.ld.tpl",
+)
+
+# Compile and archive coralnpu_crt using the local RV32 toolchain
+genrule(
+    name = "libcoralnpu_crt",
+    srcs = [
+        "crt.S",
+        "coralnpu_start.S",
+        "coralnpu_exceptions.cc",
+        "cxx_guards.cc",
+        "coralnpu_dispatch.h",
+        "@rv32_toolchain//:all_files",
+        "@rv32_toolchain//:bin/riscv32-unknown-elf-gcc",
+        "@rv32_toolchain//:bin/riscv32-unknown-elf-g++",
+        "@rv32_toolchain//:bin/riscv32-unknown-elf-ar",
+    ],
+    outs = ["libcoralnpu_crt.a"],
+    cmd = """
+        {gcc} {copts} -c $(location crt.S) -o crt.o
+        {gcc} {copts} -c $(location coralnpu_start.S) -o coralnpu_start.o
+        {gxx} {copts} -c $(location coralnpu_exceptions.cc) -o coralnpu_exceptions.o
+        {gxx} {copts} -c $(location cxx_guards.cc) -o cxx_guards.o
+        {ar} rcs $@ crt.o coralnpu_start.o coralnpu_exceptions.o cxx_guards.o
+    """.format(
+        ar = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-ar)",
+        copts = RV32_COPTS,
+        gcc = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-gcc)",
+        gxx = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-g++)",
+    ),
+)
+
+# Compile and archive coralnpu_iree using the local RV32 toolchain
+genrule(
+    name = "libcoralnpu_iree",
+    srcs = [
+        "coralnpu_main.c",
+        "coralnpu_dispatch.h",
+        "@rv32_toolchain//:all_files",
+        "@rv32_toolchain//:bin/riscv32-unknown-elf-gcc",
+        "@rv32_toolchain//:bin/riscv32-unknown-elf-ar",
+        "@iree_core//runtime/src/iree/hal/local:executable_library.h",
+    ],
+    outs = ["libcoralnpu_iree.a"],
+    cmd = """
+        {gcc} {copts} -I{iree_inc} -c $(location coralnpu_main.c) -o coralnpu_main.o
+        {ar} rcs $@ coralnpu_main.o
+    """.format(
+        ar = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-ar)",
+        copts = RV32_COPTS,
+        gcc = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-gcc)",
+        iree_inc = "$$(dirname $$(dirname $$(dirname $$(dirname $(location @iree_core//runtime/src/iree/hal/local:executable_library.h)))))",
+    ),
+)
+
+# Header-only target for inclusion by host-side simulator runtime
+cc_library(
+    name = "coralnpu_dispatch_hdrs",
+    hdrs = ["coralnpu_dispatch.h"],
+)

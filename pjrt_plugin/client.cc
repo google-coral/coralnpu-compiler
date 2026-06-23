@@ -77,7 +77,7 @@ bool CORALNPUClientInstance::SetDefaultCompilerFlags(CompilerJob* compiler_job) 
   return compiler_job->SetFlag("--iree-hal-target-device=coralnpu") &&
          compiler_job->SetFlag("--coralnpu-target-abi=ilp32") &&
          // TODO(b/507532766): Make this compiler flag configurable.
-         compiler_job->SetFlag("--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f")
+         compiler_job->SetFlag("--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32x")
          ;
 }
 

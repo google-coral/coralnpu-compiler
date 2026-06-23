@@ -36,10 +36,11 @@ local_path_override(
 # For the clangd LSP (generates compile_commands.json)
 bazel_dep(name = "hedron_compile_commands", dev_dependency = True)
 
-coralnpuc_extension = use_extension("//:extensions.bzl", "coralnpuc_extension")
+coralnpuc_extension = use_extension("//build_tools/bazel:extensions.bzl", "coralnpuc_extension")
 use_repo(
     coralnpuc_extension,
     "llvm-raw",
+    "rv32_toolchain",
 )
 
 # Use LLVM's extension for third-party dependencies

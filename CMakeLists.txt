@@ -35,7 +35,7 @@ set(IREE_ERROR_ON_MISSING_SUBMODULES OFF)
 # RelWithDebInfo
 set(IREE_ENABLE_ASSERTIONS ON)
 # add the cmake for our IREE plugin
-set(IREE_CMAKE_PLUGIN_PATHS ${CMAKE_CURRENT_LIST_DIR})
+set(IREE_CMAKE_PLUGIN_PATHS ${CMAKE_CURRENT_LIST_DIR}/build_tools/cmake)
 # disable IREE compiler backend plugins by default
 set(IREE_TARGET_BACKEND_DEFAULTS OFF)
 # enable IREE llvm-cpu backed plugin that is used to compile code for CSS
@@ -68,7 +68,37 @@ set(IREE_COMPILER_PLUGINS
     "coralnpu"
     CACHE STRING "Statically linked IREE compiler plugins" FORCE)
 
-set(IREE_ENABLE_LLD ON CACHE BOOL "Override the system's default linker to lld" FORCE)
+# Add our custom CMake modules directory to the module path
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/build_tools/cmake")
+
+include(ManageRV32Toolchain)
+
+set(RISCV_TOOLCHAIN_ROOT "${CMAKE_BINARY_DIR}/toolchain_rv32" CACHE PATH
+    "Path to the RISC-V toolchain installation")
+
+download_rv32_toolchain("${RISCV_TOOLCHAIN_ROOT}")
+
+set(
+  CORALNPU_LINKER_PATH
+  "${RISCV_TOOLCHAIN_ROOT}/bin/riscv32-unknown-elf-ld"
+  CACHE FILEPATH
+  "Default CoralNPU RV32 linker"
+)
+
+
+set(
+  CORALNPU_LINKER_SCRIPT_PATH
+  "${CMAKE_BINARY_DIR}/crt/coralnpu_tcm.ld"
+  CACHE FILEPATH
+  "Default generated CoralNPU linker script"
+)
+
+if(NOT EXISTS "${CORALNPU_LINKER_PATH}")
+  message(
+    FATAL_ERROR
+    "CoralNPU linker not found: ${CORALNPU_LINKER_PATH}"
+  )
+endif()
 
 add_subdirectory(third_party/iree)
 
