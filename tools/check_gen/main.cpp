@@ -39,24 +39,23 @@ using namespace mlir::check_gen;
 
 // --- Command Line Arguments ---
 
-static llvm::cl::list<std::string>
-    inputFilenames(llvm::cl::Positional,
-                   llvm::cl::desc("<test_fn.mlir> <gen_fn1.vmfb/mlir> ..."),
-                   llvm::cl::OneOrMore);
+static llvm::cl::list<std::string> inputFilenames(
+    llvm::cl::Positional,
+    llvm::cl::desc("<test_fn.mlir> <gen_fn1.vmfb/mlir> ..."),
+    llvm::cl::OneOrMore);
 
 static llvm::cl::opt<std::string> outputDir("o",
                                             llvm::cl::desc("Output directory"),
                                             llvm::cl::value_desc("dir"),
                                             llvm::cl::init("."));
 
-static llvm::cl::list<std::string>
-    instancesRaw("instance", llvm::cl::desc("Instance shapes, e.g. (4,8)(8,4)"),
-                 llvm::cl::OneOrMore);
+static llvm::cl::list<std::string> instancesRaw(
+    "instance", llvm::cl::desc("Instance shapes, e.g. (4,8)(8,4)"),
+    llvm::cl::OneOrMore);
 
-static llvm::cl::opt<std::string>
-    defaultGen("default-gen",
-               llvm::cl::desc("Default generators file (vmfb or mlir)"),
-               llvm::cl::init(""));
+static llvm::cl::opt<std::string> defaultGen(
+    "default-gen", llvm::cl::desc("Default generators file (vmfb or mlir)"),
+    llvm::cl::init(""));
 
 int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
@@ -100,8 +99,8 @@ int main(int argc, char **argv) {
     // destroyed BEFORE the compiler session/context is destroyed. Otherwise,
     // destroying MLIR/IREE objects after the context is gone causes
     // use-after-free crashes.
-    CheckTestGenerator generator(context, session, std::move(instances), inputFilenames,
-                                 outputDir, defaultGen);
+    CheckTestGenerator generator(context, session, std::move(instances),
+                                 inputFilenames, outputDir, defaultGen);
     success = generator.run();
   }
 

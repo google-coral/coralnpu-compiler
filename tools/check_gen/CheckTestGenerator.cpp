@@ -55,8 +55,7 @@ namespace mlir::check_gen {
 
 namespace {
 
-TypedAttr getArgAttr(OpBuilder &builder, int64_t val,
-                     Type expectedType) {
+TypedAttr getArgAttr(OpBuilder &builder, int64_t val, Type expectedType) {
   if (isa<IndexType>(expectedType)) {
     return builder.getIndexAttr(val);
   }
@@ -83,31 +82,33 @@ TypedAttr getArgAttr(OpBuilder &builder, int64_t val,
   return builder.getIndexAttr(val);
 }
 
-TypedAttr getVmfbArgAttr(OpBuilder &builder, int64_t val,
-                         char cc) {
+TypedAttr getVmfbArgAttr(OpBuilder &builder, int64_t val, char cc) {
   switch (cc) {
-  case 'i':
-    return builder.getI32IntegerAttr(static_cast<int32_t>(val));
-  case 'I':
-    return builder.getI64IntegerAttr(val);
-  default:
-    return builder.getIndexAttr(val);
+    case 'i':
+      return builder.getI32IntegerAttr(static_cast<int32_t>(val));
+    case 'I':
+      return builder.getI64IntegerAttr(val);
+    default:
+      return builder.getIndexAttr(val);
   }
 }
 
-} // namespace
+}  // namespace
 
 CheckTestGenerator::CheckTestGenerator(
     MLIRContext *context, iree_compiler_session_t *session,
     std::vector<std::vector<std::vector<int64_t>>> instances,
     std::vector<std::string> inputFiles, llvm::StringRef outputDir,
     llvm::StringRef defaultGenPath)
-    : context(context), session(session), instances(std::move(instances)),
-      inputFiles(std::move(inputFiles)), outputDir(outputDir.str()),
+    : context(context),
+      session(session),
+      instances(std::move(instances)),
+      inputFiles(std::move(inputFiles)),
+      outputDir(outputDir.str()),
       defaultGenPath(defaultGenPath.str()) {}
 
-std::shared_ptr<PrecompiledBinary>
-CheckTestGenerator::getOrLoadBinary(llvm::StringRef path, Location loc) {
+std::shared_ptr<PrecompiledBinary> CheckTestGenerator::getOrLoadBinary(
+    llvm::StringRef path, Location loc) {
   if (auto it = binaryCache.find(path); it != binaryCache.end()) {
     return it->second;
   }
@@ -200,8 +201,7 @@ bool CheckTestGenerator::loadDefaultGenerator(Type expectedType,
 }
 
 bool CheckTestGenerator::run() {
-  if (!parseAndMerge())
-    return false;
+  if (!parseAndMerge()) return false;
 
   for (size_t instIdx = 0; instIdx < instances.size(); ++instIdx) {
     if (!processInstance(instIdx)) {
@@ -217,8 +217,7 @@ bool CheckTestGenerator::parseAndMerge() {
   SymbolTable symbolTable(*mergedModuleOp);
 
   testFunc = parseAndMergeFunc(inputFiles[0], symbolTable);
-  if (!testFunc)
-    return false;
+  if (!testFunc) return false;
 
   if (inputFiles.size() - 1 > testFunc.getNumArguments()) {
     llvm::errs() << "Error: Too many generators provided\n";
@@ -243,8 +242,7 @@ bool CheckTestGenerator::parseAndMerge() {
     generators.push_back(std::move(gen));
   }
 
-  if (!validateInputs())
-    return false;
+  if (!validateInputs()) return false;
 
   return true;
 }
@@ -356,11 +354,10 @@ std::vector<TypedAttr> CheckTestGenerator::evaluateGenerators(
   OpBuilder builder(context);
   size_t argIdx = 0;
   for (const auto &[gen, genInstArgs] : llvm::zip_equal(generators, instance)) {
-
     std::vector<TypedAttr> genArgsAttrs;
     for (size_t i = 0; i < genInstArgs.size(); ++i) {
       int64_t val = genInstArgs[i];
-      char cc = 'I'; // Default fallback
+      char cc = 'I';  // Default fallback
       if (gen.callingConvention.size() > 1 + i) {
         char c = gen.callingConvention[1 + i];
         if (c != '_' && c != '\0') {
@@ -384,9 +381,8 @@ std::vector<TypedAttr> CheckTestGenerator::evaluateGenerators(
   return inputAttrs;
 }
 
-OwningOpRef<ModuleOp>
-CheckTestGenerator::refineShapes(const std::vector<TypedAttr> &inputAttrs,
-                                 size_t instIdx) {
+OwningOpRef<ModuleOp> CheckTestGenerator::refineShapes(
+    const std::vector<TypedAttr> &inputAttrs, size_t instIdx) {
   OwningOpRef<ModuleOp> refinedTestModuleOp =
       ModuleOp::create(Builder(context).getUnknownLoc());
   SymbolTable refinedSymbolTable(*refinedTestModuleOp);
@@ -512,11 +508,10 @@ bool CheckTestGenerator::generateCheckTest(
   return true;
 }
 
-LogicalResult
-CheckTestGenerator::addConstantInputs(OpBuilder &funcBuilder, Location loc,
-                                      const std::vector<TypedAttr> &inputAttrs,
-                                      ArrayRef<Type> refinedArgTypes,
-                                      std::vector<Value> &callArgs) {
+LogicalResult CheckTestGenerator::addConstantInputs(
+    OpBuilder &funcBuilder, Location loc,
+    const std::vector<TypedAttr> &inputAttrs, ArrayRef<Type> refinedArgTypes,
+    std::vector<Value> &callArgs) {
   for (size_t i = 0; i < inputAttrs.size(); ++i) {
     auto attr = inputAttrs[i];
 
@@ -535,10 +530,9 @@ CheckTestGenerator::addConstantInputs(OpBuilder &funcBuilder, Location loc,
   return success();
 }
 
-LogicalResult
-CheckTestGenerator::addAssertions(OpBuilder &funcBuilder, Location loc,
-                                  func::CallOp callOp,
-                                  const std::vector<TypedAttr> &outputAttrs) {
+LogicalResult CheckTestGenerator::addAssertions(
+    OpBuilder &funcBuilder, Location loc, func::CallOp callOp,
+    const std::vector<TypedAttr> &outputAttrs) {
   for (size_t i = 0; i < outputAttrs.size(); ++i) {
     auto expectedAttr = outputAttrs[i];
     auto resVal = callOp.getResult(i);
@@ -568,9 +562,8 @@ CheckTestGenerator::addAssertions(OpBuilder &funcBuilder, Location loc,
   return success();
 }
 
-LogicalResult
-CheckTestGenerator::inlineAndCleanup(ModuleOp outModule,
-                                     llvm::StringRef testFuncName) {
+LogicalResult CheckTestGenerator::inlineAndCleanup(
+    ModuleOp outModule, llvm::StringRef testFuncName) {
   PassManager pmInline(context);
   pmInline.addPass(createInlinerPass(llvm::StringMap<OpPassManager>{},
                                      [](OpPassManager &) {}));
@@ -586,40 +579,32 @@ CheckTestGenerator::inlineAndCleanup(ModuleOp outModule,
 }
 
 static bool areTypesCompatible(Type genType, Type expType) {
-  if (genType == expType)
-    return true;
+  if (genType == expType) return true;
 
   auto genRTT = dyn_cast<RankedTensorType>(genType);
   auto expRTT = dyn_cast<RankedTensorType>(expType);
-  if (!genRTT || !expRTT)
-    return false;
+  if (!genRTT || !expRTT) return false;
 
-  if (genRTT.getElementType() != expRTT.getElementType())
-    return false;
-  if (genRTT.getEncoding() != expRTT.getEncoding())
-    return false;
-  if (genRTT.getRank() != expRTT.getRank())
-    return false;
+  if (genRTT.getElementType() != expRTT.getElementType()) return false;
+  if (genRTT.getEncoding() != expRTT.getEncoding()) return false;
+  if (genRTT.getRank() != expRTT.getRank()) return false;
 
   auto genShape = genRTT.getShape();
   auto expShape = expRTT.getShape();
   for (auto [genDim, expDim] : llvm::zip_equal(genShape, expShape)) {
-    if (genDim == expDim)
-      continue;
-    if (genDim == ShapedType::kDynamic)
-      continue;
+    if (genDim == expDim) continue;
+    if (genDim == ShapedType::kDynamic) continue;
     return false;
   }
 
   return true;
 }
 
-bool CheckTestGenerator::loadGenerator(llvm::StringRef path,
-                                       Type expectedType, GeneratorInfo &gen) {
+bool CheckTestGenerator::loadGenerator(llvm::StringRef path, Type expectedType,
+                                       GeneratorInfo &gen) {
   gen.filename = path.str();
   auto binary = getOrLoadBinary(path, testFunc.getLoc());
-  if (!binary)
-    return false;
+  if (!binary) return false;
 
   iree_vm_module_t *module = binary->getModule();
   iree_vm_module_signature_t sig = iree_vm_module_signature(module);
@@ -628,8 +613,7 @@ bool CheckTestGenerator::loadGenerator(llvm::StringRef path,
     iree_vm_function_t func;
     iree_status_t status = iree_vm_module_lookup_function_by_ordinal(
         module, IREE_VM_FUNCTION_LINKAGE_EXPORT, i, &func);
-    if (!iree_status_is_ok(status))
-      continue;
+    if (!iree_status_is_ok(status)) continue;
 
     iree_string_view_t name = iree_vm_function_name(&func);
     std::string nameStr(name.data, name.size);
@@ -682,6 +666,4 @@ bool CheckTestGenerator::loadGenerator(llvm::StringRef path,
   return false;
 }
 
-
-
-} // namespace mlir::check_gen
+}  // namespace mlir::check_gen

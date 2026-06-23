@@ -61,8 +61,8 @@ std::vector<std::vector<int64_t>> parseInstance(llvm::StringRef raw) {
   return res;
 }
 
-std::vector<std::vector<std::vector<int64_t>>>
-parseAllInstances(const llvm::cl::list<std::string> &rawInstances) {
+std::vector<std::vector<std::vector<int64_t>>> parseAllInstances(
+    const llvm::cl::list<std::string> &rawInstances) {
   std::vector<std::vector<std::vector<int64_t>>> instances;
   for (const auto &raw : rawInstances) {
     auto inst = parseInstance(raw);
@@ -77,23 +77,19 @@ parseAllInstances(const llvm::cl::list<std::string> &rawInstances) {
 Type parseTypeFromDecl(llvm::StringRef decl, MLIRContext *context) {
   // Find "-> "
   size_t arrowPos = decl.find("->");
-  if (arrowPos == llvm::StringRef::npos)
-    return nullptr;
+  if (arrowPos == llvm::StringRef::npos) return nullptr;
 
   // Find "(" after "->"
   size_t openParen = decl.find('(', arrowPos);
-  if (openParen == llvm::StringRef::npos)
-    return nullptr;
+  if (openParen == llvm::StringRef::npos) return nullptr;
 
   // Find ":" after "("
   size_t colon = decl.find(':', openParen);
-  if (colon == llvm::StringRef::npos)
-    return nullptr;
+  if (colon == llvm::StringRef::npos) return nullptr;
 
   // Find ")" after ":"
   size_t closeParen = decl.find(')', colon);
-  if (closeParen == llvm::StringRef::npos)
-    return nullptr;
+  if (closeParen == llvm::StringRef::npos) return nullptr;
 
   llvm::StringRef typeStr = decl.slice(colon + 1, closeParen);
 
@@ -108,4 +104,4 @@ Type parseTypeFromDecl(llvm::StringRef decl, MLIRContext *context) {
   return parseType(typeStr, context);
 }
 
-} // namespace mlir::check_gen
+}  // namespace mlir::check_gen

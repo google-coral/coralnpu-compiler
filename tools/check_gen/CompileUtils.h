@@ -50,11 +50,10 @@ iree_compiler_output_t *compileModule(iree_compiler_invocation_t *inv,
 
 // Evaluates a function using ConstEval JIT.
 // Returns empty vector on failure.
-std::vector<TypedAttr>
-evaluateFunction(mlir::iree_compiler::ConstEval::CompiledBinary &binary,
-                 Location loc, StringRef funcName, ArrayRef<Type> resultTypes,
-                 ArrayRef<TypedAttr> args);
+std::vector<TypedAttr> evaluateFunction(
+    mlir::iree_compiler::ConstEval::CompiledBinary &binary, Location loc,
+    StringRef funcName, ArrayRef<Type> resultTypes, ArrayRef<TypedAttr> args);
 
-} // namespace mlir::check_gen
+}  // namespace mlir::check_gen
 
-#endif // CORALNPU_COMPILER_TOOLS_CHECK_GEN_COMPILE_UTILS_H_
+#endif  // CORALNPU_COMPILER_TOOLS_CHECK_GEN_COMPILE_UTILS_H_

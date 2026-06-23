@@ -30,16 +30,16 @@ namespace mlir::check_gen {
 // Class to manage precompiled VM bytecode binary for ConstEval JIT execution.
 class PrecompiledBinary
     : public mlir::iree_compiler::ConstEval::CompiledBinary {
-public:
+ public:
   LogicalResult init(Location loc, const void *data, size_t length);
   ~PrecompiledBinary() override;
 
   iree_vm_module_t *getModule();
 
-private:
+ private:
   std::string buffer;
 };
 
-} // namespace mlir::check_gen
+}  // namespace mlir::check_gen
 
-#endif // CORALNPU_COMPILER_TOOLS_CHECK_GEN_PRECOMPILED_BINARY_H_
+#endif  // CORALNPU_COMPILER_TOOLS_CHECK_GEN_PRECOMPILED_BINARY_H_

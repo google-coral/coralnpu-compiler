@@ -26,4 +26,4 @@ PrecompiledBinary::~PrecompiledBinary() { deinitialize(); }
 
 iree_vm_module_t *PrecompiledBinary::getModule() { return main_module.get(); }
 
-} // namespace mlir::check_gen
+}  // namespace mlir::check_gen

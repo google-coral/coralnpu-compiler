@@ -33,11 +33,11 @@ apply_patch() {
   echo "Checking patch: ${patch_file} -> ${submodule_dir}"
 
   # --check will fail if the patch is already applied or has conflicts
-  if git -C "${submodule_dir}" apply --check < "${patch_file}" &>/dev/null; then
+  if git -C "${submodule_dir}" apply --check <"${patch_file}" &>/dev/null; then
     if [[ "${cl_commit}" == "true" ]]; then
-      git -C "${submodule_dir}" am < "${patch_file}"
+      git -C "${submodule_dir}" am <"${patch_file}"
     else
-      git -C "${submodule_dir}" apply < "${patch_file}"
+      git -C "${submodule_dir}" apply <"${patch_file}"
     fi
     echo "  [SUCCESS] Patch applied."
   else
@@ -76,11 +76,23 @@ main() {
 
   while true; do
     case "$1" in
-      --) shift; break;;
+      --)
+        shift
+        break
+        ;;
 
-      -c|--commit) cl_commit="true"; shift;;
-      -r|--restore-first) cl_restore_first="true"; shift;;
-      -h|--help) usage; exit 0;;
+      -c | --commit)
+        cl_commit="true"
+        shift
+        ;;
+      -r | --restore-first)
+        cl_restore_first="true"
+        shift
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
 
       *)
         echo "Error: $0: internal error." >&2
@@ -90,19 +102,20 @@ main() {
   done
 
   if [[ $# -ne 1 ]]; then
-    echo "Error: $0: exactly one positional argument is required."  >&2
+    echo "Error: $0: exactly one positional argument is required." >&2
     usage >&2
     exit 2
   fi
 
   case "$1" in
-    all|iree) patch_submodule "third_party/iree" "iree-*.patch";;&
-    all|llvm-project) patch_submodule "third_party/llvm-project" "llvm-project-*.patch";;&
-    all|iree|llvm-project) ;;
+    all | iree) patch_submodule "third_party/iree" "iree-*.patch" ;;&
+    all | llvm-project) patch_submodule "third_party/llvm-project" "llvm-project-*.patch" ;;&
+    all | iree | llvm-project) ;;
     *)
-      echo "Error: $0: unrecognized option: $1"  >&2
+      echo "Error: $0: unrecognized option: $1" >&2
       usage >&2
       exit 2
+      ;;
   esac
 }
 

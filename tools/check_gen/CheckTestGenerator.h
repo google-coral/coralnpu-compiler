@@ -44,17 +44,16 @@ namespace mlir::check_gen {
 // Orchestrates the generation of check tests from a test template and
 // generators.
 class CheckTestGenerator {
-public:
-  CheckTestGenerator(
-      MLIRContext *context, iree_compiler_session_t *session,
-      std::vector<std::vector<std::vector<int64_t>>> instances,
-      std::vector<std::string> inputFiles, llvm::StringRef outputDir,
-      llvm::StringRef defaultGenPath);
+ public:
+  CheckTestGenerator(MLIRContext *context, iree_compiler_session_t *session,
+                     std::vector<std::vector<std::vector<int64_t>>> instances,
+                     std::vector<std::string> inputFiles,
+                     llvm::StringRef outputDir, llvm::StringRef defaultGenPath);
 
   // Runs the generation process. Returns true on success.
   bool run();
 
-private:
+ private:
   // Information about a generator (either MLIR or VMFB).
   struct GeneratorInfo {
     std::string filename;
@@ -78,17 +77,17 @@ private:
   bool processInstance(size_t instIdx);
 
   // Evaluates generators for a given instance to produce input attributes.
-  std::vector<TypedAttr>
-  evaluateGenerators(const std::vector<std::vector<int64_t>> &instance);
+  std::vector<TypedAttr> evaluateGenerators(
+      const std::vector<std::vector<int64_t>> &instance);
 
   // Refines the shapes of the test function based on input attributes.
   OwningOpRef<ModuleOp> refineShapes(const std::vector<TypedAttr> &inputAttrs,
                                      size_t instIdx);
 
   // Evaluates the refined test function to produce expected output attributes.
-  std::vector<TypedAttr>
-  evaluateRefinedTest(ModuleOp refinedTestModuleOp, func::FuncOp checkTestFunc,
-                      const std::vector<TypedAttr> &inputAttrs, size_t instIdx);
+  std::vector<TypedAttr> evaluateRefinedTest(
+      ModuleOp refinedTestModuleOp, func::FuncOp checkTestFunc,
+      const std::vector<TypedAttr> &inputAttrs, size_t instIdx);
 
   // Generates the final check test MLIR module.
   bool generateCheckTest(func::FuncOp refinedTestFunc,
@@ -122,8 +121,6 @@ private:
   std::shared_ptr<PrecompiledBinary> getOrLoadBinary(llvm::StringRef path,
                                                      Location loc);
 
-
-
   MLIRContext *context;
   iree_compiler_session_t *session;
   std::vector<std::vector<std::vector<int64_t>>> instances;
@@ -139,6 +136,6 @@ private:
   llvm::StringMap<std::shared_ptr<PrecompiledBinary>> binaryCache;
 };
 
-} // namespace mlir::check_gen
+}  // namespace mlir::check_gen
 
-#endif // CORALNPU_COMPILER_TOOLS_CHECK_GEN_CHECK_TEST_GENERATOR_H_
+#endif  // CORALNPU_COMPILER_TOOLS_CHECK_GEN_CHECK_TEST_GENERATOR_H_

@@ -119,10 +119,9 @@ iree_compiler_output_t *compileModule(iree_compiler_invocation_t *inv,
   return output;
 }
 
-std::vector<TypedAttr>
-evaluateFunction(mlir::iree_compiler::ConstEval::CompiledBinary &binary,
-                 Location loc, StringRef funcName, ArrayRef<Type> resultTypes,
-                 ArrayRef<TypedAttr> args) {
+std::vector<TypedAttr> evaluateFunction(
+    mlir::iree_compiler::ConstEval::CompiledBinary &binary, Location loc,
+    StringRef funcName, ArrayRef<Type> resultTypes, ArrayRef<TypedAttr> args) {
   size_t numInputs = args.size();
   size_t numOutputs = resultTypes.size();
 
@@ -160,4 +159,4 @@ evaluateFunction(mlir::iree_compiler::ConstEval::CompiledBinary &binary,
   return outputs;
 }
 
-} // namespace mlir::check_gen
+}  // namespace mlir::check_gen

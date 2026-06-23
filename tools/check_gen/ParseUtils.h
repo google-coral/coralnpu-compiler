@@ -34,12 +34,12 @@ namespace mlir::check_gen {
 std::vector<std::vector<int64_t>> parseInstance(llvm::StringRef raw);
 
 // Parses all raw instance strings from CLI.
-std::vector<std::vector<std::vector<int64_t>>>
-parseAllInstances(const llvm::cl::list<std::string> &rawInstances);
+std::vector<std::vector<std::vector<int64_t>>> parseAllInstances(
+    const llvm::cl::list<std::string> &rawInstances);
 
 // Parses result type from IREE ABI declaration string.
 Type parseTypeFromDecl(llvm::StringRef decl, MLIRContext *context);
 
-} // namespace mlir::check_gen
+}  // namespace mlir::check_gen
 
-#endif // CORALNPU_COMPILER_TOOLS_CHECK_GEN_PARSE_UTILS_H_
+#endif  // CORALNPU_COMPILER_TOOLS_CHECK_GEN_PARSE_UTILS_H_
