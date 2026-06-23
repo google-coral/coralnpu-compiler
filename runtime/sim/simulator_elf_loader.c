@@ -73,13 +73,13 @@ static iree_status_t iree_hal_coralnpu_copy_segment(uint32_t address,
 
   if (iree_hal_coralnpu_range_fits(coralnpu_itcm_start, coralnpu_itcm_size,
                                    address, size)) {
-    simulator_load_itcm(address - coralnpu_itcm_start, source, size);
+    simulator_write_mem(address /* - coralnpu_itcm_start*/, source, size);
     return iree_ok_status();
   }
 
   if (iree_hal_coralnpu_range_fits(coralnpu_dtcm_start, coralnpu_dtcm_size,
                                    address, size)) {
-    simulator_load_dtcm(address - coralnpu_dtcm_start, source, size);
+    simulator_write_mem(address /* - coralnpu_dtcm_start*/, source, size);
     return iree_ok_status();
   }
 

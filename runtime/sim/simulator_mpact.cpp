@@ -28,10 +28,10 @@ class CoralNPUSimulator {
 
   virtual ~CoralNPUSimulator() = default;
 
-  // Functions for reading/writing TCMs and Mailbox.
-  virtual void ReadTCM(uint32_t addr, size_t size, char *data) = 0;
+  // Functions for reading/writing memory and Mailbox.
+  virtual void ReadMem(uint32_t addr, size_t size, char *data) = 0;
   virtual const CoralNPUMailbox &ReadMailbox() = 0;
-  virtual void WriteTCM(uint32_t addr, size_t size, const char *data) = 0;
+  virtual void WriteMem(uint32_t addr, size_t size, const char *data) = 0;
   virtual void WriteMailbox(const CoralNPUMailbox &mailbox) = 0;
 
   // Wait for interrupt
@@ -46,22 +46,12 @@ static CoralNPUSimulator *sim = NULL;
 
 void simulator_create(void) { sim = CoralNPUSimulator::Create(); }
 
-void simulator_load_itcm(uint32_t offset, const void *data, size_t size) {
-  sim->WriteTCM(coralnpu_itcm_start + offset, size,
-                static_cast<const char *>(data));
+void simulator_write_mem(uint32_t addr, const void *data, size_t size) {
+  sim->WriteMem(addr, size, static_cast<const char *>(data));
 }
 
-void simulator_load_dtcm(uint32_t offset, const void *data, size_t size) {
-  sim->WriteTCM(coralnpu_dtcm_start + offset, size,
-                static_cast<const char *>(data));
-}
-
-void simulator_read_itcm(uint32_t offset, void *data, size_t size) {
-  sim->ReadTCM(coralnpu_itcm_start + offset, size, static_cast<char *>(data));
-}
-
-void simulator_read_dtcm(uint32_t offset, void *data, size_t size) {
-  sim->ReadTCM(coralnpu_dtcm_start + offset, size, static_cast<char *>(data));
+void simulator_read_mem(uint32_t addr, void *data, size_t size) {
+  sim->ReadMem(addr, size, static_cast<char *>(data));
 }
 
 void simulator_run(uint32_t pc) {

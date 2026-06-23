@@ -212,8 +212,8 @@ op_tests(
   TEST "convolution_rank2_i32.mlir"
   INSTANCES
     "(4,8)(8,4)"
-    "(120,256)(256,300), [manual]"
-    "(300,100)(100,450), [manual]"
+    "(120,256)(256,300)"
+    "(300,100)(100,450)"
 )
 
 op_tests(
@@ -310,8 +310,8 @@ op_tests(
   TEST "matmul_rank2_i32.mlir"
   INSTANCES
     "(4,8)(8,4)"
-    "(120,256)(256,300), [manual]"
-    "(300,100)(100,450), [manual]"
+    "(120,256)(256,300)"
+    "(300,100)(100,450)"
 )
 
 op_tests(

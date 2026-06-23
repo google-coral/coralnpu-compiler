@@ -435,9 +435,9 @@ static iree_status_t iree_hal_coralnpu_command_buffer_dispatch(
           buffer_mapping.contents.data_length;
     }
 
-    iree_hal_simulator_issue_dispatch_inline(
+    IREE_RETURN_IF_ERROR(iree_hal_simulator_issue_dispatch_inline(
         iree_hal_simulator_executable_dispatch_image(executable),
-        dispatch_state, export_ordinal, iree_byte_span_empty());
+        dispatch_state, export_ordinal, iree_byte_span_empty()));
 
     return iree_ok_status();
   }
