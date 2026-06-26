@@ -1,7 +1,7 @@
 """Rules and macros for generating IREE check tests from templates."""
 
-load("//build_tools/bazel:bytecode_module.bzl", "coralnpu_bytecode_module")
 load("@iree_core//build_tools/bazel:native_binary.bzl", "native_test")
+load("//build_tools/bazel:bytecode_module.bzl", "coralnpu_bytecode_module")
 
 def parse_instance_to_suffix(inst_str):
     """Parses an instance shape string into a filename suffix.
@@ -248,7 +248,8 @@ def check_gen_tests(
             src = ":" + select_file_target_name,  # Refer to the auto-generated target
             compile_tool = "@iree_core//tools:iree-compile",
             flags = list(compiler_flags),
-            tags = bytecode_tags,
+            # if the test is taged manual, we have to pass the tag so we don't try to generate the test (which fails)
+            tags = bytecode_tags + (["manual"] if "manual" in extra_tags else []),
             deps = deps,
             visibility = ["//visibility:private"],
         )

@@ -1,7 +1,7 @@
 """Custom Bazel macros for CoralNPU compiler tests."""
 
-load("//build_tools/bazel:bytecode_module.bzl", "coralnpu_bytecode_module")
 load("@iree_core//build_tools/bazel:native_binary.bzl", "native_test")
+load("//build_tools/bazel:bytecode_module.bzl", "coralnpu_bytecode_module")
 load("//tools/check_gen:def.bzl", "check_gen_tests")
 
 def coralnpu_check_test(
