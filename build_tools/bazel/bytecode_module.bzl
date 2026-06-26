@@ -42,8 +42,11 @@ def coralnpu_bytecode_module(
     ]
 
     cmd = " && ".join([
-        "RUNFILES_DIR=$$(pwd)/$(location %s).runfiles" % (compile_tool),
-        "if [ -d $$RUNFILES_DIR ]; then mkdir -p crt && cp $$RUNFILES_DIR/_main/crt/coralnpu_tcm.ld crt/ && cp $$RUNFILES_DIR/_main/crt/*.a crt/ && ln -sf $$RUNFILES_DIR/+coralnpuc_extension+rv32_toolchain +coralnpuc_extension+rv32_toolchain; fi",
+        "mkdir -p crt",
+        "cp $(location //crt:coralnpu_tcm_ld) crt/coralnpu_tcm.ld",
+        "cp $(location //crt:libcoralnpu_crt) crt/libcoralnpu_crt.a",
+        "cp $(location //crt:libcoralnpu_iree) crt/libcoralnpu_iree.a",
+        "ln -sf $$(dirname $$(dirname $(location @rv32_toolchain//:bin/riscv32-unknown-elf-ld))) +coralnpuc_extension+rv32_toolchain",
         " ".join([
             "$(location %s)" % (compile_tool),
             " ".join(actual_flags),
@@ -55,7 +58,14 @@ def coralnpu_bytecode_module(
 
     native.genrule(
         name = name,
-        srcs = [src],
+        srcs = [
+            src,
+            "//crt:coralnpu_tcm_ld",
+            "//crt:libcoralnpu_crt",
+            "//crt:libcoralnpu_iree",
+            "@rv32_toolchain//:bin/riscv32-unknown-elf-ld",
+            "@rv32_toolchain//:all_files",
+        ],
         outs = out_files,
         cmd = cmd,
         tools = [compile_tool, coralnpu_linker_tool],
