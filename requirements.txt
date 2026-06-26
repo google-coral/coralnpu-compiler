@@ -1,6 +1,8 @@
 gemma
 jax
 jaxlib
+keras
 ml_dtypes
 numpy
+pillow
 yapf

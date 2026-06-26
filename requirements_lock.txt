@@ -1388,7 +1388,9 @@ kauldron==1.4.4 \
 keras==3.14.1 \
     --hash=sha256:ebd2c14d2af3c9de18083604d408483996407fc7d2f9ebd1d565961f96608c29 \
     --hash=sha256:ef479173102ad29db89b53c232efdc3fb5ad57c28bc27ead59f3e78a1eecd05b
-    # via tensorflow-cpu
+    # via
+    #   -r requirements.txt
+    #   tensorflow-cpu
 keyring==25.7.0 \
     --hash=sha256:be4a0b195f149690c166e850609a477c532ddbfbaed96a404d4e43f8d5e2689f \
     --hash=sha256:fe01bd85eb3f8fb3dd0405defdeac9a5b4f6f0439edbb3149577f244a2e8245b
@@ -2422,6 +2424,7 @@ pillow==12.2.0 \
     --hash=sha256:fb043ee2f06b41473269765c2feae53fc2e2fbf96e5e22ca94fb5ad677856f06 \
     --hash=sha256:fc3d34d4a8fbec3e88a79b92e5465e0f9b842b628675850d860b8bd300b159f5
     # via
+    #   -r requirements.txt
     #   dialog
     #   imageio
     #   matplotlib
