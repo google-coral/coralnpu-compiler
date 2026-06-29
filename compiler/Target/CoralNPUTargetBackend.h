@@ -44,6 +44,7 @@ struct CoralNPUOptions {
   std::string targetCPUFeatures = "+m,+f,+zvl128b,+zve32f";
   bool linkEmbedded = true;
   bool debugSymbols = false;
+  std::string embeddedLinkerPath = "";
 
   void bindOptions(iree_compiler::OptionsBinder &binder) {
     static llvm::cl::OptionCategory category("CoralNPU HAL Target");
@@ -59,6 +60,11 @@ struct CoralNPUOptions {
     binder.opt<bool>(
         "coralnpu-link-embedded", linkEmbedded, llvm::cl::cat(category),
         llvm::cl::desc("Links binaries into a platform-agnostic ELF"));
+
+    binder.opt<std::string>(
+        "coralnpu-embedded-linker-path", embeddedLinkerPath,
+        llvm::cl::cat(category),
+        llvm::cl::desc("Tool used to link embedded ELFs produced by CoralNPU"));
 
     binder.opt<bool>("coralnpu-debug-symbols", debugSymbols,
                      llvm::cl::cat(category),

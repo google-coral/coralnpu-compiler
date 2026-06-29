@@ -51,6 +51,7 @@
 // LLVM headers
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Path.h"
@@ -161,6 +162,7 @@ CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options) {
   clOptions.targetCPUFeatures = options.targetCPUFeatures;
   clOptions.linkEmbedded = options.linkEmbedded;
   clOptions.debugSymbols = options.debugSymbols;
+  clOptions.embeddedLinkerPath = options.embeddedLinkerPath;
 
   defaultOptions_ = clOptions.getTargetOptions();
 }

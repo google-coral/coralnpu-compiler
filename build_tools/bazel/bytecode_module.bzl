@@ -20,7 +20,7 @@ def coralnpu_bytecode_module(
         flags,
         module_name = None,
         compile_tool = "@iree_core//tools:iree-compile",
-        linker_tool = "@llvm-project//lld:lld",
+        coralnpu_linker_tool = "@rv32_toolchain//:bin/riscv32-unknown-elf-ld",
         deps = [],
         **kwargs):
     """Builds an IREE bytecode module with CoralNPU sandbox setup.
@@ -47,8 +47,7 @@ def coralnpu_bytecode_module(
         " ".join([
             "$(location %s)" % (compile_tool),
             " ".join(actual_flags),
-            "--iree-llvmcpu-embedded-linker-path=$(location %s)" % (linker_tool),
-            "--iree-llvmcpu-wasm-linker-path=$(location %s)" % (linker_tool),
+            "--coralnpu-embedded-linker-path=$(location %s)" % (coralnpu_linker_tool),
             "-o $(location %s)" % (module_name),
             "$(location %s)" % (src),
         ]),
@@ -59,7 +58,7 @@ def coralnpu_bytecode_module(
         srcs = [src],
         outs = out_files,
         cmd = cmd,
-        tools = [compile_tool, linker_tool],
+        tools = [compile_tool, coralnpu_linker_tool],
         message = "Compiling IREE module %s..." % (name),
         output_to_bindir = 1,
         **kwargs

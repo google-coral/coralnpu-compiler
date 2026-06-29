@@ -29,6 +29,7 @@
         .weak _start
         .type _start, @function
 _start:
+        fence.i
         csrw minstret, 0
         csrw minstreth, 0
         csrr a0, minstret
