@@ -22,7 +22,6 @@ py_test(
     ],
     env = {
         "LD_LIBRARY_PATH": "runtime/sim:_main/runtime/sim",
-        "LD_PRELOAD": "libstdc++.so.6",
     },
     legacy_create_init = False,
     main = "@iree_core//runtime/bindings/python:tests/hal_test.py",
@@ -35,14 +34,6 @@ py_test(
 py_test(
     name = "import_test",
     srcs = ["import_test.py"],
-    data = [
-        "//runtime/sim:libcoralnpu_simulator_mpact.so",
-    ],
-    env = {
-        "LD_LIBRARY_PATH": "runtime/sim:_main/runtime/sim",
-        "LD_PRELOAD": "libstdc++.so.6",
-    },
-    legacy_create_init = False,
     main = "import_test.py",
     deps = [
         "@iree_core//compiler/bindings/python:compiler",
