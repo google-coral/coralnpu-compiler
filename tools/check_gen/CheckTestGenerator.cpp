@@ -558,7 +558,8 @@ LogicalResult CheckTestGenerator::addAssertions(
     OperationState checkState(loc, checkOp);
     checkState.addOperands({resVal, expectedCst->getResult(0)});
     if (isFloat) {
-      // Add relative tolerance to support FMA vs non-FMA comparison for large values.
+      // Add relative tolerance to support FMA vs non-FMA comparison for large
+      // values.
       checkState.addAttribute("rtol", funcBuilder.getF32FloatAttr(1e-6f));
     }
     funcBuilder.create(checkState);

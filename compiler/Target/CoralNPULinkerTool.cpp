@@ -148,6 +148,10 @@ class CoralNPULinkerTool final : public LinkerTool {
         "--no-warn-rwx-segments",
     };
 
+    LLVM_DEBUG(llvm::SmallString<256> mapFilePath(artifacts.libraryFile.path);
+               llvm::sys::path::replace_extension(mapFilePath, "map");
+               flags.push_back("-Map=" + std::string(mapFilePath)););
+
     if (!targetOptions.target.debugSymbols) {
       flags.push_back("--strip-debug");
     }

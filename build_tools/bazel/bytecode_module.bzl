@@ -29,6 +29,16 @@ def coralnpu_bytecode_module(
     necessary CRT files and adds the toolchain to the PATH before running the
     compiler, allowing the compiler to find the linker and linker script
     inside the Bazel sandbox.
+
+    Args:
+      name: The name of the target.
+      src: The source MLIR file.
+      flags: Flags to pass to the compile tool.
+      module_name: Optional name of the output module.
+      compile_tool: The compiler tool target.
+      coralnpu_linker_tool: The linker tool target.
+      deps: Additional source files needed for compilation.
+      **kwargs: Extra arguments to pass to the genrule.
     """
 
     if not module_name:
@@ -65,7 +75,7 @@ def coralnpu_bytecode_module(
             "//crt:libcoralnpu_iree",
             "@rv32_toolchain//:bin/riscv32-unknown-elf-ld",
             "@rv32_toolchain//:all_files",
-        ],
+        ] + deps,
         outs = out_files,
         cmd = cmd,
         tools = [compile_tool, coralnpu_linker_tool],
