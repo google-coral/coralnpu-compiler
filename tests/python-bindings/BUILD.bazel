@@ -25,6 +25,7 @@ py_test(
     },
     legacy_create_init = False,
     main = "@iree_core//runtime/bindings/python:tests/hal_test.py",
+    tags = ["ci"],
     deps = [
         "@iree_core//compiler/bindings/python:compiler",
         "@iree_core//runtime/bindings/python:runtime",
@@ -35,8 +36,14 @@ py_test(
     name = "import_test",
     srcs = ["import_test.py"],
     main = "import_test.py",
+    tags = ["ci"],
     deps = [
         "@iree_core//compiler/bindings/python:compiler",
         "@iree_core//runtime/bindings/python:runtime",
     ],
+)
+
+test_suite(
+    name = "ci",
+    tags = ["ci"],
 )

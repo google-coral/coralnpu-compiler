@@ -3,9 +3,17 @@
 load("//tests/models/stablehlo:defs.bzl", "op_tests")
 
 def op_tests_i32(name, **kwargs):
+    """Wrapper macro for op_tests with 'i32' and 'ci' tags.
+
+    Args:
+      name: The name of the test target.
+      **kwargs: Additional arguments passed to op_tests.
+    """
     tags = list(kwargs.pop("tags", []))
     if "i32" not in tags:
         tags.append("i32")
+    if "ci" not in tags:
+        tags.append("ci")
     op_tests(name = name, tags = tags, **kwargs)
 
 def stablehlo_op_tests_i32(name = "stablehlo_op_i32_tests"):

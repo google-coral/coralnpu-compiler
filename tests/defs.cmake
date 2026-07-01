@@ -24,7 +24,7 @@ function(coralnpu_check_gen_tests)
     _RULE
     ""
     "NAME;TEST;TIMEOUT;DEFAULT_GEN"
-    "INSTANCES;ARG_GENS;COMPILER_FLAGS;RUNNER_ARGS"
+    "INSTANCES;ARG_GENS;COMPILER_FLAGS;RUNNER_ARGS;LABELS"
     ${ARGN}
   )
 
@@ -111,6 +111,7 @@ function(coralnpu_check_gen_tests)
     LABELS
       "driver=coralnpu"
       "target=coralnpu"
+      ${_RULE_LABELS}
     TIMEOUT
       ${_RULE_TIMEOUT}
   )

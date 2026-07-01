@@ -33,7 +33,7 @@ function(op_tests)
     _RULE
     ""
     "NAME;TEST;TIMEOUT;DEFAULT_GEN"
-    "INSTANCES;ARG_GENS;COMPILER_FLAGS;RUNNER_ARGS"
+    "INSTANCES;ARG_GENS;COMPILER_FLAGS;RUNNER_ARGS;LABELS"
     ${ARGN}
   )
 
@@ -51,6 +51,9 @@ function(op_tests)
     list(APPEND RUNNER_ARGS ${_RULE_RUNNER_ARGS})
   endif()
 
+  set(EXTRA_LABELS ${_RULE_LABELS})
+  list(APPEND EXTRA_LABELS "ci")
+
   coralnpu_check_gen_tests(
     NAME
       "${_RULE_NAME}"
@@ -66,6 +69,8 @@ function(op_tests)
       ${COMPILER_FLAGS}
     RUNNER_ARGS
       ${RUNNER_ARGS}
+    LABELS
+      ${EXTRA_LABELS}
     TIMEOUT
       "${_RULE_TIMEOUT}"
   )
