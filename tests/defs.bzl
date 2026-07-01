@@ -18,7 +18,7 @@ def coralnpu_check_test(
     coralnpu_bytecode_module(
         name = bytecode_module_name,
         src = src,
-        compile_tool = "@iree_core//tools:iree-compile",
+        compile_tool = "//compiler/tools:coralnpu-compile",
         flags = list(compiler_flags),
         tags = ["target=coralnpu"],
         deps = deps,

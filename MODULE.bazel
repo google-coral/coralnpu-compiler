@@ -68,9 +68,9 @@ llvm_configure(
     name = "llvm-project",
     targets = [
         "AArch64",
-        # "AMDGPU",
+        "AMDGPU",
         # "ARM",
-        # "NVPTX",
+        "NVPTX",
         "RISCV",
         # "WebAssembly",
         "X86",

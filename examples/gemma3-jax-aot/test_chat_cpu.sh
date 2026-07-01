@@ -37,7 +37,7 @@ main() {
   echo '|   gemma3_270m.mlir'
   echo '| output:'
   echo '|   gemma3_270m_cpu.vmfb'
-  bazel run --config=dev @iree_core//tools:iree-compile -- \
+  bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     --iree-hal-target-device=local \
     --iree-hal-local-target-device-backends=llvm-cpu \
     --iree-llvmcpu-target-cpu-features=host \

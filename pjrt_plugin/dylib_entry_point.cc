@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-#include "pjrt_plugin/client.h"
-
 #include "iree_pjrt/common/dylib_platform.h"
+#include "pjrt_plugin/client.h"
 
 // Provides the shared library exports.
 #include "iree_pjrt/common/dylib_entry_point.cc.inc"

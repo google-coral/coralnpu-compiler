@@ -44,7 +44,7 @@ main() {
   echo '|   gemma3_270m_part2.vmfb'
   echo '|   gemma3_270m_part3.vmfb'
 
-  bazel build --config=dev @iree_core//tools:iree-compile
+  bazel build --config=dev //compiler/tools:coralnpu-compile
 
   local -a iree_options=()
   iree_options+=('--iree-hal-target-device=local')
@@ -55,19 +55,19 @@ main() {
   # iree_options+=('--iree-llvmcpu-loop-vectorization=false')
 
   echo "Compiling Part 1 (Layers 0..8)..."
-  bazel run --config=dev @iree_core//tools:iree-compile -- \
+  bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     "${iree_options[@]}" \
     "${PWD}/gemma3_270m_part1.mlir" \
     -o "${PWD}/gemma3_270m_part1.vmfb" &
 
   echo "Compiling Part 2 (Layers 9..17 + Final Norm)..."
-  bazel run --config=dev @iree_core//tools:iree-compile -- \
+  bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     "${iree_options[@]}" \
     "${PWD}/gemma3_270m_part2.mlir" \
     -o "${PWD}/gemma3_270m_part2.vmfb" &
 
   echo "Compiling Part 3 (Logits Decode)..."
-  bazel run --config=dev @iree_core//tools:iree-compile -- \
+  bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     "${iree_options[@]}" \
     "${PWD}/gemma3_270m_part3.mlir" \
     -o "${PWD}/gemma3_270m_part3.vmfb" &

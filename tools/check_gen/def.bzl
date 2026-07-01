@@ -188,7 +188,7 @@ def check_gen_tests(
         arg_gens: List of generator MLIR/VMFB files (can contain duplicates).
         instances: List of instance shape strings (or tuples with tags).
         default_gen: The default generators file target (vmfb or mlir).
-        compiler_flags: Flags for the compiler (iree-compile).
+        compiler_flags: Flags for the compiler (coralnpu-compile).
         runner_args: Args for the runner (iree-check-module).
         tags: Tags for the test targets.
         timeout: Timeout for the test targets.
@@ -246,7 +246,7 @@ def check_gen_tests(
         coralnpu_bytecode_module(
             name = bytecode_module_name,
             src = ":" + select_file_target_name,  # Refer to the auto-generated target
-            compile_tool = "@iree_core//tools:iree-compile",
+            compile_tool = "//compiler/tools:coralnpu-compile",
             flags = list(compiler_flags),
             # if the test is taged manual, we have to pass the tag so we don't try to generate the test (which fails)
             tags = bytecode_tags + (["manual"] if "manual" in extra_tags else []),

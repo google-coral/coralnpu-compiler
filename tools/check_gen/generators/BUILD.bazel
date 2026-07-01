@@ -10,7 +10,7 @@ exports_files(glob(["*.mlir"]))
     iree_bytecode_module(
         name = f.split(".")[0] + "_vmfb",
         src = f,
-        compile_tool = "@iree_core//tools:iree-compile",
+        compile_tool = "//compiler/tools:coralnpu-compile",
         flags = [
             "--iree-hal-target-backends=vmvx",
         ],

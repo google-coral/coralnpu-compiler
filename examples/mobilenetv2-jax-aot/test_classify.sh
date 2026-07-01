@@ -30,7 +30,7 @@ main() {
 
   local linker_path="$(bazel query --output=location "@rv32_toolchain//:bin/riscv32-unknown-elf-ld" 2>/dev/null | cut -d: -f1)"
 
-  bazel run --config=dev @iree_core//tools:iree-compile -- \
+  bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     --iree-hal-target-device=local \
     --iree-hal-local-target-device-backends=llvm-cpu \
     --iree-llvmcpu-target-cpu-features=host \

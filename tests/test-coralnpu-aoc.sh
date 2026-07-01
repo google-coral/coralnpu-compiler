@@ -10,8 +10,8 @@ usage() {
 }
 
 setup-bazel() {
-  BUILD_TARGETS=(bazel build --config=dev @iree_core//tools:iree-compile @iree_core//tools:iree-run-module)
-  IREE_COMPILE=(bazel run --config=dev @iree_core//tools:iree-compile --)
+  BUILD_TARGETS=(bazel build --config=dev //compiler/tools:coralnpu-compile @iree_core//tools:iree-run-module)
+  IREE_COMPILE=(bazel run --config=dev //compiler/tools:coralnpu-compile --)
   IREE_RUN_MODULE=(bazel run --config=dev @iree_core//tools:iree-run-module --)
 }
 
@@ -23,8 +23,8 @@ setup-cmake() {
       -DIREE_HAL_DRIVER_LOCAL_SYNC=ON
   fi
 
-  BUILD_TARGETS=(cmake --build "${build_dir}" --target iree-compile iree-run-module)
-  IREE_COMPILE=("${build_dir}"/third_party/iree/tools/iree-compile)
+  BUILD_TARGETS=(cmake --build "${build_dir}" --target coralnpu-compile iree-run-module)
+  IREE_COMPILE=("${build_dir}"/coralnpu_compiler/tools/coralnpu-compile)
   IREE_RUN_MODULE=("${build_dir}"/third_party/iree/tools/iree-run-module)
 }
 

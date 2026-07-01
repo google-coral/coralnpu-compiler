@@ -24,7 +24,7 @@ main() {
 
   echo
   echo 'Formatting C/C++ files'
-  find "${dirs[@]}" -type f \( -name '*.hpp' -or -name '*.cpp' -or -name '*.h' -or -name '*.c' \) -print0 \
+  find "${dirs[@]}" -type f \( -name '*.hpp' -or -name '*.cpp' -or -name '*.cc' -or -name '*.h' -or -name '*.c' \) -print0 \
     | xargs -0 clang-format-19 -i || exit_code=$?
 
   echo

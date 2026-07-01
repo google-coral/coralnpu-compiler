@@ -16,13 +16,14 @@
 
 #include "pjrt_plugin/client.h"
 
-#include "runtime/driver/coralnpu_driver.h"
 #include "iree/hal/local/loaders/embedded_elf_loader.h"
 #include "iree/hal/local/plugins/registration/init.h"
+#include "runtime/driver/coralnpu_driver.h"
 
 namespace iree::pjrt::coralnpu {
 
-CORALNPUClientInstance::CORALNPUClientInstance(std::unique_ptr<Platform> platform)
+CORALNPUClientInstance::CORALNPUClientInstance(
+    std::unique_ptr<Platform> platform)
     : ClientInstance(std::move(platform)) {
   // Seems that it must match how registered. Action at a distance not
   // great.
@@ -54,7 +55,8 @@ iree_status_t CORALNPUClientInstance::InitializeDeps() {
   return iree_ok_status();
 }
 
-iree_status_t CORALNPUClientInstance::CreateDriver(iree_hal_driver_t** out_driver) {
+iree_status_t CORALNPUClientInstance::CreateDriver(
+    iree_hal_driver_t** out_driver) {
   // TODO: There is substantial configuration available.
   // We choose to use explicit instantiation (vs registration) because
   // it is assumed that for server-library oriented cases, we are going to
@@ -73,12 +75,13 @@ iree_status_t CORALNPUClientInstance::CreateDriver(iree_hal_driver_t** out_drive
   return iree_ok_status();
 }
 
-bool CORALNPUClientInstance::SetDefaultCompilerFlags(CompilerJob* compiler_job) {
+bool CORALNPUClientInstance::SetDefaultCompilerFlags(
+    CompilerJob* compiler_job) {
   return compiler_job->SetFlag("--iree-hal-target-device=coralnpu") &&
          compiler_job->SetFlag("--coralnpu-target-abi=ilp32") &&
          // TODO(b/507532766): Make this compiler flag configurable.
-         compiler_job->SetFlag("--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32x")
-         ;
+         compiler_job->SetFlag(
+             "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32x");
 }
 
 }  // namespace iree::pjrt::coralnpu

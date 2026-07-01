@@ -78,7 +78,7 @@ Bazel's version has to be backward compatible with IREE's requirements
 
 ```shell
 bazel build --config=dev \
-    @iree_core//tools:iree-compile \
+    //compiler/tools:coralnpu-compile \
     @iree_core//tools:iree-run-module \
     @iree_core//compiler/bindings/python:compiler \
     @iree_core//runtime/bindings/python:runtime
@@ -92,7 +92,7 @@ significantly.
 
 <!--
 For dynamiclly linked binary (with libIREECompiler.so):
-bazel build --config=dev --@iree_core//compiler/src/iree/compiler/API:link_shared @iree_core//tools:iree-compile
+bazel build --config=dev --@iree_core//compiler/src/iree/compiler/API:link_shared //compiler/tools:coralnpu-compile
 -->
 
 ### Release build
@@ -102,8 +102,8 @@ Same as above, but use `--config=release` instead of `--config=dev`.
 ### Run the compiler
 
 ```shell
-# NB: anything before the -- will be interperted by bazel and not iree-compile
-bazel run --config={dev|release} @iree_core//tools:iree-compile -- [iree-compile options]
+# NB: anything before the -- will be interperted by bazel and not coralnpu-compile
+bazel run --config={dev|release} //compiler/tools:coralnpu-compile -- [coralnpu-compile options]
 ```
 
 For example, to compile model.mlir:
@@ -113,7 +113,7 @@ For example, to compile model.mlir:
 local linker_path="$(bazel query --output=location "@rv32_toolchain//:bin/riscv32-unknown-elf-ld" 2>/dev/null | cut -d: -f1)"
 
 # Compile for the host machine + CoralNPU (will run in simulation)
-bazel run --config=dev @iree_core//tools:iree-compile -- \
+bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     --iree-hal-target-device=local \
     --iree-hal-local-target-device-backends=llvm-cpu \
     --iree-llvmcpu-target-cpu-features=host \
@@ -179,7 +179,7 @@ cmake -G Ninja -B "${BUILD_DIR}" -S .
 Then, to build the compiler and runtime:
 
 ```shell
-cmake --build "${BUILD_DIR}" --target iree-compile iree-run-module
+cmake --build "${BUILD_DIR}" --target coralnpu-compile iree-run-module
 ```
 
 ## Testing
