@@ -28,8 +28,6 @@ main() {
   echo
   echo "=== Phase 2: Compiling to VMFB ==="
 
-  local linker_path="$(bazel query --output=location "@rv32_toolchain//:bin/riscv32-unknown-elf-ld" 2>/dev/null | cut -d: -f1)"
-
   bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     --iree-hal-target-device=local \
     --iree-hal-local-target-device-backends=llvm-cpu \
@@ -37,7 +35,7 @@ main() {
     --iree-hal-target-device=coralnpu \
     --coralnpu-target-abi=ilp32 \
     --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
-    --coralnpu-embedded-linker-path="${linker_path}" \
+    --coralnpu-dump-affinity-profile-format=pretty \
     "${SCRIPT_DIR}/mobilenet_v2.mlir" \
     -o "${SCRIPT_DIR}/mobilenet_v2.vmfb"
 

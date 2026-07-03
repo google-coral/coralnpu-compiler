@@ -423,6 +423,9 @@ static iree_status_t iree_hal_coralnpu_command_buffer_dispatch(
     dispatch_state->constants = (const uint32_t *)constants.data;
 
     dispatch_state->binding_count = (uint8_t)bindings.count;
+    // Track writeability of bindings to prevent host-side segfaults when
+    // reading back read-only constant buffers after simulation.
+    bool binding_writeable[IREE_HAL_EXECUTABLE_MAX_BINDING_COUNT];
     for (iree_host_size_t i = 0; i < bindings.count; ++i) {
       iree_hal_buffer_mapping_t buffer_mapping = {{0}};
       IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
@@ -433,11 +436,15 @@ static iree_status_t iree_hal_coralnpu_command_buffer_dispatch(
           buffer_mapping.contents.data;
       command_buffer->state.binding_length_storage[i] =
           buffer_mapping.contents.data_length;
+      binding_writeable[i] =
+          (iree_hal_buffer_allowed_access(bindings.values[i].buffer) &
+           IREE_HAL_MEMORY_ACCESS_WRITE) != 0;
     }
 
     IREE_RETURN_IF_ERROR(iree_hal_simulator_issue_dispatch_inline(
         iree_hal_simulator_executable_dispatch_image(executable),
-        dispatch_state, export_ordinal, iree_byte_span_empty()));
+        dispatch_state, binding_writeable, export_ordinal,
+        iree_byte_span_empty()));
 
     return iree_ok_status();
   }

@@ -17,6 +17,8 @@
 #ifndef RUNTIME_SIM_SIMULATOR_INLINE_H_
 #define RUNTIME_SIM_SIMULATOR_INLINE_H_
 
+#include <stdbool.h>
+
 #include "iree/base/api.h"
 #include "iree/hal/local/executable_library.h"
 
@@ -27,7 +29,8 @@ extern "C" {
 iree_status_t iree_hal_simulator_issue_dispatch_inline(
     iree_const_byte_span_t dispatch_image,
     const iree_hal_executable_dispatch_state_v0_t *dispatch_state,
-    iree_host_size_t ordinal, iree_byte_span_t local_memory);
+    const bool *binding_writeable, iree_host_size_t ordinal,
+    iree_byte_span_t local_memory);
 
 #ifdef __cplusplus
 }  // extern "C"

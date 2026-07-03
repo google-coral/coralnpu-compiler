@@ -26,20 +26,61 @@ from PIL import Image
 import iree.runtime as ireert
 
 
-def init_iree_func(vmfb_path, device_name="local-sync"):
-  config = ireert.Config(device_name)
+def init_iree_func(vmfb_path):
+  instance = ireert.VmInstance()
+
+  print("Available drivers:", ireert.query_available_drivers())
+
+  try:
+    cpu_device = ireert.get_device("local-sync")
+    print("Created CPU device")
+  except Exception as e:
+    print(f"Failed to create CPU device: {e}")
+    raise e
+
+  try:
+    npu_device = ireert.get_device("coralnpu")
+    print("Created NPU device")
+  except Exception as e:
+    print(f"Failed to create NPU device: {e}")
+    raise e
+
+  # Create HAL module with both devices
+  hal_module = ireert.create_hal_module(instance,
+                                        devices=[cpu_device, npu_device])
+
+  # Duck-typed config for SystemContext
+  class MultiDeviceConfig:
+
+    def __init__(self, device, instance, hal_module):
+      self.device = device  # Used by FunctionInvoker for arguments
+      self.vm_instance = instance
+      self.default_vm_modules = (hal_module,)
+
+  config = MultiDeviceConfig(cpu_device, instance, hal_module)
 
   print(f"Loading VMFB from {vmfb_path}...")
   try:
-    vm_module = ireert.VmModule.mmap(config.vm_instance, vmfb_path)
+    vm_module = ireert.VmModule.mmap(instance, vmfb_path)
+    print("Successfully mmapped VMFB")
   except Exception as e:
     print(f"mmap failed: {e}. Trying from_flatbuffer...")
     with open(vmfb_path, "rb") as f:
-      vm_module = ireert.VmModule.from_flatbuffer(config.vm_instance, f.read())
+      vm_module = ireert.VmModule.from_flatbuffer(instance, f.read())
+      print("Successfully loaded VMFB from flatbuffer")
 
+  print("Creating SystemContext...")
   ctx = ireert.SystemContext(config=config)
+  print("Successfully created SystemContext")
+
+  print("Adding VM module to context...")
   ctx.add_vm_module(vm_module)
-  return ctx.modules.jit_predict.main
+  print("Successfully added VM module")
+
+  print("Resolving main function...")
+  main_func = ctx.modules.jit_predict.main
+  print("Successfully resolved main function")
+  return main_func
 
 
 def preprocess_image(image_path):
@@ -76,7 +117,9 @@ def main():
     print(f"Error: VMFB file {vmfb_path} not found. Please compile it first.")
     sys.exit(1)
 
+  print("Initializing IREE...")
   predict_func = init_iree_func(vmfb_path)
+  print("IREE initialized.")
 
   print(f"Preprocessing image {image_path}...")
   input_data = preprocess_image(image_path)

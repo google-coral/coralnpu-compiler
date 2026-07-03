@@ -1,0 +1,75 @@
+From 32daa8eb4256e41f5745ead3b72f9716a63e655a Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Fri, 3 Jul 2026 22:08:59 +0200
+Subject: [PATCH] [passes] copy attributes
+
+This is needed to preserve affinity annotations.
+---
+ mlir/lib/Dialect/Linalg/Transforms/DropUnitDims.cpp        | 1 +
+ mlir/lib/Dialect/Linalg/Transforms/ElementwiseOpFusion.cpp | 4 ++++
+ mlir/lib/Dialect/Linalg/Transforms/Generalization.cpp      | 1 +
+ 3 files changed, 6 insertions(+)
+
+diff --git a/mlir/lib/Dialect/Linalg/Transforms/DropUnitDims.cpp b/mlir/lib/Dialect/Linalg/Transforms/DropUnitDims.cpp
+index ef58197bbfd0..c68dc49ead78 100644
+--- a/mlir/lib/Dialect/Linalg/Transforms/DropUnitDims.cpp
++++ b/mlir/lib/Dialect/Linalg/Transforms/DropUnitDims.cpp
+@@ -512,6 +512,7 @@ linalg::dropUnitDims(RewriterBase &rewriter, IndexingMapOpInterface op,
+ 
+   IndexingMapOpInterface replacementOp = droppedUnitDimsBuilder(
+       loc, rewriter, op, newOperands, newIndexingMaps, unitDims);
++  replacementOp->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+ 
+   // 6. If any result type changes, insert a reshape/slice to convert from the
+   //    original type to the new type.
+diff --git a/mlir/lib/Dialect/Linalg/Transforms/ElementwiseOpFusion.cpp b/mlir/lib/Dialect/Linalg/Transforms/ElementwiseOpFusion.cpp
+index 72acd02d0d13..3977946a4a5d 100644
+--- a/mlir/lib/Dialect/Linalg/Transforms/ElementwiseOpFusion.cpp
++++ b/mlir/lib/Dialect/Linalg/Transforms/ElementwiseOpFusion.cpp
+@@ -423,6 +423,7 @@ mlir::linalg::fuseElementwiseOps(RewriterBase &rewriter,
+       consumer.getIteratorTypes(),
+       /*doc=*/nullptr,
+       /*library_call=*/nullptr);
++  fusedOp->setDialectAttrs(consumer->getDialectAttrs());
+   if (!fusedOp.getShapesToLoopsMap()) {
+     // Fused op has invalid indexing maps. Typically this means something is off
+     // in the input, but going ahead here would result in verification errors.
+@@ -817,6 +818,7 @@ static Operation *createExpandedGenericOp(
+   Operation *fused = GenericOp::create(rewriter, linalgOp.getLoc(), resultTypes,
+                                        expandedOpOperands, outputs,
+                                        expandedOpIndexingMaps, iteratorTypes);
++  fused->setDialectAttrs(linalgOp->getDialectAttrs());
+ 
+   Region &fusedRegion = fused->getRegion(0);
+   Region &originalRegion = linalgOp->getRegion(0);
+@@ -1798,6 +1800,7 @@ GenericOp cloneToCollapsedOp<GenericOp>(RewriterBase &rewriter,
+       rewriter, origOp.getLoc(), resultTypes, inputOperands, outputOperands,
+       indexingMaps, iteratorTypes,
+       [](OpBuilder &builder, Location loc, ValueRange args) {});
++  collapsedOp->setDialectAttrs(origOp->getDialectAttrs());
+   Block *origOpBlock = &origOp->getRegion(0).front();
+   Block *collapsedOpBlock = &collapsedOp->getRegion(0).front();
+   rewriter.mergeBlocks(origOpBlock, collapsedOpBlock,
+@@ -2320,6 +2323,7 @@ public:
+                             genericOp.getIteratorTypes(),
+                             /*doc=*/nullptr,
+                             /*library_call=*/nullptr);
++      fusedOp->setDialectAttrs(genericOp->getDialectAttrs());
+ 
+       // Map the block argument corresponding to the replaced argument with the
+       // scalar constant.
+diff --git a/mlir/lib/Dialect/Linalg/Transforms/Generalization.cpp b/mlir/lib/Dialect/Linalg/Transforms/Generalization.cpp
+index 75bb1757a55f..407f528d7dc8 100644
+--- a/mlir/lib/Dialect/Linalg/Transforms/Generalization.cpp
++++ b/mlir/lib/Dialect/Linalg/Transforms/Generalization.cpp
+@@ -64,6 +64,7 @@ FailureOr<GenericOp> mlir::linalg::generalizeNamedOp(RewriterBase &rewriter,
+                         outputs, indexingMaps, iterators);
+   rewriter.inlineRegionBefore(linalgOp->getRegion(0), genericOp.getRegion(),
+                               genericOp.getRegion().begin());
++  genericOp->setDiscardableAttrs(linalgOp->getDiscardableAttrDictionary());
+   rewriter.replaceOp(linalgOp, genericOp->getResults());
+   return genericOp;
+ }
+-- 
+2.55.0.rc0.799.gd6f94ed593-goog
+

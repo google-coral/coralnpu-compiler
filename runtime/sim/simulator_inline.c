@@ -94,7 +94,8 @@ static void iree_hal_coralnpu_zero_mem(uint32_t address, size_t size) {
 iree_status_t iree_hal_simulator_issue_dispatch_inline(
     iree_const_byte_span_t dispatch_image,
     const iree_hal_executable_dispatch_state_v0_t* dispatch_state,
-    iree_host_size_t ordinal, iree_byte_span_t local_memory) {
+    const bool* binding_writeable, iree_host_size_t ordinal,
+    iree_byte_span_t local_memory) {
   IREE_ASSERT_ARGUMENT(dispatch_state);
 
 #ifdef IREE_CORALNPU_SIMULATOR_DEBUG
@@ -283,7 +284,9 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
     IREE_RETURN_IF_ERROR(iree_hal_coralnpu_allocate_ddr(
         &ddr_cursor, 64, binding_length, &binding_address));
 
-    if (binding_length != 0) {
+    // Read back results only into writeable buffers (skip read-only constants).
+    if (binding_length != 0 &&
+        (binding_writeable == NULL || binding_writeable[i])) {
       simulator_read_mem(binding_address, binding_ptr, binding_length);
     }
   }

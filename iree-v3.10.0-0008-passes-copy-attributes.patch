@@ -1,0 +1,368 @@
+From 3629f5b846d4c7bfb23937343385c030783e9077 Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Fri, 3 Jul 2026 22:07:48 +0200
+Subject: [PATCH] [passes] copy attributes
+
+This is needed to preserve affinity annotations.
+---
+ .../iree/compiler/Dialect/Flow/IR/FlowOps.cpp |  1 +
+ .../Dialect/Flow/Transforms/RegionOpUtils.cpp |  1 +
+ .../PropagateLinalgTranspose.cpp              |  5 +-
+ .../QuantizedConvToConv.cpp                   | 87 ++++++++++++-------
+ .../QuantizedMatmulToMatmul.cpp               | 20 ++++-
+ 5 files changed, 76 insertions(+), 38 deletions(-)
+
+diff --git a/compiler/src/iree/compiler/Dialect/Flow/IR/FlowOps.cpp b/compiler/src/iree/compiler/Dialect/Flow/IR/FlowOps.cpp
+index 6fdf177d0f..1ae5360162 100644
+--- a/compiler/src/iree/compiler/Dialect/Flow/IR/FlowOps.cpp
++++ b/compiler/src/iree/compiler/Dialect/Flow/IR/FlowOps.cpp
+@@ -597,6 +597,7 @@ bool dropUnusedAndRedundantDispatchRegionResults(
+   auto newRegionOp =
+       Flow::DispatchRegionOp::create(rewriter, regionOp.getLoc(), resultTypes,
+                                      dynamicDims, regionOp.getWorkload());
++  newRegionOp->setDialectAttrs(regionOp->getDialectAttrs());
+   newRegionOp.getBody().takeBody(regionOp.getBody());
+ 
+   // Update terminator.
+diff --git a/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp b/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp
+index b074128614..b8e1b9c111 100644
+--- a/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp
++++ b/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp
+@@ -373,6 +373,7 @@ FailureOr<IREE::Flow::DispatchRegionOp> appendDispatchRegionResults(
+   auto newRegionOp = IREE::Flow::DispatchRegionOp::create(
+       rewriter, regionOp->getLoc(), resultTypes, regionDynamicDims,
+       regionOp.getWorkload());
++  newRegionOp->setDialectAttrs(regionOp->getDialectAttrs());
+   rewriter.inlineRegionBefore(regionOp.getBody(), newRegionOp.getBody(),
+                               newRegionOp.getBody().begin());
+   rewriter.replaceOp(
+diff --git a/compiler/src/iree/compiler/GlobalOptimization/PropagateLinalgTranspose.cpp b/compiler/src/iree/compiler/GlobalOptimization/PropagateLinalgTranspose.cpp
+index 60ba3f5b85..962d40516b 100644
+--- a/compiler/src/iree/compiler/GlobalOptimization/PropagateLinalgTranspose.cpp
++++ b/compiler/src/iree/compiler/GlobalOptimization/PropagateLinalgTranspose.cpp
+@@ -138,8 +138,11 @@ static void specializeGenericTransposeOp(RewriterBase &rewriter,
+   for (AffineExpr expr : outMap.getResults()) {
+     perm.push_back(*inMap.getResultPosition(expr));
+   }
+-  rewriter.replaceOpWithNewOp<linalg::TransposeOp>(
++  auto transposeOp = rewriter.replaceOpWithNewOp<linalg::TransposeOp>(
+       genericOp, genericOp.getDpsInputs()[0], genericOp.getDpsInits()[0], perm);
++  if (auto attr = genericOp->getAttr("stream.affinity")) {
++    transposeOp->setAttr("stream.affinity", attr);
++  }
+ }
+ 
+ //===----------------------------------------------------------------------===//
+diff --git a/compiler/src/iree/compiler/GlobalOptimization/QuantizedConvToConv.cpp b/compiler/src/iree/compiler/GlobalOptimization/QuantizedConvToConv.cpp
+index 4614f7b56c..3ec68f88fe 100644
+--- a/compiler/src/iree/compiler/GlobalOptimization/QuantizedConvToConv.cpp
++++ b/compiler/src/iree/compiler/GlobalOptimization/QuantizedConvToConv.cpp
+@@ -28,6 +28,13 @@ namespace mlir::iree_compiler::GlobalOptimization {
+ 
+ namespace {
+ 
++template <typename FromTy, typename ToTy>
++void copyAffinity(FromTy from, ToTy to) {
++  if (auto attr = from->getAttr("stream.affinity")) {
++    to->setAttr("stream.affinity", attr);
++  }
++}
++
+ // Creates an empty copy matching the provided value.
+ Value emptyCopy(ImplicitLocOpBuilder &rewriter, Value value) {
+   Type eTy = getElementTypeOrSelf(value.getType());
+@@ -38,20 +45,21 @@ Value emptyCopy(ImplicitLocOpBuilder &rewriter, Value value) {
+ 
+ // Creates an zero initialized tensor of given shape and type.
+ Value emptyZero(ImplicitLocOpBuilder &builder, RankedTensorType ty,
+-                llvm::SmallVector<Value> dyn) {
++                llvm::SmallVector<Value> dyn, Operation *op) {
+   Value empty =
+       tensor::EmptyOp::create(builder, ty.getShape(), ty.getElementType(), dyn);
+ 
+   TypedAttr attr = builder.getZeroAttr(ty.getElementType());
+   Value cnst = arith::ConstantOp::create(builder, attr);
+-  return linalg::FillOp::create(builder, ValueRange{cnst}, ValueRange{empty})
+-      .result();
++  auto fillOp = linalg::FillOp::create(builder, ValueRange{cnst}, ValueRange{empty});
++  copyAffinity(op, fillOp);
++  return fillOp.result();
+ }
+ 
+ // Apply the multiply subtract corresponding with a zero-point adjustment
+ // broadcasting according to the afifne map.
+ Value applyZeroPoint(ImplicitLocOpBuilder &builder, Value conv, Value sum,
+-                     Value zp, ArrayRef<int> affine_map) {
++                     Value zp, ArrayRef<int> affine_map, Operation *op) {
+   auto context = builder.getContext();
+   auto convTy = cast<RankedTensorType>(conv.getType());
+ 
+@@ -69,32 +77,34 @@ Value applyZeroPoint(ImplicitLocOpBuilder &builder, Value conv, Value sum,
+   SmallVector<AffineMap> affineMaps{convMap, sumMap, convMap};
+ 
+   Value init = emptyCopy(builder, conv);
+-  return linalg::GenericOp::create(
++  auto genericOp = linalg::GenericOp::create(
+              builder, init.getType(), ValueRange{conv, sum}, ValueRange{init},
+              affineMaps, iterators,
+              [=](OpBuilder &b, Location loc, ValueRange args) {
+                Value mul = arith::MulIOp::create(b, loc, args[1], zp);
+                Value sum = arith::SubIOp::create(b, loc, args[0], mul);
+                linalg::YieldOp::create(b, loc, sum);
+-             })
+-      .getResult(0);
++             });
++  copyAffinity(op, genericOp);
++  return genericOp.getResult(0);
+ }
+ 
+ // Add the scalar value to the tensor.
+-Value addScalar(ImplicitLocOpBuilder &builder, Value value, Value scalar) {
++Value addScalar(ImplicitLocOpBuilder &builder, Value value, Value scalar, Operation *op) {
+   auto ty = cast<RankedTensorType>(value.getType());
+   SmallVector<utils::IteratorType> iterators(ty.getRank(),
+                                              utils::IteratorType::parallel);
+   auto map = builder.getMultiDimIdentityMap(ty.getRank());
+   Value init = emptyCopy(builder, value);
+-  return linalg::GenericOp::create(
++  auto genericOp = linalg::GenericOp::create(
+              builder, init.getType(), ValueRange{value}, ValueRange{init},
+              ArrayRef<AffineMap>{map, map}, iterators,
+              [=](OpBuilder &b, Location loc, ValueRange args) {
+                Value add = arith::AddIOp::create(b, loc, args[0], scalar);
+                linalg::YieldOp::create(b, loc, add);
+-             })
+-      .getResult(0);
++             });
++  copyAffinity(op, genericOp);
++  return genericOp.getResult(0);
+ }
+ 
+ void GetDynamicDym(ImplicitLocOpBuilder &builder,
+@@ -148,10 +158,11 @@ struct QuantizedConvToConv
+                      fZpConst.getValue().isZero();
+ 
+     // First implement the convolution without the zero point.
+-    Value newConv = linalg::Conv2DNhwcHwcfOp::create(
++    auto newConvOp = linalg::Conv2DNhwcHwcfOp::create(
+                         builder, resultTy, ValueRange{input, filter},
+-                        op.getOutputs(), strides, dilations)
+-                        .getResult(0);
++                        op.getOutputs(), strides, dilations);
++    copyAffinity(op, newConvOp);
++    Value newConv = newConvOp.getResult(0);
+ 
+     // If the zero pointer value is zero we can just replace.
+     if (iZpIsZero && fZpIsZero) {
+@@ -166,7 +177,8 @@ struct QuantizedConvToConv
+       Value filterSum =
+           sumReduceDimensionSubset(builder, filter, accETy,
+                                    /*reduce_dim=*/{true, true, true, false});
+-      newConv = applyZeroPoint(builder, newConv, filterSum, iZp, {3});
++      copyAffinity(op, filterSum.getDefiningOp());
++      newConv = applyZeroPoint(builder, newConv, filterSum, iZp, {3}, op);
+     }
+ 
+     if (!fZpIsZero) {
+@@ -175,6 +187,7 @@ struct QuantizedConvToConv
+       Value inputSum =
+           sumReduceDimensionSubset(builder, input, accETy,
+                                    /*reduce_dim*/ {false, false, false, true});
++      copyAffinity(op, inputSum.getDefiningOp());
+ 
+       // Materialize a length-1 dimension at the end of the summation.
+       SmallVector<ReassociationExprs> reassociationMap(3);
+@@ -186,8 +199,10 @@ struct QuantizedConvToConv
+           RankedTensorType::get({inputTy.getDimSize(0), inputTy.getDimSize(1),
+                                  inputTy.getDimSize(2), 1},
+                                 accETy);
+-      inputSum = tensor::ExpandShapeOp::create(builder, expandTy, inputSum,
++      auto expandOp = tensor::ExpandShapeOp::create(builder, expandTy, inputSum,
+                                                reassociationMap);
++      copyAffinity(op, expandOp);
++      inputSum = expandOp.getResult();
+ 
+       llvm::SmallVector<int64_t> poolDims;
+       llvm::SmallVector<Value> poolDynDims;
+@@ -198,7 +213,7 @@ struct QuantizedConvToConv
+ 
+       // Perform a sum-pooling operation across the kernel width and height.
+       auto poolTy = RankedTensorType::get(poolDims, accETy);
+-      Value poolTensor = emptyZero(builder, poolTy, poolDynDims);
++      Value poolTensor = emptyZero(builder, poolTy, poolDynDims, op);
+ 
+       // Create the empty kernel defining the shape for the pooling operation.
+       llvm::SmallVector<int64_t> kDims;
+@@ -207,20 +222,23 @@ struct QuantizedConvToConv
+       GetDynamicDym(builder, kDims, kDyn, filter, 1);
+       Value poolInit = tensor::EmptyOp::create(builder, kDims, accETy, kDyn);
+ 
+-      inputSum =
++      auto poolOp =
+           linalg::PoolingNhwcSumOp::create(builder, ArrayRef<Type>{poolTy},
+                                            ValueRange{inputSum, poolInit},
+-                                           poolTensor, strides, dilations)
+-              .getResult(0);
++                                           poolTensor, strides, dilations);
++      copyAffinity(op, poolOp);
++      inputSum = poolOp.getResult(0);
+ 
+       // Collapse the length-1 ending dimension away.
+       auto collapseTy =
+           RankedTensorType::get(poolTy.getShape().drop_back(), accETy);
+-      inputSum = tensor::CollapseShapeOp::create(builder, collapseTy, inputSum,
++      auto collapseOp = tensor::CollapseShapeOp::create(builder, collapseTy, inputSum,
+                                                  reassociationMap);
++      copyAffinity(op, collapseOp);
++      inputSum = collapseOp.getResult();
+ 
+       // Apply the zero-point update based on the input sum.
+-      newConv = applyZeroPoint(builder, newConv, inputSum, fZp, {0, 1, 2});
++      newConv = applyZeroPoint(builder, newConv, inputSum, fZp, {0, 1, 2}, op);
+     }
+ 
+     // Apply the final update that occurs when there are multiple zero-points.
+@@ -230,7 +248,7 @@ struct QuantizedConvToConv
+       Value ifZp = arith::MulIOp::create(builder, iZp, fZp);
+       Value zpUpdate = arith::MulIOp::create(builder, ifZp, cast);
+ 
+-      newConv = addScalar(builder, newConv, zpUpdate);
++      newConv = addScalar(builder, newConv, zpUpdate, op);
+     }
+ 
+     rewriter.replaceOp(op, newConv);
+@@ -266,10 +284,11 @@ struct QuantizedDepthwiseConvToDepthwiseConv
+                      fZpConst.getValue().isZero();
+ 
+     // First implement the convolution without the zero point.
+-    Value newConv = linalg::DepthwiseConv2DNhwcHwcOp::create(
++    auto newConvOp = linalg::DepthwiseConv2DNhwcHwcOp::create(
+                         builder, resultTy, ValueRange{input, filter},
+-                        op.getOutputs(), strides, dilations)
+-                        .getResult(0);
++                        op.getOutputs(), strides, dilations);
++    copyAffinity(op, newConvOp);
++    Value newConv = newConvOp.getResult(0);
+ 
+     // If the zero pointer value is zero we can just replace.
+     if (iZpIsZero && fZpIsZero) {
+@@ -284,7 +303,8 @@ struct QuantizedDepthwiseConvToDepthwiseConv
+       Value filterSum =
+           sumReduceDimensionSubset(builder, filter, accETy,
+                                    /*reduce_dim=*/{true, true, false});
+-      newConv = applyZeroPoint(builder, newConv, filterSum, iZp, {3});
++      copyAffinity(op, filterSum.getDefiningOp());
++      newConv = applyZeroPoint(builder, newConv, filterSum, iZp, {3}, op);
+     }
+ 
+     if (!fZpIsZero) {
+@@ -297,7 +317,7 @@ struct QuantizedDepthwiseConvToDepthwiseConv
+ 
+       // Perform a sum-pooling operation across the kernel width and height.
+       auto poolTy = RankedTensorType::get(poolDims, accETy);
+-      Value poolTensor = emptyZero(builder, poolTy, poolDynDims);
++      Value poolTensor = emptyZero(builder, poolTy, poolDynDims, op);
+ 
+       // Create the empty kernel defining the shape for the pooling operation.
+       llvm::SmallVector<int64_t> kDims;
+@@ -306,14 +326,15 @@ struct QuantizedDepthwiseConvToDepthwiseConv
+       GetDynamicDym(builder, kDims, kDyn, filter, 1);
+       Value poolInit = tensor::EmptyOp::create(builder, kDims, accETy, kDyn);
+ 
+-      Value inputSum =
++      auto poolOp =
+           linalg::PoolingNhwcSumOp::create(builder, ArrayRef<Type>{poolTy},
+                                            ValueRange{input, poolInit},
+-                                           poolTensor, strides, dilations)
+-              .getResult(0);
++                                           poolTensor, strides, dilations);
++      copyAffinity(op, poolOp);
++      Value inputSum = poolOp.getResult(0);
+ 
+       // Apply the zero-point update based on the input sum.
+-      newConv = applyZeroPoint(builder, newConv, inputSum, fZp, {0, 1, 2, 3});
++      newConv = applyZeroPoint(builder, newConv, inputSum, fZp, {0, 1, 2, 3}, op);
+     }
+ 
+     // Apply the final update that occurs when there are multiple zero-points.
+@@ -324,7 +345,7 @@ struct QuantizedDepthwiseConvToDepthwiseConv
+       Value ifZp = arith::MulIOp::create(builder, iZp, fZp);
+       Value zpUpdate = arith::MulIOp::create(builder, ifZp, cast);
+ 
+-      newConv = addScalar(builder, newConv, zpUpdate);
++      newConv = addScalar(builder, newConv, zpUpdate, op);
+     }
+ 
+     rewriter.replaceOp(op, newConv);
+diff --git a/compiler/src/iree/compiler/GlobalOptimization/QuantizedMatmulToMatmul.cpp b/compiler/src/iree/compiler/GlobalOptimization/QuantizedMatmulToMatmul.cpp
+index e3d70258e8..a733dea783 100644
+--- a/compiler/src/iree/compiler/GlobalOptimization/QuantizedMatmulToMatmul.cpp
++++ b/compiler/src/iree/compiler/GlobalOptimization/QuantizedMatmulToMatmul.cpp
+@@ -25,6 +25,13 @@ namespace mlir::iree_compiler::GlobalOptimization {
+ 
+ namespace {
+ 
++template <typename FromTy, typename ToTy>
++void copyAffinity(FromTy from, ToTy to) {
++  if (auto attr = from->getAttr("stream.affinity")) {
++    to->setAttr("stream.affinity", attr);
++  }
++}
++
+ bool isConstantZero(Value val) {
+   auto constIntOp = val.getDefiningOp<arith::ConstantIntOp>();
+   return constIntOp && constIntOp.value() == 0;
+@@ -59,12 +66,14 @@ struct QuantizedMatmulToMatmul
+     unsigned lhsRank = lhsTy.getRank();
+     Value acc = op.getDpsInits()[0];
+     // Compute the matmul part.
+-    Value matmul = batch ? linalg::BatchMatmulOp::create(
++    Operation *matmulOp = batch ? linalg::BatchMatmulOp::create(
+                                builder, ValueRange{lhs, rhs}, ValueRange{acc})
+-                               .getResult(0)
++                               .getOperation()
+                          : linalg::MatmulOp::create(
+                                builder, ValueRange{lhs, rhs}, ValueRange{acc})
+-                               .getResult(0);
++                               .getOperation();
++    copyAffinity(op, matmulOp);
++    Value matmul = matmulOp->getResult(0);
+     bool lhsZpIsConstantZero = isConstantZero(lhsZp);
+     bool rhsZpIsConstantZero = isConstantZero(rhsZp);
+     if (lhsZpIsConstantZero && rhsZpIsConstantZero) {
+@@ -111,6 +120,7 @@ struct QuantizedMatmulToMatmul
+       colRedIterator.back() = true;
+       Value lhsSums =
+           sumReduceDimensionSubset(builder, lhs, accElTy, colRedIterator);
++      copyAffinity(op, lhsSums.getDefiningOp());
+       indexOfLhsSumsInput = addInput(lhsSums, mapToRowDim);
+       indexOfRhsZpInput = addInput(rhsZp, mapToNone);
+     }
+@@ -119,6 +129,7 @@ struct QuantizedMatmulToMatmul
+       rowRedIterator[static_cast<int>(batch)] = true;
+       Value rhsSums =
+           sumReduceDimensionSubset(builder, rhs, accElTy, rowRedIterator);
++      copyAffinity(op, rhsSums.getDefiningOp());
+       indexOfRhsSumsInput = addInput(rhsSums, mapToColumnDim);
+       indexOfLhsZpInput = addInput(lhsZp, mapToNone);
+     }
+@@ -138,7 +149,7 @@ struct QuantizedMatmulToMatmul
+     // Create the generic putting all the terms together.
+     SmallVector<utils::IteratorType> iterators(lhsRank,
+                                                utils::IteratorType::parallel);
+-    rewriter.replaceOpWithNewOp<linalg::GenericOp>(
++    auto genericOp = rewriter.replaceOpWithNewOp<linalg::GenericOp>(
+         op, acc.getType(), ins, ValueRange{initResult}, indexingMaps, iterators,
+         [=](OpBuilder &b, Location loc, ValueRange args) {
+           Value matmulEl = args[indexOfMatmulInput];
+@@ -170,6 +181,7 @@ struct QuantizedMatmulToMatmul
+           }
+           linalg::YieldOp::create(b, loc, result);
+         });
++    copyAffinity(op, genericOp);
+ 
+     return success();
+   }
+-- 
+2.55.0.rc0.799.gd6f94ed593-goog
+

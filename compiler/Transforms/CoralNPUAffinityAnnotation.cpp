@@ -32,7 +32,12 @@ namespace mlir::coralnpu_compiler {
 namespace {
 
 bool isSupportedComputeOp(Operation *op) {
-  return isa<linalg::MatmulOp, linalg::BatchMatmulOp, linalg::Mmt4DOp>(op);
+  if (isa<linalg::MatmulOp, linalg::BatchMatmulOp, linalg::Mmt4DOp>(op))
+    return true;
+
+  if (isa<linalg::Conv2DNhwcHwcfOp>(op)) return true;
+
+  return false;
 }
 
 bool isSupportedElementType(Type type) {
