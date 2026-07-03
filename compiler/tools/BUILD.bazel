@@ -36,9 +36,21 @@ cc_library(
     ],
 )
 
+# Copy the NPU linker next to the compiler binary.
+# This allows the compiler to find the linker at runtime when executed manually
+# from bazel-bin, via the findTool fallback mechanism.
+genrule(
+    name = "riscv32_linker_copy",
+    srcs = ["@rv32_toolchain//:bin/riscv32-unknown-elf-ld"],
+    outs = ["riscv32-unknown-elf-ld"],
+    cmd = "cp $< $@",
+    executable = True,
+)
+
 cc_binary(
     name = "coralnpu-compile",
     srcs = ["coralnpu-compile-main.cc"],
+    data = [":riscv32_linker_copy"],
     deps = [
         ":coralnpu_compile_lib",
         "@iree_core//compiler/src:defs",

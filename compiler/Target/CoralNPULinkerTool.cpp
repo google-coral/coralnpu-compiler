@@ -23,6 +23,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/Function.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -70,11 +71,37 @@ class CoralNPULinkerTool final : public LinkerTool {
   }
 
   std::string getLinkerScriptPath() const {
+    std::string path = "";
 #ifdef CORALNPU_LINKER_SCRIPT_PATH
-    return CORALNPU_LINKER_SCRIPT_PATH;
-#else
-    return "";
+    path = CORALNPU_LINKER_SCRIPT_PATH;
 #endif
+    if (path.empty()) {
+      return "";
+    }
+
+    if (llvm::sys::fs::exists(path)) {
+      return path;
+    }
+
+    if (!llvm::sys::path::is_relative(path)) {
+      return path;
+    }
+
+    // Try to resolve relative to executable
+    std::string mainExecutablePath =
+        llvm::sys::fs::getMainExecutable(nullptr, nullptr);
+    if (mainExecutablePath.empty()) {
+      return path;
+    }
+
+    llvm::SmallString<256> resolvedPath(mainExecutablePath);
+    llvm::sys::path::remove_filename(resolvedPath);  // to compiler/tools/
+    llvm::sys::path::append(resolvedPath, "..", "..", path);  // to crt/
+    if (!llvm::sys::fs::exists(resolvedPath)) {
+      return path;
+    }
+    llvm::sys::path::remove_dots(resolvedPath, /*remove_dot_dot=*/true);
+    return std::string(resolvedPath);
   }
 
   mlir::LogicalResult configureModule(

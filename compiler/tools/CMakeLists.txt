@@ -23,7 +23,6 @@ iree_cc_library(
     "${CMAKE_SOURCE_DIR}"
   DEPS
     LLVMSupport
-    LLVMAMDGPUAsmParser
     MLIRIR
     MLIRPass
     MLIRCAPIIR
@@ -40,8 +39,17 @@ iree_cc_binary(
     "coralnpu-compile-main.cc"
   DEPS
     ::coralnpu_compile_lib
-    iree::compiler::API::Internal::IREECompileToolEntryPoint
+    iree::compiler::API::StaticImpl
     iree::compiler::bindings::c::headers
   HOSTONLY
   SETUP_INSTALL_RPATH
 )
+
+if(CORALNPU_LINKER_PATH AND EXISTS "${CORALNPU_LINKER_PATH}")
+  add_custom_command(
+    TARGET coralnpu_compiler_tools_coralnpu-compile POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${CORALNPU_LINKER_PATH}"
+            "$<TARGET_FILE_DIR:coralnpu_compiler_tools_coralnpu-compile>/"
+  )
+endif()

@@ -26,7 +26,6 @@ cc_library(
     ],
     local_defines = [
         "CORALNPU_LINKER_SCRIPT_PATH=\\\"$(rootpath //crt:coralnpu_tcm_ld)\\\"",
-        "CORALNPU_LINKER_PATH=\\\"$(rlocationpath @rv32_toolchain//:bin/riscv32-unknown-elf-ld)\\\"",
     ],
     deps = [
         "//compiler/Transforms",
