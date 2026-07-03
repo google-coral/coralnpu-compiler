@@ -99,32 +99,6 @@ bazel build --config=dev --@iree_core//compiler/src/iree/compiler/API:link_share
 
 Same as above, but use `--config=release` instead of `--config=dev`.
 
-### Run the compiler
-
-```shell
-# NB: anything before the -- will be interperted by bazel and not coralnpu-compile
-bazel run --config={dev|release} //compiler/tools:coralnpu-compile -- [coralnpu-compile options]
-```
-
-For example, to compile model.mlir:
-
-```shell
-# Find the rv32 linker bazel installed
-local linker_path="$(bazel query --output=location "@rv32_toolchain//:bin/riscv32-unknown-elf-ld" 2>/dev/null | cut -d: -f1)"
-
-# Compile for the host machine + CoralNPU (will run in simulation)
-bazel run --config=dev //compiler/tools:coralnpu-compile -- \
-    --iree-hal-target-device=local \
-    --iree-hal-local-target-device-backends=llvm-cpu \
-    --iree-llvmcpu-target-cpu-features=host \
-    --iree-hal-target-device=coralnpu \
-    --coralnpu-target-abi=ilp32 \
-    --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
-    --coralnpu-embedded-linker-path="${linker_path}" \
-    model.mlir \
-    -o model.vmfb
-```
-
 ### Python
 
 In general, you do not need to manually download or install Python packages (or
@@ -226,37 +200,47 @@ ctest --test-dir "${BUILD_DIR}" -j $(nproc)
 ctest --test-dir "${BUILD_DIR}" -R "tests/models/stablehlo/.*" -j $(nproc)
 ```
 
-## Code style
+## Run the compiler (using Bazel)
+<!-- TODO: bazel and cmake should have an install target, and this section
+should assume the compiler was installed using those -->
 
-We use Google style, enforced by scripts/format-code.sh.
-
-Before pushing anything, run the following command (NB: commit or stage your
-changes before, in case formatting does something horrible, and review the
-formatting changes).
-
-```shell
-scripts/format-code.sh
-```
-
-## Toolchain
-
-We use clang 19, and lld (to build the compiler).
-
-Places that need to be updated when changing version/toolchain:
-- [.bazelrc](.bazelrc)
-- [CMakeLists.txt](CMakeLists.txt)
-- [scripts/format-code.sh](scripts/format-code.sh)
-
-## Shell scripts
-
-Always use bash. Use this header:
+A normal compilation, without errors or warnings, does not print anything to
+stdout or stderr, unless a commandline option that specifically prints
+information is used.
 
 ```shell
-#!/usr/bin/env bash
-# Exit immediately on error (including in a pipeline), or when accessing an
-# unset variable
-set -euo pipefail
+# NB: anything before the -- will be interperted by bazel and not coralnpu-compile
+bazel run --config={dev|release} //compiler/tools:coralnpu-compile -- [coralnpu-compile options]
 ```
+
+For example, to compile model.mlir:
+
+```shell
+# Compile for the host machine + CoralNPU (will run in simulation)
+bazel run --config=dev //compiler/tools:coralnpu-compile -- \
+    --iree-hal-target-device=local \
+    --iree-hal-local-target-device-backends=llvm-cpu \
+    --iree-llvmcpu-target-cpu-features=host \
+    --iree-hal-target-device=coralnpu \
+    --coralnpu-target-abi=ilp32 \
+    --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
+    model.mlir \
+    -o model.vmfb
+```
+
+See the help message for the complete list of options:
+
+```shell
+bazel run --config=dev //compiler/tools:coralnpu-compile -- --help
+```
+
+CoralNPU compiler specific options are prefixed with `--coralnpu`.
+
+### Useful options:
+
+** Affinity execution profile report **
+`--coralnpu-dump-affinity-profile-format={pretty|csv|json}`
+Dumps statistics about the compilation (such as the number of dispatches, estimated data size, and estimated work) grouped by the device affinity (e.g., host vs CoralNPU).
 
 ## Examples:
 
@@ -291,4 +275,36 @@ It performs the following steps:
 3. Builds the CoralNPU PJRT plugin via Bazel
 4. Compiles JAX models for the RV32-based CoralNPU backend
 5. Runs the generated binaries
+
+## Code style
+
+We use Google style, enforced by scripts/format-code.sh.
+
+Before pushing anything, run the following command (NB: commit or stage your
+changes before, in case formatting does something horrible, and review the
+formatting changes).
+
+```shell
+scripts/format-code.sh
+```
+
+## Toolchain
+
+We use clang 19, and lld (to build the compiler).
+
+Places that need to be updated when changing version/toolchain:
+- [.bazelrc](.bazelrc)
+- [CMakeLists.txt](CMakeLists.txt)
+- [scripts/format-code.sh](scripts/format-code.sh)
+
+## Shell scripts
+
+Always use bash. Use this header:
+
+```shell
+#!/usr/bin/env bash
+# Exit immediately on error (including in a pipeline), or when accessing an
+# unset variable
+set -euo pipefail
+```
 

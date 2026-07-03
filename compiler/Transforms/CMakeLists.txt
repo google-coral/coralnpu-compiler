@@ -30,6 +30,7 @@ iree_cc_library(
     "compiler/Transforms/Passes.h.inc"
   SRCS
     "CoralNPUAffinityAnnotation.cpp"
+    "CoralNPUDumpAffinityExecutionProfile.cpp"
     "Passes.cpp"
   INCLUDES
     "${CMAKE_SOURCE_DIR}"
@@ -38,6 +39,8 @@ iree_cc_library(
     ::PassesIncGen
     iree::compiler::Dialect::HAL::Analysis
     iree::compiler::Dialect::HAL::IR
+    iree::compiler::Dialect::Stream::IR
+    iree::compiler::Dialect::TensorExt::IR
     iree::compiler::Dialect::Util::IR
     LLVMSupport
     MLIRIR

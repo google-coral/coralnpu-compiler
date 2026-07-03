@@ -20,6 +20,14 @@
 
 namespace mlir::coralnpu_compiler {
 
+enum class DumpOutputFormat {
+  None = 0,
+  Pretty = 1,
+  Verbose = 2,
+  CSV = 3,
+  JSON = 4,
+};
+
 // Registers all CoralNPU passes.
 void registerCoralNPUPasses();
 
@@ -29,6 +37,12 @@ void registerCoralNPUPasses();
 std::unique_ptr<OperationPass<ModuleOp>> createCoralNPUAffinityAnnotationPass();
 std::unique_ptr<OperationPass<ModuleOp>> createCoralNPUAffinityAnnotationPass(
     CoralNPUAffinityAnnotationOptions options);
+
+std::unique_ptr<OperationPass<ModuleOp>>
+createCoralNPUDumpAffinityExecutionProfilePass();
+std::unique_ptr<OperationPass<ModuleOp>>
+createCoralNPUDumpAffinityExecutionProfilePass(
+    CoralNPUDumpAffinityExecutionProfileOptions options);
 
 }  // namespace mlir::coralnpu_compiler
 

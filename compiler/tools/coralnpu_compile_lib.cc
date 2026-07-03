@@ -19,6 +19,7 @@
 #include <string>
 #include <type_traits>
 
+#include "compiler/Transforms/Passes.h"
 #include "iree/compiler/Pipelines/Pipelines.h"
 #include "iree/compiler/embedding_api.h"
 #include "iree/compiler/mlir_interop.h"
@@ -209,6 +210,29 @@ int mlir::iree_compiler::runCoralNpuCompileMain(int argc, char **argv) {
         exit(0);
       }));
 
+  llvm::cl::opt<mlir::coralnpu_compiler::DumpOutputFormat>
+      dumpAffinityProfileFormat(
+          "coralnpu-dump-affinity-profile-format",
+          llvm::cl::desc("Format of the affinity execution profile report"),
+          llvm::cl::values(
+              clEnumValN(mlir::coralnpu_compiler::DumpOutputFormat::None,
+                         "none", "Dumping disabled"),
+              clEnumValN(mlir::coralnpu_compiler::DumpOutputFormat::Pretty,
+                         "pretty", "Human-readable pretty printing"),
+              clEnumValN(mlir::coralnpu_compiler::DumpOutputFormat::Verbose,
+                         "verbose", "Pretty printing with additional details"),
+              clEnumValN(mlir::coralnpu_compiler::DumpOutputFormat::CSV, "csv",
+                         "Comma separated values"),
+              clEnumValN(mlir::coralnpu_compiler::DumpOutputFormat::JSON,
+                         "json", "JSON format")),
+          llvm::cl::init(mlir::coralnpu_compiler::DumpOutputFormat::None));
+
+  llvm::cl::opt<std::string> dumpAffinityProfileFile(
+      "coralnpu-dump-affinity-profile-file",
+      llvm::cl::desc(
+          "File path to write to; or '' for stderr or '-' for stdout."),
+      llvm::cl::init(""));
+
   ireeCompilerGlobalInitialize();
   ireeCompilerGetProcessCLArgs(&argc, const_cast<const char ***>(&argv));
   ireeCompilerSetupGlobalCL(argc, const_cast<const char **>(argv),
@@ -301,6 +325,12 @@ int mlir::iree_compiler::runCoralNpuCompileMain(int argc, char **argv) {
           // TODO: Add Coral NPU custom passes here.
           // For example:
           // pm.addPass(mlir::iree_compiler::CoralNPU::createMyCustomOptimizationPass());
+          mlir::coralnpu_compiler::CoralNPUDumpAffinityExecutionProfileOptions
+              opts;
+          opts.outputFormat = dumpAffinityProfileFormat;
+          opts.outputFile = dumpAffinityProfileFile;
+          pm.addPass(mlir::coralnpu_compiler::
+                         createCoralNPUDumpAffinityExecutionProfilePass(opts));
 
           if (failed(pm.run(moduleOp))) {
             llvm::errs() << "Failed to run custom Coral NPU passes\n";

@@ -12,17 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@iree_core//build_tools/bazel:iree_lit_test.bzl", "iree_lit_test_suite")
+
 package(
     default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
     licenses = ["notice"],  # Apache 2.0
+)
+
+iree_lit_test_suite(
+    name = "lit",
+    srcs = glob(["*.mlir"]),
+    cfg = "lit.cfg.py",
+    tools = [
+        "//compiler/tools:coralnpu-compile",
+        "@llvm-project//llvm:FileCheck",
+    ],
 )
 
 test_suite(
     name = "ci",
     tags = ["ci"],
     tests = [
-        "//tests/models/stablehlo:ci",
-        "//tests/python-bindings:ci",
-        "//tests/transforms:ci",
+        ":lit",
     ],
 )

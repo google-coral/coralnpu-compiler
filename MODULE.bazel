@@ -3,7 +3,6 @@
 module(
     name = "coralnpu-compiler",
     version = "0.0.1",
-    compatibility_level = 1,
 )
 
 # --- Bazel Module Dependencies ---

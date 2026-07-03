@@ -34,6 +34,7 @@ cc_library(
     name = "Transforms",
     srcs = [
         "CoralNPUAffinityAnnotation.cpp",
+        "CoralNPUDumpAffinityExecutionProfile.cpp",
         "Passes.cpp",
     ],
     hdrs = [
@@ -44,6 +45,8 @@ cc_library(
         ":PassesIncGen",
         "@iree_core//compiler/src/iree/compiler/Dialect/HAL/Analysis",
         "@iree_core//compiler/src/iree/compiler/Dialect/HAL/IR",
+        "@iree_core//compiler/src/iree/compiler/Dialect/Stream/IR",
+        "@iree_core//compiler/src/iree/compiler/Dialect/TensorExt/IR",
         "@iree_core//compiler/src/iree/compiler/Dialect/Util/IR",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",

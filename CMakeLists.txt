@@ -29,6 +29,8 @@ endif()
 
 project(CoralNPU LANGUAGES C CXX)
 
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
 # we don't checkout all submodules of iree as we don't use them
 set(IREE_ERROR_ON_MISSING_SUBMODULES OFF)
 # we want to have assertions even if we are building for Release or
@@ -100,7 +102,11 @@ if(NOT EXISTS "${CORALNPU_LINKER_PATH}")
   )
 endif()
 
+set(LLVM_EXTERNAL_LIT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/llvm-project/llvm/utils/lit/lit.py" CACHE FILEPATH "Path to llvm-lit" FORCE)
+
 add_subdirectory(third_party/iree)
+
+set(IREE_TEST_TMPDIR_ROOT "${IREE_BINARY_DIR}/test_tmpdir")
 
 list(APPEND CMAKE_MODULE_PATH
   "${CMAKE_CURRENT_LIST_DIR}/third_party/iree/build_tools/cmake"
@@ -108,4 +114,17 @@ list(APPEND CMAKE_MODULE_PATH
 include(iree_copts)
 
 add_subdirectory(tools)
+
+include(ExternalProject)
+ExternalProject_Add(
+  coralnpu_crt_project
+  SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/crt"
+  BINARY_DIR "${CMAKE_BINARY_DIR}/crt"
+  CMAKE_ARGS
+    -DCMAKE_TOOLCHAIN_FILE=${CMAKE_CURRENT_SOURCE_DIR}/crt/riscv32-toolchain.cmake
+    -DRISCV_TOOLCHAIN_ROOT=${CMAKE_BINARY_DIR}/toolchain_rv32
+    -DCMAKE_BUILD_TYPE=Release
+  INSTALL_COMMAND ""
+)
+
 add_subdirectory(tests)

@@ -12,10 +12,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-get_filename_component(IREE_PACKAGE_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-
-include(defs.cmake)
-
-add_subdirectory(models)
-add_subdirectory(transforms)
-
+iree_lit_test_suite(
+  NAME
+    lit
+  SRCS
+    "dump_affinity_execution_profile.mlir"
+    "dump_affinity_execution_profile_empty.mlir"
+  TOOLS
+    FileCheck
+    coralnpu_compiler::tools::coralnpu-compile
+)

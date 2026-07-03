@@ -36,4 +36,32 @@ def CoralNPUAffinityAnnotation : Pass<"coralnpu-affinity-annotation", "mlir::Mod
   ];
 }
 
+def CoralNPUDumpAffinityExecutionProfile : Pass<"coralnpu-dump-affinity-execution-profile", "mlir::ModuleOp"> {
+  let summary = "Dumps execution profile statistics grouped by affinity";
+
+  let description = [{
+    Walks the stream operations and dumps execution profile statistics (dispatches, data sizes, work estimates) grouped by affinity.
+  }];
+
+  let constructor = [{
+    ::mlir::coralnpu_compiler::createCoralNPUDumpAffinityExecutionProfilePass()
+  }];
+
+  let options = [
+    Option<"outputFormat", "output-format", "::mlir::coralnpu_compiler::DumpOutputFormat",
+           /*default=*/"::mlir::coralnpu_compiler::DumpOutputFormat::Pretty",
+           "Format of the output statistics.",
+           [{::llvm::cl::values(
+             clEnumValN(::mlir::coralnpu_compiler::DumpOutputFormat::Pretty, "pretty", "Human-readable pretty printed output."),
+             clEnumValN(::mlir::coralnpu_compiler::DumpOutputFormat::Verbose, "verbose", "Pretty printed output with additional IR."),
+             clEnumValN(::mlir::coralnpu_compiler::DumpOutputFormat::CSV, "csv", "Comma separated values."),
+             clEnumValN(::mlir::coralnpu_compiler::DumpOutputFormat::JSON, "json", "JSON format.")
+           )}]>,
+    Option<"outputFile", "output-file", "std::string",
+           /*default=*/"\"\"",
+           "File path to write to; or `` for stderr or `-` for stdout.">
+  ];
+}
+
 #endif // IREE_CORALNPU_PASSES
+
