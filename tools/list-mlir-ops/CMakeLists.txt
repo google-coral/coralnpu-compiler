@@ -12,6 +12,16 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-add_subdirectory(check_gen)
-add_subdirectory(list-mlir-ops)
+# Special case package namespace for tools/ -> "" (empty string)
+get_filename_component(IREE_PACKAGE_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 
+iree_cc_binary(
+  NAME
+    list-mlir-ops
+  SRCS
+    "list-mlir-ops.cpp"
+  DEPS
+    LLVMSupport
+    MLIRIR
+    MLIRRegisterAllDialects
+)
