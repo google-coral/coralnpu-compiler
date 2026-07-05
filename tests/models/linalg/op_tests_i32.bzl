@@ -1,0 +1,112 @@
+"""Linalg op_tests list for i32 tests."""
+
+load("//tests/models/linalg:defs.bzl", "op_tests")
+
+def op_tests_i32(name, **kwargs):
+    """Registers i32 op tests.
+
+    Args:
+      name: The name of the test.
+      **kwargs: Additional arguments.
+    """
+    tags = list(kwargs.pop("tags", []))
+    if "i32" not in tags:
+        tags.append("i32")
+    if "ci" not in tags:
+        tags.append("ci")
+    op_tests(name = name, tags = tags, **kwargs)
+
+def linalg_op_tests_i32(name = "linalg_op_i32_tests"):
+    """Registers Linalg i32 op tests.
+
+    Args:
+      name: The name of the test suite.
+    """
+    op_tests_i32(name = "fill_rank1_i32", instances = ["(8)", "(256)", "(450)"], test = "fill_rank1_i32.mlir")
+    op_tests_i32(name = "fill_rank2_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "fill_rank2_i32.mlir")
+    op_tests_i32(name = "fill_rank3_i32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "fill_rank3_i32.mlir")
+    op_tests_i32(name = "fill_rank4_i32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "fill_rank4_i32.mlir")
+    op_tests_i32(name = "generic_add_rank1_i32", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "generic_add_rank1_i32.mlir")
+    op_tests_i32(name = "generic_add_rank2_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "generic_add_rank2_i32.mlir")
+
+    # TODO: Fix compiler bug with multi-output generic ops.
+    op_tests_i32(name = "generic_multi_output_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "generic_multi_output_i32.mlir", tags = ["manual"])
+    op_tests_i32(name = "generic_add_rank3_i32", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "generic_add_rank3_i32.mlir")
+    op_tests_i32(name = "generic_add_rank4_i32", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "generic_add_rank4_i32.mlir")
+    op_tests_i32(name = "matmul_i32", instances = ["(4,8)(8,4)", "(120,256)(256,300)", "(300,100)(100,450)"], test = "matmul_i32.mlir")
+    op_tests_i32(name = "batch_matmul_i32", instances = ["(2,4,8)(2,8,4)", "(3,12,25)(3,25,30)"], test = "batch_matmul_i32.mlir")
+    op_tests_i32(name = "mmt4d_i32", instances = ["(2,3,4,2)(3,3,2,2)", "(1,2,4,4)(2,2,4,4)"], test = "mmt4d_i32.mlir")
+    op_tests_i32(name = "conv_2d_nhwc_hwcf_i32", instances = ["(1,6,6,4)(3,3,4,4)", "(1,8,8,8)(3,3,8,16)"], test = "conv_2d_nhwc_hwcf_i32.mlir")
+    op_tests_i32(name = "conv_2d_nhwc_hwcf_stride2_i32", instances = ["(1,6,6,4)(3,3,4,4)", "(1,8,8,8)(3,3,8,16)"], test = "conv_2d_nhwc_hwcf_stride2_i32.mlir")
+    op_tests_i32(name = "conv_2d_nhwc_hwcf_dilation2_i32", instances = ["(1,6,6,4)(3,3,4,4)", "(1,8,8,8)(3,3,8,16)"], test = "conv_2d_nhwc_hwcf_dilation2_i32.mlir")
+    op_tests_i32(name = "depthwise_conv_2d_nhwc_hwc_i32", instances = ["(1,6,6,4)(3,3,4)", "(1,8,8,8)(3,3,8)"], test = "depthwise_conv_2d_nhwc_hwc_i32.mlir")
+    op_tests_i32(name = "depthwise_conv_2d_nhwc_hwc_stride2_i32", instances = ["(1,6,6,4)(3,3,4)", "(1,8,8,8)(3,3,8)"], test = "depthwise_conv_2d_nhwc_hwc_stride2_i32.mlir")
+    op_tests_i32(name = "depthwise_conv_2d_nhwc_hwc_dilation2_i32", instances = ["(1,6,6,4)(3,3,4)", "(1,8,8,8)(3,3,8)"], test = "depthwise_conv_2d_nhwc_hwc_dilation2_i32.mlir")
+    op_tests_i32(name = "depthwise_conv_2d_nchw_chw_i32", instances = ["(1,4,6,6)(4,3,3)", "(1,8,8,8)(8,3,3)"], test = "depthwise_conv_2d_nchw_chw_i32.mlir")
+    op_tests_i32(name = "generic_reduction_2d_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "generic_reduction_2d_i32.mlir")
+    op_tests_i32(name = "pack_i32", instances = ["(8,16)", "(16,32)", "(128,256)"], test = "pack_i32.mlir")
+    op_tests_i32(name = "pack_perm_i32", instances = ["(8,16)", "(16,32)", "(128,256)"], test = "pack_perm_i32.mlir")
+    op_tests_i32(name = "pack_padding_i32", instances = ["(7,15)", "(17,33)", "(120,250)"], test = "pack_padding_i32.mlir")
+    op_tests_i32(name = "unpack_i32", instances = ["(1,1,8,16)", "(2,2,8,16)", "(16,16,8,16)"], test = "unpack_i32.mlir")
+    op_tests_i32(name = "unpack_perm_i32", instances = ["(1,1,8,16)", "(2,2,8,16)", "(3,2,8,16)"], test = "unpack_perm_i32.mlir")
+    op_tests_i32(name = "map_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "map_i32.mlir")
+    op_tests_i32(name = "reduce_2d_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "reduce_2d_i32.mlir")
+    op_tests_i32(name = "reduce_2d_dim0_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "reduce_2d_dim0_i32.mlir")
+    op_tests_i32(name = "reduce_3d_dim1_2_i32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "reduce_3d_dim1_2_i32.mlir")
+    op_tests_i32(name = "reduce_2d_max_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "reduce_2d_max_i32.mlir")
+    op_tests_i32(name = "transpose_2d_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "transpose_2d_i32.mlir")
+    op_tests_i32(name = "transpose_3d_i32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "transpose_3d_i32.mlir")
+    op_tests_i32(name = "broadcast_i32", instances = ["(8)(4,8)", "(256)(120,256)", "(450)(300,450)"], test = "broadcast_i32.mlir")
+    op_tests_i32(name = "broadcast_dim1_i32", instances = ["(8)(8,4)", "(256)(256,120)", "(450)(450,300)"], test = "broadcast_dim1_i32.mlir")
+    op_tests_i32(name = "elementwise_add_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "elementwise_add_i32.mlir")
+    op_tests_i32(name = "add_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "add_i32.mlir")
+    op_tests_i32(name = "sub_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "sub_i32.mlir")
+    op_tests_i32(name = "mul_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "mul_i32.mlir")
+    op_tests_i32(name = "div_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "div_i32.mlir", default_gen = "//tools/check_gen/generators:positive_sequential_vmfb")
+    op_tests_i32(name = "div_unsigned_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "div_unsigned_i32.mlir", default_gen = "//tools/check_gen/generators:positive_sequential_vmfb")
+    op_tests_i32(name = "max_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "max_i32.mlir")
+    op_tests_i32(name = "min_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "min_i32.mlir")
+    op_tests_i32(name = "select_i32", instances = ["(4,8)(4,8)(4,8)", "(120,256)(120,256)(120,256)", "(300,450)(300,450)(300,450)"], test = "select_i32.mlir", tags = ["manual"])
+    op_tests_i32(name = "contract_matmul_i32", instances = ["(4,8)(8,4)", "(120,256)(256,300)", "(300,100)(100,450)"], test = "contract_matmul_i32.mlir")
+    op_tests_i32(name = "batch_reduce_matmul_i32", instances = ["(2,4,8)(2,8,4)", "(3,12,25)(3,25,30)"], test = "batch_reduce_matmul_i32.mlir")
+    op_tests_i32(name = "batch_mmt4d_i32", instances = ["(2,1,2,4,4)(2,2,2,4,4)", "(3,2,3,4,2)(3,3,3,2,2)"], test = "batch_mmt4d_i32.mlir")
+    op_tests_i32(name = "matvec_i32", instances = ["(4,8)(8)", "(120,256)(256)", "(300,450)(450)"], test = "matvec_i32.mlir")
+    op_tests_i32(name = "vecmat_i32", instances = ["(8)(8,4)", "(256)(256,120)", "(450)(450,300)"], test = "vecmat_i32.mlir")
+    op_tests_i32(name = "batch_matvec_i32", instances = ["(2,4,8)(2,8)", "(3,120,256)(3,256)"], test = "batch_matvec_i32.mlir")
+    op_tests_i32(name = "batch_vecmat_i32", instances = ["(2,8)(2,8,4)", "(3,256)(3,256,120)"], test = "batch_vecmat_i32.mlir")
+    op_tests_i32(name = "dot_i32", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "dot_i32.mlir")
+    op_tests_i32(name = "conv_1d_i32", instances = ["(11)(3)", "(258)(5)", "(453)(4)"], test = "conv_1d_i32.mlir")
+    op_tests_i32(name = "conv_1d_nwc_wcf_i32", instances = ["(1,11,4)(3,4,8)", "(1,256,8)(5,8,16)"], test = "conv_1d_nwc_wcf_i32.mlir")
+    op_tests_i32(name = "conv_1d_ncw_fcw_i32", instances = ["(1,4,11)(8,4,3)", "(1,8,256)(16,8,5)"], test = "conv_1d_ncw_fcw_i32.mlir")
+    op_tests_i32(name = "conv_2d_i32", instances = ["(11,11)(3,3)", "(125,256)(5,7)"], test = "conv_2d_i32.mlir")
+    op_tests_i32(name = "conv_3d_i32", instances = ["(7,7,7)(3,3,3)", "(12,15,20)(2,3,4)"], test = "conv_3d_i32.mlir")
+    op_tests_i32(name = "pooling_nhwc_sum_i32", instances = ["(1,11,11,4)(3,3)", "(1,120,256,8)(5,7)"], test = "pooling_nhwc_sum_i32.mlir")
+    op_tests_i32(name = "pooling_nhwc_sum_stride2_i32", instances = ["(1,11,11,4)(3,3)", "(1,120,256,8)(5,7)"], test = "pooling_nhwc_sum_stride2_i32.mlir")
+    op_tests_i32(name = "pooling_nhwc_sum_dilation2_i32", instances = ["(1,11,11,4)(3,3)", "(1,120,256,8)(5,7)"], test = "pooling_nhwc_sum_dilation2_i32.mlir")
+    op_tests_i32(name = "pooling_nhwc_max_i32", instances = ["(1,11,11,4)(3,3)", "(1,120,256,8)(5,7)"], test = "pooling_nhwc_max_i32.mlir")
+    op_tests_i32(name = "pooling_nhwc_max_stride2_i32", instances = ["(1,11,11,4)(3,3)", "(1,120,256,8)(5,7)"], test = "pooling_nhwc_max_stride2_i32.mlir")
+    op_tests_i32(name = "pooling_nhwc_max_dilation2_i32", instances = ["(1,11,11,4)(3,3)", "(1,120,256,8)(5,7)"], test = "pooling_nhwc_max_dilation2_i32.mlir")
+    op_tests_i32(name = "pooling_nhwc_min_i32", instances = ["(1,11,11,4)(3,3)", "(1,120,256,8)(5,7)"], test = "pooling_nhwc_min_i32.mlir")
+    op_tests_i32(name = "pooling_nhwc_max_unsigned_i32", instances = ["(1,11,11,4)(3,3)", "(1,120,256,8)(5,7)"], test = "pooling_nhwc_max_unsigned_i32.mlir")
+    op_tests_i32(name = "pooling_nhwc_min_unsigned_i32", instances = ["(1,11,11,4)(3,3)", "(1,120,256,8)(5,7)"], test = "pooling_nhwc_min_unsigned_i32.mlir")
+    op_tests_i32(name = "depthwise_conv_1d_nwc_wc_i32", instances = ["(1,11,4)(3,4)", "(1,256,8)(5,8)"], test = "depthwise_conv_1d_nwc_wc_i32.mlir")
+    op_tests_i32(name = "depthwise_conv_1d_ncw_cw_i32", instances = ["(1,4,11)(4,3)", "(1,8,256)(8,5)"], test = "depthwise_conv_1d_ncw_cw_i32.mlir")
+    op_tests_i32(name = "depthwise_conv_1d_nwc_wcm_i32", instances = ["(1,11,4)(3,4,2)", "(1,256,8)(5,8,1)"], test = "depthwise_conv_1d_nwc_wcm_i32.mlir")
+    op_tests_i32(name = "depthwise_conv_2d_nhwc_hwcm_i32", instances = ["(1,11,11,4)(3,3,4,2)", "(1,120,256,8)(5,5,8,1)"], test = "depthwise_conv_2d_nhwc_hwcm_i32.mlir")
+    op_tests_i32(name = "depthwise_conv_3d_ndhwc_dhwc_i32", instances = ["(1,7,7,7,4)(3,3,3,4)", "(1,12,15,20,8)(2,3,4,8)"], test = "depthwise_conv_3d_ndhwc_dhwc_i32.mlir")
+    op_tests_i32(name = "conv_2d_nchw_fchw_i32", instances = ["(1,4,6,6)(4,4,3,3)", "(1,8,8,8)(16,8,3,3)"], test = "conv_2d_nchw_fchw_i32.mlir")
+    op_tests_i32(name = "conv_2d_nhwc_fhwc_i32", instances = ["(1,6,6,4)(4,3,3,4)", "(1,8,8,8)(16,3,3,8)"], test = "conv_2d_nhwc_fhwc_i32.mlir")
+    op_tests_i32(name = "pooling_nchw_sum_i32", instances = ["(1,4,11,11)(3,3)", "(1,8,120,256)(5,7)"], test = "pooling_nchw_sum_i32.mlir")
+    op_tests_i32(name = "pooling_nchw_max_i32", instances = ["(1,4,11,11)(3,3)", "(1,8,120,256)(5,7)"], test = "pooling_nchw_max_i32.mlir")
+    op_tests_i32(name = "pooling_nwc_sum_i32", instances = ["(1,11,4)(3)", "(1,120,8)(5)"], test = "pooling_nwc_sum_i32.mlir")
+    op_tests_i32(name = "pooling_nwc_max_i32", instances = ["(1,11,4)(3)", "(1,120,8)(5)"], test = "pooling_nwc_max_i32.mlir")
+    op_tests_i32(name = "pooling_nwc_min_i32", instances = ["(1,11,4)(3)", "(1,120,8)(5)"], test = "pooling_nwc_min_i32.mlir")
+    op_tests_i32(name = "pooling_nwc_max_unsigned_i32", instances = ["(1,11,4)(3)", "(1,120,8)(5)"], test = "pooling_nwc_max_unsigned_i32.mlir")
+    op_tests_i32(name = "pooling_nwc_min_unsigned_i32", instances = ["(1,11,4)(3)", "(1,120,8)(5)"], test = "pooling_nwc_min_unsigned_i32.mlir")
+    op_tests_i32(name = "pooling_ncw_sum_i32", instances = ["(1,4,11)(3)", "(1,8,120)(5)"], test = "pooling_ncw_sum_i32.mlir")
+    op_tests_i32(name = "pooling_ncw_max_i32", instances = ["(1,4,11)(3)", "(1,8,120)(5)"], test = "pooling_ncw_max_i32.mlir")
+    op_tests_i32(name = "pooling_ndhwc_sum_i32", instances = ["(1,7,7,7,4)(3,3,3)", "(1,12,15,20,8)(2,3,4)"], test = "pooling_ndhwc_sum_i32.mlir")
+    op_tests_i32(name = "pooling_ndhwc_max_i32", instances = ["(1,7,7,7,4)(3,3,3)", "(1,12,15,20,8)(2,3,4)"], test = "pooling_ndhwc_max_i32.mlir")
+    op_tests_i32(name = "pooling_ndhwc_min_i32", instances = ["(1,7,7,7,4)(3,3,3)", "(1,12,15,20,8)(2,3,4)"], test = "pooling_ndhwc_min_i32.mlir")
+    op_tests_i32(name = "copy_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "copy_i32.mlir")
+    op_tests_i32(name = "index_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "index_i32.mlir")

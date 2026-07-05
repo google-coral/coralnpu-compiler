@@ -27,6 +27,16 @@ iree_bytecode_module(
 
 iree_bytecode_module(
   NAME
+    "positive_sequential_vmfb"
+  SRC
+    "positive_sequential.mlir"
+  FLAGS
+    "--iree-hal-target-backends=vmvx"
+  PUBLIC
+)
+
+iree_bytecode_module(
+  NAME
     "fill_vmfb"
   SRC
     "fill.mlir"
@@ -34,3 +44,4 @@ iree_bytecode_module(
     "--iree-hal-target-backends=vmvx"
   PUBLIC
 )
+

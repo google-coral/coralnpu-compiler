@@ -21,6 +21,7 @@ test_suite(
     name = "ci",
     tags = ["ci"],
     tests = [
+        "//tests/models/linalg:ci",
         "//tests/models/stablehlo:ci",
         "//tests/python-bindings:ci",
         "//tests/transforms:ci",

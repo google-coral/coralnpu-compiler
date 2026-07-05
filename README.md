@@ -166,10 +166,22 @@ Run all tests in the repository:
 bazel test --config=dev //tests/...
 ```
 
+Run the CI test suite:
+
+```shell
+bazel test --config=dev //tests:ci
+```
+
 We have some StableHLO tests. To run just those:
 
 ```shell
 bazel test --config=dev //tests/models/stablehlo/...
+```
+
+We also have Linalg op tests. To run just those:
+
+```shell
+bazel test --config=dev //tests/models/linalg/...
 ```
 
 ### Running Tests with CMake
@@ -196,8 +208,14 @@ Finally, run the tests using `ctest`. It is recommended to run tests in parallel
 # Run all tests
 ctest --test-dir "${BUILD_DIR}" -j $(nproc)
 
+# Run only CI tests
+ctest --test-dir "${BUILD_DIR}" -L "ci" -j $(nproc)
+
 # Run only StableHLO tests
 ctest --test-dir "${BUILD_DIR}" -R "tests/models/stablehlo/.*" -j $(nproc)
+
+# Run only Linalg op tests
+ctest --test-dir "${BUILD_DIR}" -R "tests/models/linalg/.*" -j $(nproc)
 ```
 
 ## Run the compiler (using Bazel)

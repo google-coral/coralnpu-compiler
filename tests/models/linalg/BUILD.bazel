@@ -1,0 +1,8 @@
+load("//tests/models/linalg:op_tests.bzl", "linalg_op_tests")
+
+linalg_op_tests()
+
+test_suite(
+    name = "ci",
+    tags = ["ci"],
+)

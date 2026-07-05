@@ -13,3 +13,5 @@
 # the License.
 
 add_subdirectory(stablehlo)
+add_subdirectory(linalg)
+

@@ -28,6 +28,12 @@ function(coralnpu_check_gen_tests)
     ${ARGN}
   )
 
+  if("manual" IN_LIST _RULE_LABELS)
+    message(STATUS "Skipping manual check gen test: ${_RULE_NAME}")
+    return()
+  endif()
+
+
   # 1. Resolve DEFAULT_GEN to path and target
   if(NOT DEFINED _RULE_DEFAULT_GEN)
     set(_RULE_DEFAULT_GEN ${CORALNPU_STANDARD_DEFAULT_GEN})
@@ -71,22 +77,6 @@ function(coralnpu_check_gen_tests)
     endif()
   endforeach()
 
-  # 3. Add coralnpu specific flags/labels
-  set(COMMON_COMPILER_FLAGS
-      "--iree-hal-target-device=local"
-      "--iree-hal-local-target-device-backends=vmvx"
-      "--iree-hal-target-device=coralnpu"
-      "--coralnpu-target-abi=ilp32"
-      "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f"
-  )
-
-  set(COMMON_RUNNER_ARGS
-      "--device=local-sync"
-      "--device=coralnpu"
-  )
-
-  list(APPEND _RULE_COMPILER_FLAGS ${COMMON_COMPILER_FLAGS})
-  list(APPEND _RULE_RUNNER_ARGS ${COMMON_RUNNER_ARGS})
 
   # 4. Call generic check_gen_tests
   check_gen_tests(
