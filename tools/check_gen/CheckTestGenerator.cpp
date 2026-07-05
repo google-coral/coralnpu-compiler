@@ -26,6 +26,7 @@
 // MLIR headers
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -37,6 +38,7 @@
 #include "mlir/Transforms/Passes.h"
 
 // StableHLO headers
+#include "stablehlo/dialect/StablehloOps.h"
 #include "stablehlo/transforms/Passes.h"
 
 // LLVM headers
@@ -91,6 +93,17 @@ TypedAttr getVmfbArgAttr(OpBuilder &builder, int64_t val, char cc) {
     default:
       return builder.getIndexAttr(val);
   }
+}
+
+Value castTensorIfNeeded(OpBuilder &builder, Location loc, Value val,
+                         Type targetType) {
+  if (val.getType() == targetType) return val;
+  auto t1 = dyn_cast<RankedTensorType>(val.getType());
+  auto t2 = dyn_cast<RankedTensorType>(targetType);
+  bool compatible = t1 && t2 && t1.getRank() == t2.getRank() &&
+                    t1.getElementType() == t2.getElementType();
+  if (!compatible) return nullptr;
+  return tensor::CastOp::create(builder, loc, targetType, val);
 }
 
 }  // namespace
@@ -214,6 +227,7 @@ bool CheckTestGenerator::run() {
 
 bool CheckTestGenerator::parseAndMerge() {
   mergedModuleOp = ModuleOp::create(Builder(context).getUnknownLoc());
+
   SymbolTable symbolTable(*mergedModuleOp);
 
   testFunc = parseAndMergeFunc(inputFiles[0], symbolTable);
@@ -392,16 +406,39 @@ OwningOpRef<ModuleOp> CheckTestGenerator::refineShapes(
   for (auto attr : inputAttrs) {
     refinedTypes.push_back(attr.getType());
   }
+
   PassManager pmRefine(context);
-  // TODO(sflur): support other dialects
+
+  // Clone to try refinement, keep original as fallback
+  OwningOpRef<ModuleOp> refinedClone = refinedTestModuleOp->clone();
+
   mlir::stablehlo::createStablehloRemoveDynamismPipeline(pmRefine,
                                                          refinedTypes);
-  if (failed(pmRefine.run(*refinedTestModuleOp))) {
-    llvm::errs() << "Failed to run shape refinement pipeline for instance "
-                 << instIdx << "\n";
-    return nullptr;
+  if (failed(pmRefine.run(*refinedClone))) {
+    llvm::errs() << "Warning: Failed to run shape refinement pipeline, falling "
+                    "back to unrefined module.\n";
+    return refinedTestModuleOp;
   }
-  return refinedTestModuleOp;
+
+  // Check if shape refinement left wrapper custom calls (which happens if it
+  // gets stuck at non-StableHLO ops)
+  bool hasWrapper = false;
+  refinedClone->walk([&](stablehlo::CustomCallOp op) {
+    if (op.getCallTargetName() ==
+        "stablehlo.shape_refinement_operand_wrapper") {
+      hasWrapper = true;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+
+  if (hasWrapper) {
+    llvm::errs() << "Warning: Shape refinement left wrapper custom calls, "
+                    "falling back to unrefined module.\n";
+    return refinedTestModuleOp;
+  }
+
+  return refinedClone;
 }
 
 std::vector<TypedAttr> CheckTestGenerator::evaluateRefinedTest(
@@ -490,7 +527,10 @@ bool CheckTestGenerator::generateCheckTest(
       funcBuilder, loc, FlatSymbolRefAttr::get(context, testFuncName),
       refinedResultTypes, callArgs);
 
-  if (failed(addAssertions(funcBuilder, loc, callOp, outputAttrs))) {
+  FloatAttr atolAttr = clonedTestFunc->getAttrOfType<FloatAttr>("check.atol");
+  FloatAttr rtolAttr = clonedTestFunc->getAttrOfType<FloatAttr>("check.rtol");
+  if (failed(addAssertions(funcBuilder, loc, callOp, outputAttrs, atolAttr,
+                           rtolAttr))) {
     return false;
   }
 
@@ -522,8 +562,12 @@ LogicalResult CheckTestGenerator::addConstantInputs(
     Value cstVal = cstOp->getResult(0);
 
     if (cstVal.getType() != refinedArgTypes[i]) {
-      llvm::errs() << "Error: Refined argument type mismatch\n";
-      return failure();
+      cstVal = castTensorIfNeeded(funcBuilder, loc, cstVal, refinedArgTypes[i]);
+      if (!cstVal) {
+        llvm::errs() << "Error: Refined argument type mismatch and not "
+                        "compatible for cast\n";
+        return failure();
+      }
     }
     callArgs.push_back(cstVal);
   }
@@ -532,14 +576,20 @@ LogicalResult CheckTestGenerator::addConstantInputs(
 
 LogicalResult CheckTestGenerator::addAssertions(
     OpBuilder &funcBuilder, Location loc, func::CallOp callOp,
-    const std::vector<TypedAttr> &outputAttrs) {
+    const std::vector<TypedAttr> &outputAttrs, FloatAttr atolAttr,
+    FloatAttr rtolAttr) {
   for (size_t i = 0; i < outputAttrs.size(); ++i) {
     auto expectedAttr = outputAttrs[i];
     auto resVal = callOp.getResult(i);
 
     if (resVal.getType() != expectedAttr.getType()) {
-      llvm::errs() << "Error: Refined result type mismatch\n";
-      return failure();
+      resVal =
+          castTensorIfNeeded(funcBuilder, loc, resVal, expectedAttr.getType());
+      if (!resVal) {
+        llvm::errs() << "Error: Refined result type mismatch and not "
+                        "compatible for cast\n";
+        return failure();
+      }
     }
 
     OperationState expectedCstState(loc, "util.unfoldable_constant");
@@ -558,9 +608,16 @@ LogicalResult CheckTestGenerator::addAssertions(
     OperationState checkState(loc, checkOp);
     checkState.addOperands({resVal, expectedCst->getResult(0)});
     if (isFloat) {
-      // Add relative tolerance to support FMA vs non-FMA comparison for large
-      // values.
-      checkState.addAttribute("rtol", funcBuilder.getF32FloatAttr(1e-6f));
+      if (atolAttr) {
+        checkState.addAttribute("atol", atolAttr);
+      }
+      if (rtolAttr) {
+        checkState.addAttribute("rtol", rtolAttr);
+      } else {
+        // Add relative tolerance to support FMA vs non-FMA comparison for large
+        // values.
+        checkState.addAttribute("rtol", funcBuilder.getF32FloatAttr(1e-6f));
+      }
     }
     funcBuilder.create(checkState);
   }
@@ -572,8 +629,10 @@ LogicalResult CheckTestGenerator::inlineAndCleanup(
   PassManager pmInline(context);
   pmInline.addPass(createInlinerPass(llvm::StringMap<OpPassManager>{},
                                      [](OpPassManager &) {}));
+  pmInline.addPass(createCanonicalizerPass());
+  pmInline.addPass(createCSEPass());
   if (failed(pmInline.run(outModule))) {
-    llvm::errs() << "Failed to run inliner pass\n";
+    llvm::errs() << "Failed to run inline and cleanup passes\n";
     return failure();
   }
 

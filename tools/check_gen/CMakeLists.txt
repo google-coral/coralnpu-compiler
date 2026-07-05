@@ -36,6 +36,7 @@ iree_cc_binary(
     LLVMSupport
     MLIRCAPIIR
     MLIRFuncDialect
+    MLIRLinalgDialect
     MLIRIR
     MLIRParser
     MLIRPass

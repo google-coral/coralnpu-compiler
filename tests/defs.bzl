@@ -28,9 +28,9 @@ def coralnpu_check_test(
     native_test(
         name = name,
         args = [
-            "--module=$(location :%s)" % bytecode_module_name,
+            "--module=$(location :%s.vmfb)" % bytecode_module_name,
         ] + runner_args,
-        data = [":%s" % bytecode_module_name],
+        data = [":%s.vmfb" % bytecode_module_name],
         src = "@iree_core//tools:iree-check-module",  # Use absolute label to be safe
         tags = tags + ["driver=coralnpu", "target=coralnpu"],
         timeout = timeout,

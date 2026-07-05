@@ -249,7 +249,7 @@ def check_gen_tests(
             compile_tool = "//compiler/tools:coralnpu-compile",
             flags = list(compiler_flags),
             # if the test is taged manual, we have to pass the tag so we don't try to generate the test (which fails)
-            tags = bytecode_tags + (["manual"] if "manual" in extra_tags else []),
+            tags = bytecode_tags + (["manual"] if "manual" in combined_tags else []),
             deps = deps,
             visibility = ["//visibility:private"],
         )
@@ -258,9 +258,9 @@ def check_gen_tests(
         native_test(
             name = name + "_" + suffix + "_check_test",
             args = [
-                "--module=$(location :%s)" % bytecode_module_name,
+                "--module=$(location :%s.vmfb)" % bytecode_module_name,
             ] + runner_args,
-            data = [":%s" % bytecode_module_name],
+            data = [":%s.vmfb" % bytecode_module_name],
             src = "@iree_core//tools:iree-check-module",
             tags = combined_tags,
             timeout = timeout,

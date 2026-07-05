@@ -58,10 +58,9 @@ static llvm::cl::opt<std::string> defaultGen(
     llvm::cl::init(""));
 
 int main(int argc, char **argv) {
-  llvm::cl::ParseCommandLineOptions(argc, argv,
-                                    "IREE check template generator\n");
-
   ireeCompilerGlobalInitialize();
+  ireeCompilerSetupGlobalCL(argc, const_cast<const char **>(argv), "check_gen",
+                            /*installSignalHandlers=*/false);
 
   // Make sure the output directory exists
   if (auto ec = llvm::sys::fs::create_directories(outputDir)) {

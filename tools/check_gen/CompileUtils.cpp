@@ -20,6 +20,7 @@
 // MLIR headers
 #include "mlir/CAPI/IR.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Support/FileUtilities.h"
@@ -63,6 +64,7 @@ iree_compiler_session_t *initCompiler(MLIRContext *&context) {
   std::vector<const char *> flags = {
       "--iree-hal-target-backends=vmvx",
   };
+
   if (checkError(
           ireeCompilerSessionSetFlags(session, flags.size(), flags.data()))) {
     ireeCompilerSessionDestroy(session);
@@ -79,6 +81,7 @@ iree_compiler_session_t *initCompiler(MLIRContext *&context) {
   context->allowUnregisteredDialects();
   context->loadDialect<func::FuncDialect>();
   context->loadDialect<tensor::TensorDialect>();
+  context->loadDialect<linalg::LinalgDialect>();
   return session;
 }
 

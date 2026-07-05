@@ -104,9 +104,10 @@ class CheckTestGenerator {
   // Helper to add assertions to the check function.
   LogicalResult addAssertions(OpBuilder &funcBuilder, Location loc,
                               func::CallOp callOp,
-                              const std::vector<TypedAttr> &outputAttrs);
+                              const std::vector<TypedAttr> &outputAttrs,
+                              FloatAttr atolAttr = nullptr,
+                              FloatAttr rtolAttr = nullptr);
 
-  // jetski: change all the std::string to llvm::StringRef (or std::string_view)
   // Helper to inline and cleanup the check module.
   LogicalResult inlineAndCleanup(ModuleOp outModule,
                                  llvm::StringRef testFuncName);

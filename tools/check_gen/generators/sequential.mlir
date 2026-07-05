@@ -816,6 +816,42 @@ module {
     return %res : tensor<?x?x?x?xf32>
   }
 
+  func.func @sequential_rank_5_f32(%dim0: index, %dim1: index, %dim2: index, %dim3: index, %dim4: index) -> tensor<?x?x?x?x?xf32> {
+    %alloc = tensor.empty(%dim0, %dim1, %dim2, %dim3, %dim4) : tensor<?x?x?x?x?xf32>
+    %res = linalg.generic {
+      indexing_maps = [#map5],
+      iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel"]
+    } outs(%alloc : tensor<?x?x?x?x?xf32>) {
+    ^bb0(%out: f32):
+      %idx0 = linalg.index 0 : index
+      %idx0_i32 = arith.index_cast %idx0 : index to i32
+      %idx1 = linalg.index 1 : index
+      %idx1_i32 = arith.index_cast %idx1 : index to i32
+      %idx2 = linalg.index 2 : index
+      %idx2_i32 = arith.index_cast %idx2 : index to i32
+      %idx3 = linalg.index 3 : index
+      %idx3_i32 = arith.index_cast %idx3 : index to i32
+      %idx4 = linalg.index 4 : index
+      %idx4_i32 = arith.index_cast %idx4 : index to i32
+      %dim1_i32 = arith.index_cast %dim1 : index to i32
+      %tmp1 = arith.muli %idx0_i32, %dim1_i32 : i32
+      %val1 = arith.addi %idx1_i32, %tmp1 : i32
+      %dim2_i32 = arith.index_cast %dim2 : index to i32
+      %tmp2 = arith.muli %val1, %dim2_i32 : i32
+      %val2 = arith.addi %idx2_i32, %tmp2 : i32
+      %dim3_i32 = arith.index_cast %dim3 : index to i32
+      %tmp3 = arith.muli %val2, %dim3_i32 : i32
+      %val3 = arith.addi %idx3_i32, %tmp3 : i32
+      %dim4_i32 = arith.index_cast %dim4 : index to i32
+      %tmp4 = arith.muli %val3, %dim4_i32 : i32
+      %val4 = arith.addi %idx4_i32, %tmp4 : i32
+      %val_f32 = arith.sitofp %val4 : i32 to f32
+      linalg.yield %val_f32 : f32
+    } -> tensor<?x?x?x?x?xf32>
+    return %res : tensor<?x?x?x?x?xf32>
+  }
+
+
   // i8 Generators
   func.func @sequential_rank_1_i8(%dim0: index) -> tensor<?xi8> {
     %alloc = tensor.empty(%dim0) : tensor<?xi8>
@@ -904,6 +940,42 @@ module {
     return %res : tensor<?x?x?x?xi8>
   }
 
+  func.func @sequential_rank_5_i8(%dim0: index, %dim1: index, %dim2: index, %dim3: index, %dim4: index) -> tensor<?x?x?x?x?xi8> {
+    %alloc = tensor.empty(%dim0, %dim1, %dim2, %dim3, %dim4) : tensor<?x?x?x?x?xi8>
+    %res = linalg.generic {
+      indexing_maps = [#map5],
+      iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel"]
+    } outs(%alloc : tensor<?x?x?x?x?xi8>) {
+    ^bb0(%out: i8):
+      %idx0 = linalg.index 0 : index
+      %idx0_i32 = arith.index_cast %idx0 : index to i32
+      %idx1 = linalg.index 1 : index
+      %idx1_i32 = arith.index_cast %idx1 : index to i32
+      %idx2 = linalg.index 2 : index
+      %idx2_i32 = arith.index_cast %idx2 : index to i32
+      %idx3 = linalg.index 3 : index
+      %idx3_i32 = arith.index_cast %idx3 : index to i32
+      %idx4 = linalg.index 4 : index
+      %idx4_i32 = arith.index_cast %idx4 : index to i32
+      %dim1_i32 = arith.index_cast %dim1 : index to i32
+      %tmp1 = arith.muli %idx0_i32, %dim1_i32 : i32
+      %val1 = arith.addi %idx1_i32, %tmp1 : i32
+      %dim2_i32 = arith.index_cast %dim2 : index to i32
+      %tmp2 = arith.muli %val1, %dim2_i32 : i32
+      %val2 = arith.addi %idx2_i32, %tmp2 : i32
+      %dim3_i32 = arith.index_cast %dim3 : index to i32
+      %tmp3 = arith.muli %val2, %dim3_i32 : i32
+      %val3 = arith.addi %idx3_i32, %tmp3 : i32
+      %dim4_i32 = arith.index_cast %dim4 : index to i32
+      %tmp4 = arith.muli %val3, %dim4_i32 : i32
+      %val4 = arith.addi %idx4_i32, %tmp4 : i32
+      %val_i8 = arith.trunci %val4 : i32 to i8
+      linalg.yield %val_i8 : i8
+    } -> tensor<?x?x?x?x?xi8>
+    return %res : tensor<?x?x?x?x?xi8>
+  }
+
+
   // i16 Generators
   func.func @sequential_rank_1_i16(%dim0: index) -> tensor<?xi16> {
     %alloc = tensor.empty(%dim0) : tensor<?xi16>
@@ -990,5 +1062,40 @@ module {
       linalg.yield %val_i16 : i16
     } -> tensor<?x?x?x?xi16>
     return %res : tensor<?x?x?x?xi16>
+  }
+
+  func.func @sequential_rank_5_i16(%dim0: index, %dim1: index, %dim2: index, %dim3: index, %dim4: index) -> tensor<?x?x?x?x?xi16> {
+    %alloc = tensor.empty(%dim0, %dim1, %dim2, %dim3, %dim4) : tensor<?x?x?x?x?xi16>
+    %res = linalg.generic {
+      indexing_maps = [#map5],
+      iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel"]
+    } outs(%alloc : tensor<?x?x?x?x?xi16>) {
+    ^bb0(%out: i16):
+      %idx0 = linalg.index 0 : index
+      %idx0_i32 = arith.index_cast %idx0 : index to i32
+      %idx1 = linalg.index 1 : index
+      %idx1_i32 = arith.index_cast %idx1 : index to i32
+      %idx2 = linalg.index 2 : index
+      %idx2_i32 = arith.index_cast %idx2 : index to i32
+      %idx3 = linalg.index 3 : index
+      %idx3_i32 = arith.index_cast %idx3 : index to i32
+      %idx4 = linalg.index 4 : index
+      %idx4_i32 = arith.index_cast %idx4 : index to i32
+      %dim1_i32 = arith.index_cast %dim1 : index to i32
+      %tmp1 = arith.muli %idx0_i32, %dim1_i32 : i32
+      %val1 = arith.addi %idx1_i32, %tmp1 : i32
+      %dim2_i32 = arith.index_cast %dim2 : index to i32
+      %tmp2 = arith.muli %val1, %dim2_i32 : i32
+      %val2 = arith.addi %idx2_i32, %tmp2 : i32
+      %dim3_i32 = arith.index_cast %dim3 : index to i32
+      %tmp3 = arith.muli %val2, %dim3_i32 : i32
+      %val3 = arith.addi %idx3_i32, %tmp3 : i32
+      %dim4_i32 = arith.index_cast %dim4 : index to i32
+      %tmp4 = arith.muli %val3, %dim4_i32 : i32
+      %val4 = arith.addi %idx4_i32, %tmp4 : i32
+      %val_i16 = arith.trunci %val4 : i32 to i16
+      linalg.yield %val_i16 : i16
+    } -> tensor<?x?x?x?x?xi16>
+    return %res : tensor<?x?x?x?x?xi16>
   }
 }
