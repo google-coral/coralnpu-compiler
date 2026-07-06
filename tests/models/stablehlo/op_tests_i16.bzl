@@ -94,3 +94,69 @@ def stablehlo_op_tests_i16(name = "stablehlo_op_i16_tests"):
     op_tests_i16(name = "transpose_rank2_i16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "transpose_rank2_i16.mlir")
     op_tests_i16(name = "transpose_rank3_i16", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "transpose_rank3_i16.mlir")
     op_tests_i16(name = "transpose_rank4_i16", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "transpose_rank4_i16.mlir")
+
+    # Elementwise operations
+
+    # Reason: VMVX reference ctlz promotion bug (returns 32 instead of 16 for 0)
+    op_tests_i16(name = "count_leading_zeros_rank1_i16", instances = ["(8)", "(256)", "(450)"], test = "count_leading_zeros_rank1_i16.mlir", tags = ["manual"])
+
+    # Reason: VMVX reference ctlz promotion bug (returns 32 instead of 16 for 0)
+    op_tests_i16(name = "count_leading_zeros_rank2_i16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "count_leading_zeros_rank2_i16.mlir", tags = ["manual"])
+
+    # Reason: VMVX reference ctlz promotion bug (returns 32 instead of 16 for 0)
+    op_tests_i16(name = "count_leading_zeros_rank3_i16", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "count_leading_zeros_rank3_i16.mlir", tags = ["manual"])
+
+    # Reason: VMVX reference ctlz promotion bug (returns 32 instead of 16 for 0)
+    op_tests_i16(name = "count_leading_zeros_rank4_i16", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "count_leading_zeros_rank4_i16.mlir", tags = ["manual"])
+    op_tests_i16(name = "not_rank1_i16", instances = ["(8)", "(256)", "(450)"], test = "not_rank1_i16.mlir")
+    op_tests_i16(name = "not_rank2_i16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "not_rank2_i16.mlir")
+    op_tests_i16(name = "not_rank3_i16", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "not_rank3_i16.mlir")
+    op_tests_i16(name = "not_rank4_i16", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "not_rank4_i16.mlir")
+
+    # Reason: VMVX lacks math.ctpop legalization
+    op_tests_i16(name = "popcnt_rank1_i16", instances = ["(8)", "(256)", "(450)"], test = "popcnt_rank1_i16.mlir", tags = ["manual"])
+
+    # Reason: VMVX lacks math.ctpop legalization
+    op_tests_i16(name = "popcnt_rank2_i16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "popcnt_rank2_i16.mlir", tags = ["manual"])
+
+    # Reason: VMVX lacks math.ctpop legalization
+    op_tests_i16(name = "popcnt_rank3_i16", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "popcnt_rank3_i16.mlir", tags = ["manual"])
+
+    # Reason: VMVX lacks math.ctpop legalization
+    op_tests_i16(name = "popcnt_rank4_i16", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "popcnt_rank4_i16.mlir", tags = ["manual"])
+    op_tests_i16(name = "sign_rank1_i16", instances = ["(8)", "(256)", "(450)"], test = "sign_rank1_i16.mlir")
+    op_tests_i16(name = "sign_rank2_i16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "sign_rank2_i16.mlir")
+    op_tests_i16(name = "sign_rank3_i16", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "sign_rank3_i16.mlir")
+    op_tests_i16(name = "sign_rank4_i16", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "sign_rank4_i16.mlir")
+    op_tests_i16(name = "and_rank1_i16", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "and_rank1_i16.mlir")
+    op_tests_i16(name = "and_rank2_i16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "and_rank2_i16.mlir")
+    op_tests_i16(name = "and_rank3_i16", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "and_rank3_i16.mlir")
+    op_tests_i16(name = "and_rank4_i16", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "and_rank4_i16.mlir")
+    op_tests_i16(name = "or_rank1_i16", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "or_rank1_i16.mlir")
+    op_tests_i16(name = "or_rank2_i16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "or_rank2_i16.mlir")
+    op_tests_i16(name = "or_rank3_i16", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "or_rank3_i16.mlir")
+    op_tests_i16(name = "or_rank4_i16", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "or_rank4_i16.mlir")
+    op_tests_i16(name = "xor_rank1_i16", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "xor_rank1_i16.mlir")
+    op_tests_i16(name = "xor_rank2_i16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "xor_rank2_i16.mlir")
+    op_tests_i16(name = "xor_rank3_i16", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "xor_rank3_i16.mlir")
+    op_tests_i16(name = "xor_rank4_i16", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "xor_rank4_i16.mlir")
+    op_tests_i16(name = "shift_left_rank1_i16", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "shift_left_rank1_i16.mlir")
+    op_tests_i16(name = "shift_left_rank2_i16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "shift_left_rank2_i16.mlir")
+    op_tests_i16(name = "shift_left_rank3_i16", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "shift_left_rank3_i16.mlir")
+    op_tests_i16(name = "shift_left_rank4_i16", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "shift_left_rank4_i16.mlir")
+    op_tests_i16(name = "shift_right_arithmetic_rank1_i16", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "shift_right_arithmetic_rank1_i16.mlir")
+    op_tests_i16(name = "shift_right_arithmetic_rank2_i16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "shift_right_arithmetic_rank2_i16.mlir")
+    op_tests_i16(name = "shift_right_arithmetic_rank3_i16", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "shift_right_arithmetic_rank3_i16.mlir")
+    op_tests_i16(name = "shift_right_arithmetic_rank4_i16", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "shift_right_arithmetic_rank4_i16.mlir")
+    op_tests_i16(name = "shift_right_logical_rank1_i16", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "shift_right_logical_rank1_i16.mlir")
+    op_tests_i16(name = "shift_right_logical_rank2_i16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "shift_right_logical_rank2_i16.mlir")
+    op_tests_i16(name = "shift_right_logical_rank3_i16", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "shift_right_logical_rank3_i16.mlir")
+    op_tests_i16(name = "shift_right_logical_rank4_i16", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "shift_right_logical_rank4_i16.mlir")
+    op_tests_i16(name = "power_rank1_i16", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "power_rank1_i16.mlir")
+    op_tests_i16(name = "power_rank2_i16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "power_rank2_i16.mlir")
+    op_tests_i16(name = "power_rank3_i16", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "power_rank3_i16.mlir")
+    op_tests_i16(name = "power_rank4_i16", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "power_rank4_i16.mlir")
+    op_tests_i16(name = "remainder_rank1_i16", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "remainder_rank1_i16.mlir")
+    op_tests_i16(name = "remainder_rank2_i16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "remainder_rank2_i16.mlir")
+    op_tests_i16(name = "remainder_rank3_i16", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "remainder_rank3_i16.mlir")
+    op_tests_i16(name = "remainder_rank4_i16", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "remainder_rank4_i16.mlir")

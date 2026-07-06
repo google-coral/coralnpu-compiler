@@ -627,3 +627,606 @@ op_tests(
     "(1,1,5,400)"
 )
 
+op_tests(
+  NAME "pad_rank2_f32"
+  TEST "pad_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "clamp_rank2_f32"
+  TEST "clamp_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "broadcast_rank2_f32"
+  TEST "broadcast_rank2_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "if_rank1_f32"
+  TEST "if_rank1_f32.mlir"
+  INSTANCES
+    "(1)(8)"
+    "(1)(256)"
+)
+
+op_tests(
+  NAME "case_rank1_f32"
+  TEST "case_rank1_f32.mlir"
+  INSTANCES
+    "(1)(8)"
+    "(1)(256)"
+)
+
+op_tests(
+  NAME "dot_general_rank3_f32"
+  TEST "dot_general_rank3_f32.mlir"
+  INSTANCES
+    "(2,2,3)(2,3,4)"
+    "(1,8,16)(1,16,8)"
+)
+
+op_tests(
+  NAME "gather_rank1_f32"
+  TEST "gather_rank1_f32.mlir"
+  INSTANCES
+    "(10)(8)"
+    "(300)(256)"
+)
+
+op_tests(
+  NAME "scatter_rank1_f32"
+  TEST "scatter_rank1_f32.mlir"
+  INSTANCES
+    "(10)(3)(3)"
+    "(300)(256)(256)"
+)
+
+op_tests(
+  NAME "sort_rank1_f32"
+  TEST "sort_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+)
+
+op_tests(
+  NAME "tuple_rank1_f32"
+  TEST "tuple_rank1_f32.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+)
+
+op_tests(
+  NAME "bitcast_convert_rank1_f32_i32"
+  TEST "bitcast_convert_rank1_f32_i32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+)
+
+op_tests(
+  NAME "batch_norm_inference_rank4_f32"
+  TEST "batch_norm_inference_rank4_f32.mlir"
+  INSTANCES
+    "(1,2,2,3)(3)(3)(3)(3)"
+    "(1,8,16,32)(32)(32)(32)(32)"
+)
+
+op_tests(
+  NAME "ceil_rank1_f32"
+  TEST "ceil_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "ceil_rank2_f32"
+  TEST "ceil_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "ceil_rank3_f32"
+  TEST "ceil_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "ceil_rank4_f32"
+  TEST "ceil_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "cosine_rank1_f32"
+  TEST "cosine_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "cosine_rank2_f32"
+  TEST "cosine_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "cosine_rank3_f32"
+  TEST "cosine_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "cosine_rank4_f32"
+  TEST "cosine_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "exponential_rank1_f32"
+  TEST "exponential_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "exponential_rank2_f32"
+  TEST "exponential_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "exponential_rank3_f32"
+  TEST "exponential_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "exponential_rank4_f32"
+  TEST "exponential_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "exponential_minus_one_rank1_f32"
+  TEST "exponential_minus_one_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "exponential_minus_one_rank2_f32"
+  TEST "exponential_minus_one_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "exponential_minus_one_rank3_f32"
+  TEST "exponential_minus_one_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "exponential_minus_one_rank4_f32"
+  TEST "exponential_minus_one_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "floor_rank1_f32"
+  TEST "floor_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "floor_rank2_f32"
+  TEST "floor_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "floor_rank3_f32"
+  TEST "floor_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "floor_rank4_f32"
+  TEST "floor_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "log_rank1_f32"
+  TEST "log_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "log_rank2_f32"
+  TEST "log_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "log_rank3_f32"
+  TEST "log_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "log_rank4_f32"
+  TEST "log_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "log_plus_one_rank1_f32"
+  TEST "log_plus_one_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "log_plus_one_rank2_f32"
+  TEST "log_plus_one_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "log_plus_one_rank3_f32"
+  TEST "log_plus_one_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "log_plus_one_rank4_f32"
+  TEST "log_plus_one_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "logistic_rank1_f32"
+  TEST "logistic_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "logistic_rank2_f32"
+  TEST "logistic_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "logistic_rank3_f32"
+  TEST "logistic_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "logistic_rank4_f32"
+  TEST "logistic_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "rsqrt_rank1_f32"
+  TEST "rsqrt_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "rsqrt_rank2_f32"
+  TEST "rsqrt_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "rsqrt_rank3_f32"
+  TEST "rsqrt_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "rsqrt_rank4_f32"
+  TEST "rsqrt_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "sine_rank1_f32"
+  TEST "sine_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "sine_rank2_f32"
+  TEST "sine_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "sine_rank3_f32"
+  TEST "sine_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "sine_rank4_f32"
+  TEST "sine_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "sqrt_rank1_f32"
+  TEST "sqrt_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "sqrt_rank2_f32"
+  TEST "sqrt_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "sqrt_rank3_f32"
+  TEST "sqrt_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "sqrt_rank4_f32"
+  TEST "sqrt_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "tanh_rank1_f32"
+  TEST "tanh_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "tanh_rank2_f32"
+  TEST "tanh_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "tanh_rank3_f32"
+  TEST "tanh_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "tanh_rank4_f32"
+  TEST "tanh_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "remainder_rank1_f32"
+  TEST "remainder_rank1_f32.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "remainder_rank2_f32"
+  TEST "remainder_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "remainder_rank3_f32"
+  TEST "remainder_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "remainder_rank4_f32"
+  TEST "remainder_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
+)
+
+op_tests(
+  NAME "is_finite_rank1_f32"
+  TEST "is_finite_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "is_finite_rank2_f32"
+  TEST "is_finite_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "is_finite_rank3_f32"
+  TEST "is_finite_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "is_finite_rank4_f32"
+  TEST "is_finite_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+

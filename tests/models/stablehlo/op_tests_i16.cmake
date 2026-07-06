@@ -104,7 +104,7 @@ op_tests(
   NAME "broadcast_in_dim_rank3_i16_300_450"
   TEST "broadcast_in_dim_rank3_i16_300_450.mlir"
   INSTANCES
-    "(300,450), [manual]"
+    "(300,450)"
 )
 
 op_tests(
@@ -212,8 +212,8 @@ op_tests(
   TEST "convolution_rank2_i16.mlir"
   INSTANCES
     "(4,8)(8,4)"
-    "(120,256)(256,300), [manual]"
-    "(300,100)(100,450), [manual]"
+    "(120,256)(256,300)"
+    "(300,100)(100,450)"
 )
 
 op_tests(
@@ -230,7 +230,7 @@ op_tests(
   TEST "convolution_rank4_i16.mlir"
   INSTANCES
     "(1,8,8,3)(3,3,3,16)"
-    "(2,12,12,3)(5,5,3,32), [manual]"
+    "(2,12,12,3)(5,5,3,32)"
     "(1,50,50,3)(3,3,3,8)"
 )
 
@@ -285,7 +285,7 @@ op_tests(
   INSTANCES
     "(4,8)"
     "(120,256)"
-    "(300,450), [manual]"
+    "(300,450)"
 )
 
 op_tests(
@@ -310,8 +310,8 @@ op_tests(
   TEST "matmul_rank2_i16.mlir"
   INSTANCES
     "(4,8)(8,4)"
-    "(120,256)(256,300), [manual]"
-    "(300,100)(100,450), [manual]"
+    "(120,256)(256,300)"
+    "(300,100)(100,450)"
 )
 
 op_tests(
@@ -627,5 +627,365 @@ op_tests(
     "(2,2,3,2)"
     "(2,3,4,50)"
     "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "not_rank1_i16"
+  TEST "not_rank1_i16.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "not_rank2_i16"
+  TEST "not_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "not_rank3_i16"
+  TEST "not_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "not_rank4_i16"
+  TEST "not_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "sign_rank1_i16"
+  TEST "sign_rank1_i16.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "sign_rank2_i16"
+  TEST "sign_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "sign_rank3_i16"
+  TEST "sign_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "sign_rank4_i16"
+  TEST "sign_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "and_rank1_i16"
+  TEST "and_rank1_i16.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "and_rank2_i16"
+  TEST "and_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "and_rank3_i16"
+  TEST "and_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "and_rank4_i16"
+  TEST "and_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
+)
+
+op_tests(
+  NAME "or_rank1_i16"
+  TEST "or_rank1_i16.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "or_rank2_i16"
+  TEST "or_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "or_rank3_i16"
+  TEST "or_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "or_rank4_i16"
+  TEST "or_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
+)
+
+op_tests(
+  NAME "xor_rank1_i16"
+  TEST "xor_rank1_i16.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "xor_rank2_i16"
+  TEST "xor_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "xor_rank3_i16"
+  TEST "xor_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "xor_rank4_i16"
+  TEST "xor_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
+)
+
+op_tests(
+  NAME "shift_left_rank1_i16"
+  TEST "shift_left_rank1_i16.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "shift_left_rank2_i16"
+  TEST "shift_left_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "shift_left_rank3_i16"
+  TEST "shift_left_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "shift_left_rank4_i16"
+  TEST "shift_left_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
+)
+
+op_tests(
+  NAME "shift_right_arithmetic_rank1_i16"
+  TEST "shift_right_arithmetic_rank1_i16.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "shift_right_arithmetic_rank2_i16"
+  TEST "shift_right_arithmetic_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "shift_right_arithmetic_rank3_i16"
+  TEST "shift_right_arithmetic_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "shift_right_arithmetic_rank4_i16"
+  TEST "shift_right_arithmetic_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
+)
+
+op_tests(
+  NAME "shift_right_logical_rank1_i16"
+  TEST "shift_right_logical_rank1_i16.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "shift_right_logical_rank2_i16"
+  TEST "shift_right_logical_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "shift_right_logical_rank3_i16"
+  TEST "shift_right_logical_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "shift_right_logical_rank4_i16"
+  TEST "shift_right_logical_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
+)
+
+op_tests(
+  NAME "power_rank1_i16"
+  TEST "power_rank1_i16.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "power_rank2_i16"
+  TEST "power_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "power_rank3_i16"
+  TEST "power_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "power_rank4_i16"
+  TEST "power_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
+)
+
+op_tests(
+  NAME "remainder_rank1_i16"
+  TEST "remainder_rank1_i16.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "remainder_rank2_i16"
+  TEST "remainder_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "remainder_rank3_i16"
+  TEST "remainder_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "remainder_rank4_i16"
+  TEST "remainder_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
 )
 

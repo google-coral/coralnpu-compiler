@@ -1,0 +1,4 @@
+func.func @main(%arg0: tensor<?x?x?x?xf32>) -> tensor<?x?x?x?xi1> {
+  %0 = stablehlo.is_finite %arg0 : (tensor<?x?x?x?xf32>) -> tensor<?x?x?x?xi1>
+  return %0 : tensor<?x?x?x?xi1>
+}
