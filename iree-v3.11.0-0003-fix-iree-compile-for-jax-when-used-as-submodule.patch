@@ -1,7 +1,7 @@
-From 734f520aeaf2596e2bda3449abaad6bcf9bbfb8a Mon Sep 17 00:00:00 2001
+From 53c9a9fb7ccb409dad5f9ab4ed30d277558b7311 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Thu, 28 May 2026 16:08:40 +0200
-Subject: [PATCH 3/4] fix iree compile for jax when used as submodule
+Subject: [PATCH 03/10] fix iree compile for jax when used as submodule
 
 ---
  .../Preprocessing/Canonicalization.cpp        |  12 +-
@@ -9,27 +9,27 @@ Subject: [PATCH 3/4] fix iree compile for jax when used as submodule
  .../Preprocessing/StableHLOToStableHLO.cpp    |  18 +++
  .../Conversion/StableHLOCustomCalls.cpp       |  49 +++++-
  .../StableHLOToIREEInputDialects.cpp          |   3 +-
- .../Conversion/StableHLOToLinalgExt.cpp       | 146 +++++++++++++++++-
+ .../Conversion/StableHLOToLinalgExt.cpp       | 144 +++++++++++++++++-
  .../Dialect/Stream/Analysis/Affinity.cpp      |   3 +
  .../Dialect/Util/Analysis/Explorer.cpp        |   6 +-
  .../iree/compiler/Dialect/Util/IR/UtilTypes.h |   9 +-
- .../pjrt/src/iree_pjrt/common/BUILD.bazel     |  94 +++++++++++
+ .../pjrt/src/iree_pjrt/common/BUILD.bazel     |  94 ++++++++++++
  .../pjrt/src/iree_pjrt/common/api_impl.cc     |   8 +-
  .../pjrt/src/iree_pjrt/cpu/BUILD.bazel        |  57 +++++++
  integrations/pjrt/src/iree_pjrt/cpu/client.h  |   2 +-
  .../src/iree_pjrt/partitioner_api/BUILD.bazel |  33 ++++
  .../pjrt/third_party/pjrt_c_api/BUILD.bazel   |  38 +++++
- 15 files changed, 467 insertions(+), 16 deletions(-)
+ 15 files changed, 467 insertions(+), 14 deletions(-)
  create mode 100644 integrations/pjrt/src/iree_pjrt/common/BUILD.bazel
  create mode 100644 integrations/pjrt/src/iree_pjrt/cpu/BUILD.bazel
  create mode 100644 integrations/pjrt/src/iree_pjrt/partitioner_api/BUILD.bazel
  create mode 100644 integrations/pjrt/third_party/pjrt_c_api/BUILD.bazel
 
 diff --git a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
-index 8a996a19d6..58da233241 100644
+index 510e2ee1b4..a68243427f 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
 +++ b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
-@@ -1176,9 +1176,9 @@ struct StableHLOCanonicalize final
+@@ -1217,9 +1217,9 @@ struct StableHLOCanonicalize final
  };
  
  } // namespace
@@ -42,7 +42,7 @@ index 8a996a19d6..58da233241 100644
    patterns->add<
        // Arithmetic ops.
        AddOpCanon, SubtractOpCanon, MulOpCanon, CompareOpCanon, SelectOpCanon,
-@@ -1197,6 +1197,12 @@ void populateCanonicalizationPatterns(MLIRContext *context,
+@@ -1238,6 +1238,12 @@ void populateCanonicalizationPatterns(MLIRContext *context,
        ReshapeOpCanon, MergeConsecutiveReshapes, TransposeIsReshape,
        // Types.
        ZeroExtentTensorCanon>(context, benefit);
@@ -72,10 +72,10 @@ index 6f11ec8f46..038c38659a 100644
  /// Collection of rewrite patterns for lowering of StableHLO dot general
  /// operations.
 diff --git a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp
-index ba77c12a9b..78db732887 100644
+index 387e788dd3..67694551fa 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp
 +++ b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp
-@@ -564,6 +564,16 @@ struct ScatterImplicitBatch final
+@@ -576,6 +576,16 @@ struct ScatterImplicitBatch final
      auto indices = cast<Value>(op.getScatterIndices());
      auto indicesTy = dyn_cast<RankedTensorType>(indices.getType());
  
@@ -90,9 +90,9 @@ index ba77c12a9b..78db732887 100644
 +    }
 +
      // Check whether indices has no batch dimension.
-     if (!indicesTy)
+     if (!indicesTy) {
        return failure();
-@@ -853,9 +863,17 @@ struct ScatterMaterializeInsertedDim final
+@@ -875,9 +885,17 @@ struct ScatterMaterializeInsertedDim final
                                  PatternRewriter &rewriter) const override {
      auto indices = op.getScatterIndices();
      auto operand = op.getInputs().front();
@@ -111,7 +111,7 @@ index ba77c12a9b..78db732887 100644
        return rewriter.notifyMatchFailure(op, "operand/indices have no rank");
      }
 diff --git a/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp b/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp
-index c26220cdf5..c6b16aa551 100644
+index e7314c129b..4181e6077a 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp
 +++ b/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp
 @@ -7,6 +7,7 @@
@@ -130,7 +130,7 @@ index c26220cdf5..c6b16aa551 100644
  #include "mlir/IR/BuiltinTypes.h"
  #include "mlir/IR/ImplicitLocOpBuilder.h"
  #include "mlir/IR/TypeUtilities.h"
-@@ -238,6 +240,50 @@ struct ShapeAssertionDrop final
+@@ -239,6 +241,50 @@ struct ShapeAssertionDrop final
    }
  };
  
@@ -181,7 +181,7 @@ index c26220cdf5..c6b16aa551 100644
  //===----------------------------------------------------------------------===//
  // Pass Definition.
  //===----------------------------------------------------------------------===//
-@@ -254,7 +300,8 @@ struct LegalizeStableHLOCustomCalls final
+@@ -255,7 +301,8 @@ struct LegalizeStableHLOCustomCalls final
      MLIRContext *ctx = f.getContext();
  
      RewritePatternSet patterns(ctx);
@@ -192,10 +192,10 @@ index c26220cdf5..c6b16aa551 100644
        signalPassFailure();
      }
 diff --git a/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp b/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp
-index 75ba4b3817..0ab8144927 100644
+index 3b264d2603..be4bad6868 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp
 +++ b/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp
-@@ -511,7 +511,8 @@ struct ConvertStableHloToIreeInputDialects final
+@@ -521,7 +521,8 @@ struct ConvertStableHloToIreeInputDialects final
  
      // Run stablehlo canonicalization patterns with a high benefit to avoid some
      // expensive expansions.
@@ -206,19 +206,10 @@ index 75ba4b3817..0ab8144927 100644
      // Run custom patterns with a high benefit to override stablehlo patterns.
      patterns.add<ConcatenateOpConversion, FftOpConversion,
 diff --git a/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp b/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp
-index 8c3fab7e1a..a91ef73888 100644
+index b6c9c8cac4..2f972fe514 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp
 +++ b/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp
-@@ -247,8 +247,6 @@ struct ScatterOpConversion final
-   LogicalResult
-   matchAndRewrite(mlir::stablehlo::ScatterOp op, OpAdaptor adaptor,
-                   ConversionPatternRewriter &rewriter) const override {
--    if (!hasCanonicalDimensionNumbers(op))
--      return failure();
-     if (llvm::size(op.getInputs()) != 1)
-       return op.emitError("NYI variadic operands scatter");
-     if (llvm::size(op.getUpdates()) != 1)
-@@ -260,7 +258,149 @@ struct ScatterOpConversion final
+@@ -274,7 +274,149 @@ struct ScatterOpConversion final
      Value indices = adaptor.getScatterIndices();
      Value updates = adaptor.getUpdates().front();
  
@@ -370,7 +361,7 @@ index 8c3fab7e1a..a91ef73888 100644
      llvm::SmallVector<int64_t> scatterDimMap;
      for (auto dim :
 diff --git a/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp b/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp
-index 9c7a2ed1ab..c5bc2db37d 100644
+index 868a54ef95..aaae079f69 100644
 --- a/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp
 +++ b/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp
 @@ -538,6 +538,9 @@ TraversalResult ValueConsumerAffinityPVS::updateFromUse(Value value,
@@ -384,10 +375,10 @@ index 9c7a2ed1ab..c5bc2db37d 100644
                *this,
                Position::forValue(
 diff --git a/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp b/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp
-index bcbd72cb19..5de8e1ac7e 100644
+index 5b348cc213..ce240ce78f 100644
 --- a/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp
 +++ b/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp
-@@ -1210,8 +1210,10 @@ TraversalResult Explorer::walkTransitiveUses(Value value, UseWalkFn fn,
+@@ -1279,8 +1279,10 @@ TraversalResult Explorer::walkTransitiveUses(Value value, UseWalkFn fn,
        if (ownerOp->hasTrait<OpTrait::ReturnLike>() &&
            !isa<CallableOpInterface>(ownerOp->getParentOp())) {
          auto parent = ownerOp->getParentOp();
@@ -401,10 +392,10 @@ index bcbd72cb19..5de8e1ac7e 100644
  
        // Step across global stores and into all of the loads across the program.
 diff --git a/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h b/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h
-index 6b1307a55f..0aac3857de 100644
+index ecc630c043..fd08b9b0ac 100644
 --- a/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h
 +++ b/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h
-@@ -367,7 +367,14 @@ static inline int32_t getRoundedElementByteWidth(Type type) {
+@@ -369,7 +369,14 @@ static inline int32_t getRoundedElementByteWidth(Type type) {
      return vectorType.getNumElements() *
             getRoundedElementByteWidth(vectorType.getElementType());
    }
@@ -521,7 +512,7 @@ index 0000000000..4898db620b
 +    ],
 +)
 diff --git a/integrations/pjrt/src/iree_pjrt/common/api_impl.cc b/integrations/pjrt/src/iree_pjrt/common/api_impl.cc
-index c4ead3494a..1c2e890ec1 100644
+index ed76c8a469..bd1ccf4697 100644
 --- a/integrations/pjrt/src/iree_pjrt/common/api_impl.cc
 +++ b/integrations/pjrt/src/iree_pjrt/common/api_impl.cc
 @@ -991,8 +991,8 @@ iree_status_t DeviceInstance::TransposeBroadcastDeviceBuffer(
@@ -706,5 +697,5 @@ index 0000000000..daa8d78835
 +    deps = [":compile_options-proto"],
 +)
 -- 
-2.54.0.794.g4f17f83d09-goog
+2.55.0
 

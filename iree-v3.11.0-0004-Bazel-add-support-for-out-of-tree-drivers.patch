@@ -1,7 +1,7 @@
-From 0be39477fe33d0069ffc1900538bbc45e47e649e Mon Sep 17 00:00:00 2001
+From 70ca43778dbd0764767d2b9e984ef7687210c4bf Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Fri, 29 May 2026 16:11:43 +0200
-Subject: [PATCH 4/5] [Bazel] add support for out-of-tree drivers
+Subject: [PATCH 04/10] [Bazel] add support for out-of-tree drivers
 
 ---
  MODULE.bazel                             |  1 +
@@ -10,10 +10,10 @@ Subject: [PATCH 4/5] [Bazel] add support for out-of-tree drivers
  3 files changed, 97 insertions(+)
 
 diff --git a/MODULE.bazel b/MODULE.bazel
-index a4d23ed5b9..0b623bd5a9 100644
+index f6be54e010..8a9e9af9d1 100644
 --- a/MODULE.bazel
 +++ b/MODULE.bazel
-@@ -84,6 +84,7 @@ use_repo(
+@@ -88,6 +88,7 @@ use_repo(
      "vulkan_headers",
      "webgpu_headers",
      "iree_external_plugins",
@@ -22,10 +22,10 @@ index a4d23ed5b9..0b623bd5a9 100644
  
  # Configure LLVM using the llvm-raw repo (creates llvm-project)
 diff --git a/build_tools/bazel/extensions.bzl b/build_tools/bazel/extensions.bzl
-index e743bb4080..448b310967 100644
+index 6c90cfabe8..032193db5a 100644
 --- a/build_tools/bazel/extensions.bzl
 +++ b/build_tools/bazel/extensions.bzl
-@@ -40,6 +40,79 @@ iree_external_plugins = repository_rule(
+@@ -41,6 +41,79 @@ iree_external_plugins = repository_rule(
      attrs = { "plugins": attr.string_dict(mandatory=True) }
  )
  
@@ -105,7 +105,7 @@ index e743bb4080..448b310967 100644
  def _iree_extension_impl(module_ctx):
      """Implementation of the IREE module extension."""
  
-@@ -143,15 +216,37 @@ def _iree_extension_impl(module_ctx):
+@@ -174,15 +247,37 @@ def _iree_extension_impl(module_ctx):
          plugins = external_plugins,
      )
  
@@ -144,10 +144,10 @@ index e743bb4080..448b310967 100644
      },
  )
 diff --git a/runtime/src/iree/hal/drivers/BUILD.bazel b/runtime/src/iree/hal/drivers/BUILD.bazel
-index 8f5de2abf5..abaea88cbc 100644
+index bd49dad3a2..ce512451e0 100644
 --- a/runtime/src/iree/hal/drivers/BUILD.bazel
 +++ b/runtime/src/iree/hal/drivers/BUILD.bazel
-@@ -66,6 +66,7 @@ iree_runtime_cc_library(
+@@ -75,6 +75,7 @@ iree_runtime_cc_library(
      deps = [
                 "//runtime/src/iree/base",
                 "//runtime/src/iree/hal",
@@ -156,5 +156,5 @@ index 8f5de2abf5..abaea88cbc 100644
                 ":amdgpu_enabled": ["//runtime/src/iree/hal/drivers/amdgpu/registration"],
                 "//conditions:default": [],
 -- 
-2.54.0.823.g6e5bcc1fc9-goog
+2.55.0
 

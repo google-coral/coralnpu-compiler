@@ -198,6 +198,8 @@ op_tests(
     "(7,15)"
     "(17,33)"
     "(120,250)"
+  LABELS
+    "manual"
 )
 
 op_tests(

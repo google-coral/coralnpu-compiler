@@ -1,7 +1,7 @@
-From 3c0993cee4fe3b95806e5c9db16b0503da4e9ecd Mon Sep 17 00:00:00 2001
+From 0c34a246694d003876d3444e74aa7ee8ea07d0b9 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Wed, 18 Mar 2026 09:41:30 +0100
-Subject: [PATCH 2/4] [Bazel] add support for out-of-tree plugins
+Subject: [PATCH 02/10] [Bazel] add support for out-of-tree plugins
 
 ---
  MODULE.bazel                                  |  1 +
@@ -10,10 +10,10 @@ Subject: [PATCH 2/4] [Bazel] add support for out-of-tree plugins
  3 files changed, 65 insertions(+), 8 deletions(-)
 
 diff --git a/MODULE.bazel b/MODULE.bazel
-index f32260091f..a4d23ed5b9 100644
+index b4166d4767..f6be54e010 100644
 --- a/MODULE.bazel
 +++ b/MODULE.bazel
-@@ -83,6 +83,7 @@ use_repo(
+@@ -87,6 +87,7 @@ use_repo(
      "tracy_client",
      "vulkan_headers",
      "webgpu_headers",
@@ -22,10 +22,10 @@ index f32260091f..a4d23ed5b9 100644
  
  # Configure LLVM using the llvm-raw repo (creates llvm-project)
 diff --git a/build_tools/bazel/extensions.bzl b/build_tools/bazel/extensions.bzl
-index 34346a230a..e743bb4080 100644
+index 23ff1eface..6c90cfabe8 100644
 --- a/build_tools/bazel/extensions.bzl
 +++ b/build_tools/bazel/extensions.bzl
-@@ -9,14 +9,40 @@
+@@ -10,14 +10,40 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
  load("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository", "new_local_repository")
  load("//build_tools/bazel:workspace.bzl", "cuda_auto_configure")
  
@@ -71,7 +71,7 @@ index 34346a230a..e743bb4080 100644
      # Create llvm-raw only when IREE is the root module.
      # This allows downstream consumers to provide their own LLVM.
      if any([m.is_root and m.name == "iree_core" for m in module_ctx.modules]):
-@@ -26,6 +52,14 @@ def _iree_extension_impl(module_ctx):
+@@ -27,6 +53,14 @@ def _iree_extension_impl(module_ctx):
              path = "third_party/llvm-project",
          )
  
@@ -86,7 +86,7 @@ index 34346a230a..e743bb4080 100644
      # Googletest
      local_repository(
          name = "com_google_googletest",
-@@ -99,8 +133,25 @@ def _iree_extension_impl(module_ctx):
+@@ -130,8 +164,25 @@ def _iree_extension_impl(module_ctx):
          iree_repo_alias = "@iree_core",
      )
  
@@ -152,5 +152,5 @@ index 92f83de0ea..e158b42e9a 100644
      ],
  )
 -- 
-2.54.0.794.g4f17f83d09-goog
+2.55.0
 

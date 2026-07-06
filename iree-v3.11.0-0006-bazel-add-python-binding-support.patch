@@ -1,7 +1,7 @@
-From 1f53c96b337dc43ee1871d5875b863605792b197 Mon Sep 17 00:00:00 2001
+From 8efb3d77d95d1c8601899fcbf18bbc1d1238013e Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Thu, 11 Jun 2026 20:29:51 +0200
-Subject: [PATCH] [bazel] add python binding support
+Subject: [PATCH 06/10] [bazel] add python binding support
 
 This might be a bit hackish.
 ---
@@ -21,7 +21,7 @@ This might be a bit hackish.
  create mode 100644 runtime/bindings/python/BUILD.bazel
 
 diff --git a/MODULE.bazel b/MODULE.bazel
-index 0b623bd5a9..b5a20e9597 100644
+index 8a9e9af9d1..ce2b044f21 100644
 --- a/MODULE.bazel
 +++ b/MODULE.bazel
 @@ -21,11 +21,11 @@ bazel_dep(name = "rules_python", version = "1.6.3")
@@ -38,8 +38,8 @@ index 0b623bd5a9..b5a20e9597 100644
  
  bazel_dep(name = "rules_shell", version = "0.6.1")
  
-@@ -76,15 +76,17 @@ use_repo(
-     "com_google_googletest",
+@@ -78,8 +78,12 @@ use_repo(
+     "hip_api_headers",
      "hsa_runtime_headers",
      "iree_cuda",
 +    "iree_external_drivers",
@@ -48,8 +48,10 @@ index 0b623bd5a9..b5a20e9597 100644
      "nccl",
 +    "numpy_configure",
 +    "pip",
+     "printf_lib",
+     "rccl",
      "spirv_cross",
-     "stablehlo",
+@@ -87,8 +91,6 @@ use_repo(
      "tracy_client",
      "vulkan_headers",
      "webgpu_headers",
@@ -59,18 +61,18 @@ index 0b623bd5a9..b5a20e9597 100644
  
  # Configure LLVM using the llvm-raw repo (creates llvm-project)
 diff --git a/build_tools/bazel/extensions.bzl b/build_tools/bazel/extensions.bzl
-index 448b310967..aa1359c0f8 100644
+index 032193db5a..736a9a62ec 100644
 --- a/build_tools/bazel/extensions.bzl
 +++ b/build_tools/bazel/extensions.bzl
-@@ -8,6 +8,7 @@
- 
+@@ -9,6 +9,7 @@
+ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
  load("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository", "new_local_repository")
  load("//build_tools/bazel:workspace.bzl", "cuda_auto_configure")
 +load("//build_tools/bazel:numpy_configure.bzl", "numpy_configure")
  
  def _iree_external_plugins_impl(repository_ctx):
      handle_plugin_ids = "".join(["HANDLE_PLUGIN_ID(%s)\\n" % plugin_id for plugin_id in repository_ctx.attr.plugins])
-@@ -112,6 +113,26 @@ iree_external_drivers = repository_rule(
+@@ -113,6 +114,26 @@ iree_external_drivers = repository_rule(
      }
  )
  
@@ -97,7 +99,7 @@ index 448b310967..aa1359c0f8 100644
  
  def _iree_extension_impl(module_ctx):
      """Implementation of the IREE module extension."""
-@@ -124,6 +145,12 @@ def _iree_extension_impl(module_ctx):
+@@ -125,6 +146,12 @@ def _iree_extension_impl(module_ctx):
              build_file_content = "# empty",
              path = "third_party/llvm-project",
          )
@@ -499,7 +501,7 @@ index 2dd253482e..ecb1c25815 100644
  ################################################################################
 diff --git a/runtime/bindings/python/BUILD.bazel b/runtime/bindings/python/BUILD.bazel
 new file mode 100644
-index 0000000000..92e01303c3
+index 0000000000..4632a9f096
 --- /dev/null
 +++ b/runtime/bindings/python/BUILD.bazel
 @@ -0,0 +1,125 @@
@@ -543,8 +545,8 @@ index 0000000000..92e01303c3
 +    ],
 +    deps = [
 +        "//runtime/src/iree/base",
-+        "//runtime/src/iree/base/internal:flags",
 +        "//runtime/src/iree/base/internal:path",
++        "//runtime/src/iree/base/tooling:flags",
 +        "//runtime/src/iree/hal",
 +        "//runtime/src/iree/hal/drivers",
 +        "//runtime/src/iree/hal/utils:allocators",
@@ -629,10 +631,10 @@ index 0000000000..92e01303c3
 +
 +exports_files(glob(["tests/**/*.py"]))
 diff --git a/tools/BUILD.bazel b/tools/BUILD.bazel
-index d12121651b..171dc12fc9 100644
+index 7f8439cf57..3fee8d3e79 100644
 --- a/tools/BUILD.bazel
 +++ b/tools/BUILD.bazel
-@@ -244,6 +244,16 @@ iree_compiler_cc_binary(
+@@ -281,6 +281,16 @@ iree_compiler_cc_binary(
      ],
  )
  
@@ -650,5 +652,5 @@ index d12121651b..171dc12fc9 100644
      name = "iree-link",
      srcs = ["iree-link-main.cc"],
 -- 
-2.54.0.1136.gdb2ca164c4-goog
+2.55.0
 

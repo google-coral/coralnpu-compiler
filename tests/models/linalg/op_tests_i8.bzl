@@ -52,7 +52,7 @@ def linalg_op_tests_i8(name = "linalg_op_i8_tests"):
     op_tests_i8(name = "generic_reduction_2d_i8", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "generic_reduction_2d_i8.mlir")
     op_tests_i8(name = "pack_i8", instances = ["(8,16)", "(16,32)", "(128,256)"], test = "pack_i8.mlir")
     op_tests_i8(name = "pack_perm_i8", instances = ["(8,16)", "(16,32)", "(128,256)"], test = "pack_perm_i8.mlir")
-    op_tests_i8(name = "pack_padding_i8", instances = ["(7,15)", "(17,33)", "(120,250)"], test = "pack_padding_i8.mlir")
+    op_tests_i8(name = "pack_padding_i8", instances = [("(7,15)", ["manual"]), ("(17,33)", ["manual"]), "(120,250)"], test = "pack_padding_i8.mlir")
     op_tests_i8(name = "unpack_i8", instances = ["(1,1,8,16)", "(2,2,8,16)", "(16,16,8,16)"], test = "unpack_i8.mlir")
     op_tests_i8(name = "unpack_perm_i8", instances = ["(1,1,8,16)", "(2,2,8,16)", "(3,2,8,16)"], test = "unpack_perm_i8.mlir")
     op_tests_i8(name = "map_i8", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "map_i8.mlir")

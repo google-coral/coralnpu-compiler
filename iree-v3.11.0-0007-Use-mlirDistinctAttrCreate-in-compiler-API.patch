@@ -1,0 +1,91 @@
+From ebaca1cc1984ce452abee091322816f441a9e111 Mon Sep 17 00:00:00 2001
+From: Eryk Szpotanski <eszpotanski@antmicro.com>
+Date: Tue, 7 Jul 2026 13:43:47 +0200
+Subject: [PATCH 07/10] Use mlirDistinctAttrCreate in compiler API
+
+LLVM fixed the mlirDisctinctAttrCreate type, therefore it also has to be
+changed in API and linker scripts
+
+Signed-off-by: Eryk Szpotanski <eszpotanski@antmicro.com>
+---
+ build_tools/linters/typos.toml                       | 2 --
+ compiler/src/iree/compiler/API/api_exports.c         | 4 ++--
+ compiler/src/iree/compiler/API/api_exports.def       | 2 +-
+ compiler/src/iree/compiler/API/api_exports.ld        | 2 +-
+ compiler/src/iree/compiler/API/api_exports.macos.lst | 2 +-
+ 5 files changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/build_tools/linters/typos.toml b/build_tools/linters/typos.toml
+index 5a1811a1c4..fd63d6e694 100644
+--- a/build_tools/linters/typos.toml
++++ b/build_tools/linters/typos.toml
+@@ -80,5 +80,3 @@ mye = "mye"
+ # Workgroup coordinate variables (iz, iy).
+ iz = "iz"
+ iy = "iy"
+-# Upstream MLIR C API typo (mlirDisctinctAttrCreate).
+-disctinct = "disctinct"
+diff --git a/compiler/src/iree/compiler/API/api_exports.c b/compiler/src/iree/compiler/API/api_exports.c
+index 1d8b5edea1..600fd916da 100644
+--- a/compiler/src/iree/compiler/API/api_exports.c
++++ b/compiler/src/iree/compiler/API/api_exports.c
+@@ -430,7 +430,7 @@ extern void mlirDictionaryAttrGetElementByName();
+ extern void mlirDictionaryAttrGetName();
+ extern void mlirDictionaryAttrGetNumElements();
+ extern void mlirDictionaryAttrGetTypeID();
+-extern void mlirDisctinctAttrCreate();
++extern void mlirDistinctAttrCreate();
+ extern void mlirElementsAttrGetNumElements();
+ extern void mlirElementsAttrGetValue();
+ extern void mlirElementsAttrIsValidIndex();
+@@ -1559,7 +1559,7 @@ uintptr_t __iree_compiler_hidden_force_extern() {
+   x += (uintptr_t)&mlirDictionaryAttrGetName;
+   x += (uintptr_t)&mlirDictionaryAttrGetNumElements;
+   x += (uintptr_t)&mlirDictionaryAttrGetTypeID;
+-  x += (uintptr_t)&mlirDisctinctAttrCreate;
++  x += (uintptr_t)&mlirDistinctAttrCreate;
+   x += (uintptr_t)&mlirElementsAttrGetNumElements;
+   x += (uintptr_t)&mlirElementsAttrGetValue;
+   x += (uintptr_t)&mlirElementsAttrIsValidIndex;
+diff --git a/compiler/src/iree/compiler/API/api_exports.def b/compiler/src/iree/compiler/API/api_exports.def
+index 1e42a4a54e..db932bad00 100644
+--- a/compiler/src/iree/compiler/API/api_exports.def
++++ b/compiler/src/iree/compiler/API/api_exports.def
+@@ -420,7 +420,7 @@ EXPORTS
+   mlirDictionaryAttrGetName
+   mlirDictionaryAttrGetNumElements
+   mlirDictionaryAttrGetTypeID
+-  mlirDisctinctAttrCreate
++  mlirDistinctAttrCreate
+   mlirElementsAttrGetNumElements
+   mlirElementsAttrGetValue
+   mlirElementsAttrIsValidIndex
+diff --git a/compiler/src/iree/compiler/API/api_exports.ld b/compiler/src/iree/compiler/API/api_exports.ld
+index bb637b37d6..1f7341df49 100644
+--- a/compiler/src/iree/compiler/API/api_exports.ld
++++ b/compiler/src/iree/compiler/API/api_exports.ld
+@@ -421,7 +421,7 @@ VER_0 {
+     mlirDictionaryAttrGetName;
+     mlirDictionaryAttrGetNumElements;
+     mlirDictionaryAttrGetTypeID;
+-    mlirDisctinctAttrCreate;
++    mlirDistinctAttrCreate;
+     mlirElementsAttrGetNumElements;
+     mlirElementsAttrGetValue;
+     mlirElementsAttrIsValidIndex;
+diff --git a/compiler/src/iree/compiler/API/api_exports.macos.lst b/compiler/src/iree/compiler/API/api_exports.macos.lst
+index a275806f2e..45819060a0 100644
+--- a/compiler/src/iree/compiler/API/api_exports.macos.lst
++++ b/compiler/src/iree/compiler/API/api_exports.macos.lst
+@@ -419,7 +419,7 @@ _mlirDictionaryAttrGetElementByName
+ _mlirDictionaryAttrGetName
+ _mlirDictionaryAttrGetNumElements
+ _mlirDictionaryAttrGetTypeID
+-_mlirDisctinctAttrCreate
++_mlirDistinctAttrCreate
+ _mlirElementsAttrGetNumElements
+ _mlirElementsAttrGetValue
+ _mlirElementsAttrIsValidIndex
+-- 
+2.55.0
+

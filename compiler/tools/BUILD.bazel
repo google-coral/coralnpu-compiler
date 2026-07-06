@@ -29,7 +29,6 @@ cc_library(
         "@iree_core//compiler/src:defs",
         "@iree_core//compiler/src/iree/compiler/API/Internal:CompilerDriver",
         "@iree_core//compiler/src/iree/compiler/Pipelines",
-        "@llvm-project//llvm:AMDGPUAsmParser",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:CAPIIR",
         "@llvm-project//mlir:IR",
@@ -49,6 +48,7 @@ cc_binary(
     name = "coralnpu-compile",
     srcs = ["coralnpu-compile-main.cc"],
     data = [
+        ":libIREECompiler_import",
         "//:riscv32_linker_copy",
         "//crt:crt_files",
         "@iree_core//lib:libIREECompiler.so",
@@ -56,7 +56,6 @@ cc_binary(
     linkopts = ["-Wl,-rpath,$$ORIGIN:$$ORIGIN/../lib:$$ORIGIN/../../lib"],
     deps = [
         ":coralnpu_compile_lib",
-        ":libIREECompiler_import",
         "@iree_core//compiler/src:defs",
         "@iree_core//compiler/src/iree/compiler/API/Internal:IREECompileToolEntryPoint",
     ],

@@ -47,7 +47,7 @@ cc_library(
         "@iree_core//runtime/src/iree/base/internal:arena",
         "@iree_core//runtime/src/iree/base/internal:cpu",
         "@iree_core//runtime/src/iree/base/internal:fpu_state",
-        "@iree_core//runtime/src/iree/base/internal:synchronization",
+        "@iree_core//runtime/src/iree/base/threading",
         "@iree_core//runtime/src/iree/hal",
         "@iree_core//runtime/src/iree/hal/local:executable_environment",
         "@iree_core//runtime/src/iree/hal/local:executable_library",

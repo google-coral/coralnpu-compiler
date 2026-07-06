@@ -283,6 +283,7 @@ CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options)
   clOptions.keepLinkerArtifacts = options.keepLinkerArtifacts;
 
   defaultOptions_ = clOptions.getTargetOptions();
+  codegenOptions_ = CPUCodegenOptions::FromFlags::get();
 }
 
 std::string CoralNPUTargetBackend::getLegacyDefaultDeviceID() const {
@@ -378,13 +379,14 @@ void CoralNPUTargetBackend::buildConfigurationPassPipeline(
 
   funcPassManager.addPass(createCoralNPUTileSizeSelectionWorkgroupPass());
 
-  buildLLVMCPUCodegenConfigurationPassPipeline(passManager);
+  buildLLVMCPUCodegenConfigurationPassPipeline(passManager, codegenOptions_);
 }
 
 void CoralNPUTargetBackend::buildTranslationPassPipeline(
     IREE::HAL::ExecutableTargetAttr targetAttr, OpPassManager &passManager) {
   buildLLVMCPUCodegenPassPipeline(
-      passManager, /*enableAArch64SME=*/false, [this](OpPassManager &pm) {
+      passManager, codegenOptions_,
+      /*enableAArch64SME=*/false, [this](OpPassManager &pm) {
         pm.nest<ModuleOp>().addNestedPass<func::FuncOp>(
             createCoralNPULimitLoopUnrollingPass(options_.maxLoopUnrolling));
       });

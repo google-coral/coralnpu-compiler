@@ -1,7 +1,7 @@
-From 3629f5b846d4c7bfb23937343385c030783e9077 Mon Sep 17 00:00:00 2001
+From 462ec293a93c8ad524d98e619fd21d53b3907197 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Fri, 3 Jul 2026 22:07:48 +0200
-Subject: [PATCH] [passes] copy attributes
+Subject: [PATCH 08/10] [passes] copy attributes
 
 This is needed to preserve affinity annotations.
 ---
@@ -13,10 +13,10 @@ This is needed to preserve affinity annotations.
  5 files changed, 76 insertions(+), 38 deletions(-)
 
 diff --git a/compiler/src/iree/compiler/Dialect/Flow/IR/FlowOps.cpp b/compiler/src/iree/compiler/Dialect/Flow/IR/FlowOps.cpp
-index 6fdf177d0f..1ae5360162 100644
+index 8150fff78d..be7786eee7 100644
 --- a/compiler/src/iree/compiler/Dialect/Flow/IR/FlowOps.cpp
 +++ b/compiler/src/iree/compiler/Dialect/Flow/IR/FlowOps.cpp
-@@ -597,6 +597,7 @@ bool dropUnusedAndRedundantDispatchRegionResults(
+@@ -656,6 +656,7 @@ bool dropUnusedAndRedundantDispatchRegionResults(
    auto newRegionOp =
        Flow::DispatchRegionOp::create(rewriter, regionOp.getLoc(), resultTypes,
                                       dynamicDims, regionOp.getWorkload());
@@ -25,10 +25,10 @@ index 6fdf177d0f..1ae5360162 100644
  
    // Update terminator.
 diff --git a/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp b/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp
-index b074128614..b8e1b9c111 100644
+index bbf20738b0..23a374810e 100644
 --- a/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp
 +++ b/compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.cpp
-@@ -373,6 +373,7 @@ FailureOr<IREE::Flow::DispatchRegionOp> appendDispatchRegionResults(
+@@ -383,6 +383,7 @@ FailureOr<IREE::Flow::DispatchRegionOp> appendDispatchRegionResults(
    auto newRegionOp = IREE::Flow::DispatchRegionOp::create(
        rewriter, regionOp->getLoc(), resultTypes, regionDynamicDims,
        regionOp.getWorkload());
@@ -37,10 +37,10 @@ index b074128614..b8e1b9c111 100644
                                newRegionOp.getBody().begin());
    rewriter.replaceOp(
 diff --git a/compiler/src/iree/compiler/GlobalOptimization/PropagateLinalgTranspose.cpp b/compiler/src/iree/compiler/GlobalOptimization/PropagateLinalgTranspose.cpp
-index 60ba3f5b85..962d40516b 100644
+index ec6c2acf31..615294931e 100644
 --- a/compiler/src/iree/compiler/GlobalOptimization/PropagateLinalgTranspose.cpp
 +++ b/compiler/src/iree/compiler/GlobalOptimization/PropagateLinalgTranspose.cpp
-@@ -138,8 +138,11 @@ static void specializeGenericTransposeOp(RewriterBase &rewriter,
+@@ -120,8 +120,11 @@ static void specializeGenericTransposeOp(RewriterBase &rewriter,
    for (AffineExpr expr : outMap.getResults()) {
      perm.push_back(*inMap.getResultPosition(expr));
    }
@@ -54,7 +54,7 @@ index 60ba3f5b85..962d40516b 100644
  
  //===----------------------------------------------------------------------===//
 diff --git a/compiler/src/iree/compiler/GlobalOptimization/QuantizedConvToConv.cpp b/compiler/src/iree/compiler/GlobalOptimization/QuantizedConvToConv.cpp
-index 4614f7b56c..3ec68f88fe 100644
+index c03d8e07f6..2f90033b00 100644
 --- a/compiler/src/iree/compiler/GlobalOptimization/QuantizedConvToConv.cpp
 +++ b/compiler/src/iree/compiler/GlobalOptimization/QuantizedConvToConv.cpp
 @@ -28,6 +28,13 @@ namespace mlir::iree_compiler::GlobalOptimization {
@@ -139,7 +139,7 @@ index 4614f7b56c..3ec68f88fe 100644
  }
  
  void GetDynamicDym(ImplicitLocOpBuilder &builder,
-@@ -148,10 +158,11 @@ struct QuantizedConvToConv
+@@ -148,10 +158,11 @@ struct QuantizedConvToConv : OpRewritePattern<linalg::Conv2DNhwcHwcfQOp> {
                       fZpConst.getValue().isZero();
  
      // First implement the convolution without the zero point.
@@ -154,7 +154,7 @@ index 4614f7b56c..3ec68f88fe 100644
  
      // If the zero pointer value is zero we can just replace.
      if (iZpIsZero && fZpIsZero) {
-@@ -166,7 +177,8 @@ struct QuantizedConvToConv
+@@ -166,7 +177,8 @@ struct QuantizedConvToConv : OpRewritePattern<linalg::Conv2DNhwcHwcfQOp> {
        Value filterSum =
            sumReduceDimensionSubset(builder, filter, accETy,
                                     /*reduce_dim=*/{true, true, true, false});
@@ -164,7 +164,7 @@ index 4614f7b56c..3ec68f88fe 100644
      }
  
      if (!fZpIsZero) {
-@@ -175,6 +187,7 @@ struct QuantizedConvToConv
+@@ -175,6 +187,7 @@ struct QuantizedConvToConv : OpRewritePattern<linalg::Conv2DNhwcHwcfQOp> {
        Value inputSum =
            sumReduceDimensionSubset(builder, input, accETy,
                                     /*reduce_dim*/ {false, false, false, true});
@@ -172,7 +172,7 @@ index 4614f7b56c..3ec68f88fe 100644
  
        // Materialize a length-1 dimension at the end of the summation.
        SmallVector<ReassociationExprs> reassociationMap(3);
-@@ -186,8 +199,10 @@ struct QuantizedConvToConv
+@@ -187,8 +200,10 @@ struct QuantizedConvToConv : OpRewritePattern<linalg::Conv2DNhwcHwcfQOp> {
            RankedTensorType::get({inputTy.getDimSize(0), inputTy.getDimSize(1),
                                   inputTy.getDimSize(2), 1},
                                  accETy);
@@ -184,7 +184,7 @@ index 4614f7b56c..3ec68f88fe 100644
  
        llvm::SmallVector<int64_t> poolDims;
        llvm::SmallVector<Value> poolDynDims;
-@@ -198,7 +213,7 @@ struct QuantizedConvToConv
+@@ -199,7 +214,7 @@ struct QuantizedConvToConv : OpRewritePattern<linalg::Conv2DNhwcHwcfQOp> {
  
        // Perform a sum-pooling operation across the kernel width and height.
        auto poolTy = RankedTensorType::get(poolDims, accETy);
@@ -193,7 +193,7 @@ index 4614f7b56c..3ec68f88fe 100644
  
        // Create the empty kernel defining the shape for the pooling operation.
        llvm::SmallVector<int64_t> kDims;
-@@ -207,20 +222,23 @@ struct QuantizedConvToConv
+@@ -208,20 +223,23 @@ struct QuantizedConvToConv : OpRewritePattern<linalg::Conv2DNhwcHwcfQOp> {
        GetDynamicDym(builder, kDims, kDyn, filter, 1);
        Value poolInit = tensor::EmptyOp::create(builder, kDims, accETy, kDyn);
  
@@ -222,7 +222,7 @@ index 4614f7b56c..3ec68f88fe 100644
      }
  
      // Apply the final update that occurs when there are multiple zero-points.
-@@ -230,7 +248,7 @@ struct QuantizedConvToConv
+@@ -231,7 +249,7 @@ struct QuantizedConvToConv : OpRewritePattern<linalg::Conv2DNhwcHwcfQOp> {
        Value ifZp = arith::MulIOp::create(builder, iZp, fZp);
        Value zpUpdate = arith::MulIOp::create(builder, ifZp, cast);
  
@@ -231,7 +231,7 @@ index 4614f7b56c..3ec68f88fe 100644
      }
  
      rewriter.replaceOp(op, newConv);
-@@ -266,10 +284,11 @@ struct QuantizedDepthwiseConvToDepthwiseConv
+@@ -267,10 +285,11 @@ struct QuantizedDepthwiseConvToDepthwiseConv
                       fZpConst.getValue().isZero();
  
      // First implement the convolution without the zero point.
@@ -246,7 +246,7 @@ index 4614f7b56c..3ec68f88fe 100644
  
      // If the zero pointer value is zero we can just replace.
      if (iZpIsZero && fZpIsZero) {
-@@ -284,7 +303,8 @@ struct QuantizedDepthwiseConvToDepthwiseConv
+@@ -285,7 +304,8 @@ struct QuantizedDepthwiseConvToDepthwiseConv
        Value filterSum =
            sumReduceDimensionSubset(builder, filter, accETy,
                                     /*reduce_dim=*/{true, true, false});
@@ -256,7 +256,7 @@ index 4614f7b56c..3ec68f88fe 100644
      }
  
      if (!fZpIsZero) {
-@@ -297,7 +317,7 @@ struct QuantizedDepthwiseConvToDepthwiseConv
+@@ -298,7 +318,7 @@ struct QuantizedDepthwiseConvToDepthwiseConv
  
        // Perform a sum-pooling operation across the kernel width and height.
        auto poolTy = RankedTensorType::get(poolDims, accETy);
@@ -265,7 +265,7 @@ index 4614f7b56c..3ec68f88fe 100644
  
        // Create the empty kernel defining the shape for the pooling operation.
        llvm::SmallVector<int64_t> kDims;
-@@ -306,14 +326,15 @@ struct QuantizedDepthwiseConvToDepthwiseConv
+@@ -307,14 +327,15 @@ struct QuantizedDepthwiseConvToDepthwiseConv
        GetDynamicDym(builder, kDims, kDyn, filter, 1);
        Value poolInit = tensor::EmptyOp::create(builder, kDims, accETy, kDyn);
  
@@ -285,7 +285,7 @@ index 4614f7b56c..3ec68f88fe 100644
      }
  
      // Apply the final update that occurs when there are multiple zero-points.
-@@ -324,7 +345,7 @@ struct QuantizedDepthwiseConvToDepthwiseConv
+@@ -325,7 +346,7 @@ struct QuantizedDepthwiseConvToDepthwiseConv
        Value ifZp = arith::MulIOp::create(builder, iZp, fZp);
        Value zpUpdate = arith::MulIOp::create(builder, ifZp, cast);
  
@@ -295,7 +295,7 @@ index 4614f7b56c..3ec68f88fe 100644
  
      rewriter.replaceOp(op, newConv);
 diff --git a/compiler/src/iree/compiler/GlobalOptimization/QuantizedMatmulToMatmul.cpp b/compiler/src/iree/compiler/GlobalOptimization/QuantizedMatmulToMatmul.cpp
-index e3d70258e8..a733dea783 100644
+index b2c436b3e5..2eb14ddd9e 100644
 --- a/compiler/src/iree/compiler/GlobalOptimization/QuantizedMatmulToMatmul.cpp
 +++ b/compiler/src/iree/compiler/GlobalOptimization/QuantizedMatmulToMatmul.cpp
 @@ -25,6 +25,13 @@ namespace mlir::iree_compiler::GlobalOptimization {
@@ -312,7 +312,7 @@ index e3d70258e8..a733dea783 100644
  bool isConstantZero(Value val) {
    auto constIntOp = val.getDefiningOp<arith::ConstantIntOp>();
    return constIntOp && constIntOp.value() == 0;
-@@ -59,12 +66,14 @@ struct QuantizedMatmulToMatmul
+@@ -58,12 +65,14 @@ struct QuantizedMatmulToMatmul : OpInterfaceRewritePattern<linalg::LinalgOp> {
      unsigned lhsRank = lhsTy.getRank();
      Value acc = op.getDpsInits()[0];
      // Compute the matmul part.
@@ -330,7 +330,7 @@ index e3d70258e8..a733dea783 100644
      bool lhsZpIsConstantZero = isConstantZero(lhsZp);
      bool rhsZpIsConstantZero = isConstantZero(rhsZp);
      if (lhsZpIsConstantZero && rhsZpIsConstantZero) {
-@@ -111,6 +120,7 @@ struct QuantizedMatmulToMatmul
+@@ -110,6 +119,7 @@ struct QuantizedMatmulToMatmul : OpInterfaceRewritePattern<linalg::LinalgOp> {
        colRedIterator.back() = true;
        Value lhsSums =
            sumReduceDimensionSubset(builder, lhs, accElTy, colRedIterator);
@@ -338,7 +338,7 @@ index e3d70258e8..a733dea783 100644
        indexOfLhsSumsInput = addInput(lhsSums, mapToRowDim);
        indexOfRhsZpInput = addInput(rhsZp, mapToNone);
      }
-@@ -119,6 +129,7 @@ struct QuantizedMatmulToMatmul
+@@ -118,6 +128,7 @@ struct QuantizedMatmulToMatmul : OpInterfaceRewritePattern<linalg::LinalgOp> {
        rowRedIterator[static_cast<int>(batch)] = true;
        Value rhsSums =
            sumReduceDimensionSubset(builder, rhs, accElTy, rowRedIterator);
@@ -346,7 +346,7 @@ index e3d70258e8..a733dea783 100644
        indexOfRhsSumsInput = addInput(rhsSums, mapToColumnDim);
        indexOfLhsZpInput = addInput(lhsZp, mapToNone);
      }
-@@ -138,7 +149,7 @@ struct QuantizedMatmulToMatmul
+@@ -137,7 +148,7 @@ struct QuantizedMatmulToMatmul : OpInterfaceRewritePattern<linalg::LinalgOp> {
      // Create the generic putting all the terms together.
      SmallVector<utils::IteratorType> iterators(lhsRank,
                                                 utils::IteratorType::parallel);
@@ -355,7 +355,7 @@ index e3d70258e8..a733dea783 100644
          op, acc.getType(), ins, ValueRange{initResult}, indexingMaps, iterators,
          [=](OpBuilder &b, Location loc, ValueRange args) {
            Value matmulEl = args[indexOfMatmulInput];
-@@ -170,6 +181,7 @@ struct QuantizedMatmulToMatmul
+@@ -169,6 +180,7 @@ struct QuantizedMatmulToMatmul : OpInterfaceRewritePattern<linalg::LinalgOp> {
            }
            linalg::YieldOp::create(b, loc, result);
          });
@@ -364,5 +364,5 @@ index e3d70258e8..a733dea783 100644
      return success();
    }
 -- 
-2.55.0.rc0.799.gd6f94ed593-goog
+2.55.0
 

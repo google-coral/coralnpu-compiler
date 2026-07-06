@@ -46,7 +46,7 @@ def linalg_op_tests_i32(name = "linalg_op_i32_tests"):
     op_tests_i32(name = "generic_reduction_2d_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "generic_reduction_2d_i32.mlir")
     op_tests_i32(name = "pack_i32", instances = ["(8,16)", "(16,32)", "(128,256)"], test = "pack_i32.mlir")
     op_tests_i32(name = "pack_perm_i32", instances = ["(8,16)", "(16,32)", "(128,256)"], test = "pack_perm_i32.mlir")
-    op_tests_i32(name = "pack_padding_i32", instances = ["(7,15)", "(17,33)", ("(120,250)", ["manual"])], test = "pack_padding_i32.mlir")
+    op_tests_i32(name = "pack_padding_i32", instances = ["(7,15)", "(17,33)", "(120,250)"], test = "pack_padding_i32.mlir", tags = ["manual"])
     op_tests_i32(name = "unpack_i32", instances = ["(1,1,8,16)", "(2,2,8,16)", "(16,16,8,16)"], test = "unpack_i32.mlir")
     op_tests_i32(name = "unpack_perm_i32", instances = ["(1,1,8,16)", "(2,2,8,16)", "(3,2,8,16)"], test = "unpack_perm_i32.mlir")
     op_tests_i32(name = "map_i32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "map_i32.mlir")

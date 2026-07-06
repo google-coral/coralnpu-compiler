@@ -56,6 +56,7 @@ typedef struct iree_hal_coralnpu_device_t {
   // synchronization ourselves.
   iree_hal_coralnpu_semaphore_state_t semaphore_state;
 
+  iree_hal_device_topology_info_t topology_info;
   iree_host_size_t loader_count;
   iree_hal_executable_loader_t *loaders[];
 } iree_hal_coralnpu_device_t;
@@ -330,6 +331,22 @@ static iree_status_t iree_hal_coralnpu_device_create_semaphore(
       out_semaphore);
 }
 
+static iree_status_t iree_hal_coralnpu_device_query_capabilities(
+    iree_hal_device_t *device,
+    iree_hal_device_capabilities_t *out_capabilities) {
+  memset(out_capabilities, 0, sizeof(*out_capabilities));
+  return iree_ok_status();
+}
+
+static iree_status_t iree_hal_coralnpu_device_assign_topology_info(
+    iree_hal_device_t *base_device,
+    const iree_hal_device_topology_info_t *topology_info) {
+  iree_hal_coralnpu_device_t *device =
+      iree_hal_coralnpu_device_cast(base_device);
+  device->topology_info = *topology_info;
+  return iree_ok_status();
+}
+
 static iree_hal_semaphore_compatibility_t
 iree_hal_coralnpu_device_query_semaphore_compatibility(
     iree_hal_device_t *base_device, iree_hal_semaphore_t *semaphore) {
@@ -594,12 +611,14 @@ static const iree_hal_device_vtable_t iree_hal_coralnpu_device_vtable = {
     .replace_channel_provider = iree_hal_coralnpu_replace_channel_provider,
     .trim = iree_hal_coralnpu_device_trim,
     .query_i64 = iree_hal_coralnpu_device_query_i64,
+    .assign_topology_info = iree_hal_coralnpu_device_assign_topology_info,
     .create_channel = iree_hal_coralnpu_device_create_channel,
     .create_command_buffer = iree_hal_coralnpu_device_create_command_buffer,
     .create_event = iree_hal_coralnpu_device_create_event,
     .create_executable_cache = iree_hal_coralnpu_device_create_executable_cache,
     .import_file = iree_hal_coralnpu_device_import_file,
     .create_semaphore = iree_hal_coralnpu_device_create_semaphore,
+    .query_capabilities = iree_hal_coralnpu_device_query_capabilities,
     .query_semaphore_compatibility =
         iree_hal_coralnpu_device_query_semaphore_compatibility,
     .queue_alloca = iree_hal_coralnpu_device_queue_alloca,

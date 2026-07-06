@@ -24,6 +24,6 @@ LogicalResult PrecompiledBinary::init(Location loc, const void *data,
 
 PrecompiledBinary::~PrecompiledBinary() { deinitialize(); }
 
-iree_vm_module_t *PrecompiledBinary::getModule() { return main_module.get(); }
+iree_vm_module_t *PrecompiledBinary::getModule() { return mainModule.get(); }
 
 }  // namespace mlir::check_gen

@@ -18,6 +18,7 @@
 // IREE headers
 #include "compiler/plugins/target/LLVMCPU/LLVMTargetOptions.h"
 #include "compiler/plugins/target/LLVMCPU/LinkerTool.h"
+#include "iree/compiler/Codegen/Utils/CodegenOptions.h"
 #include "iree/compiler/Dialect/HAL/Target/TargetBackend.h"
 #include "iree/compiler/Utils/OptionUtils.h"
 
@@ -184,6 +185,7 @@ class CoralNPUTargetBackend final
       OpBuilder &executableBuilder) override;
 
  private:
+  iree_compiler::CPUCodegenOptions codegenOptions_;
   std::optional<iree_compiler::IREE::HAL::LLVMTarget> getVariantTarget(
       iree_compiler::IREE::HAL::ExecutableVariantOp variantOp);
 

@@ -58,18 +58,6 @@ index 72acd02d0d13..3977946a4a5d 100644
  
        // Map the block argument corresponding to the replaced argument with the
        // scalar constant.
-diff --git a/mlir/lib/Dialect/Linalg/Transforms/Generalization.cpp b/mlir/lib/Dialect/Linalg/Transforms/Generalization.cpp
-index 75bb1757a55f..407f528d7dc8 100644
---- a/mlir/lib/Dialect/Linalg/Transforms/Generalization.cpp
-+++ b/mlir/lib/Dialect/Linalg/Transforms/Generalization.cpp
-@@ -64,6 +64,7 @@ FailureOr<GenericOp> mlir::linalg::generalizeNamedOp(RewriterBase &rewriter,
-                         outputs, indexingMaps, iterators);
-   rewriter.inlineRegionBefore(linalgOp->getRegion(0), genericOp.getRegion(),
-                               genericOp.getRegion().begin());
-+  genericOp->setDiscardableAttrs(linalgOp->getDiscardableAttrDictionary());
-   rewriter.replaceOp(linalgOp, genericOp->getResults());
-   return genericOp;
- }
 -- 
 2.55.0.rc0.799.gd6f94ed593-goog
 

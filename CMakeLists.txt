@@ -61,6 +61,8 @@ if(NOT DEFINED IREE_BUILD_SAMPLES)
   set(IREE_BUILD_SAMPLES OFF)
 endif()
 
+# Use LLD linker
+set(IREE_ENABLE_LLD ON)
 # Enable Split DWARF and Thin Archives for faster development builds
 set(IREE_ENABLE_SPLIT_DWARF ON)
 set(IREE_ENABLE_THIN_ARCHIVES ON)
