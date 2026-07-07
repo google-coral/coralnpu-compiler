@@ -1,0 +1,36 @@
+platform:
+  type: CoralNPUPlatform
+  parameters:
+    name: coralnpu
+
+model_wrapper:
+  type: FlaxMagicWandModelWrapper
+  parameters:
+    model_path: kenning:///models/classification/flax_magic_wand.tar
+
+dataset:
+  type: MagicWandDataset
+  parameters:
+    dataset_root: ./data/MagicWandDataset
+    inference_batch_size: 1
+
+optimizers:
+  - type: IREECompiler
+    parameters:
+      backend: coralnpu
+      compiled_model_path: ./data/magic-wand-coral-npu.vmfb
+      compilation_metadata: ./data/coralnpu_metadata.json
+
+runtime:
+  type: IREERuntime
+  parameters:
+    save_model_path: ./data/magic-wand-coral-npu.vmfb
+    driver: coralnpu
+
+report:
+  type: MarkdownReport
+  parameters:
+    measurements: ./data/magic-wand-jax.json
+    report_path: ./reports/magic-wand-jax/report.md
+    report_name: MagicWand JAX report
+    to_html: true

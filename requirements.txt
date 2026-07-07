@@ -1,6 +1,7 @@
 gemma
 jax
 jaxlib
+kenning[coralnpu,reports] @ https://github.com/antmicro/kenning/archive/de1433b92b25a5e01a9c3e4e51228e981793c7fb.tar.gz
 keras
 ml_dtypes
 numpy

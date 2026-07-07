@@ -1,0 +1,37 @@
+platform:
+  type: CoralNPUPlatform
+  parameters:
+    name: coralnpu
+
+model_wrapper:
+  type: FlaxPetDatasetMobileNetV2
+  parameters:
+    model_path: kenning:///models/classification/flax_pet_dataset_mobilenetv2.tar
+
+dataset:
+  type: PetDataset
+  parameters:
+    dataset_root: ./data/PetDataset
+    inference_batch_size: 1
+    reduce_dataset: 0.05
+
+optimizers:
+  - type: IREECompiler
+    parameters:
+      backend: coralnpu
+      compiled_model_path: ./data/mobilenetv2-coral-npu.vmfb
+      compilation_metadata: ./data/coralnpu_metadata.json
+
+runtime:
+  type: IREERuntime
+  parameters:
+    save_model_path: ./data/mobilenetv2-coral-npu.vmfb
+    driver: coralnpu
+
+report:
+  type: MarkdownReport
+  parameters:
+    measurements: ./data/mobilenetv2-jax.json
+    report_path: ./reports/mobilenetv2-jax/report.md
+    report_name: MobilenetV2 JAX report
+    to_html: true
