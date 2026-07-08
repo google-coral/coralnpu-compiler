@@ -51,3 +51,33 @@ py_console_script_binary(
     name = "yapf",
     pkg = "@pip_deps//yapf",
 )
+
+# Stage all built release packages into output/ directory (e.g. bazel build --config=release //:output)
+genrule(
+    name = "output",
+    srcs = [
+        "//build_tools/bazel:dist_tar",
+        "//build_tools/bazel/python_packages/coralnpu_compiler:wheel",
+        "//build_tools/bazel/python_packages/coralnpu_runtime:wheel",
+    ],
+    outs = [
+        "output/coralnpu-compiler-dist.tar.gz",
+        "output/coralnpu_compiler-0.0.1-py3-none-any.whl",
+        "output/coralnpu_runtime-0.0.1-py3-none-any.whl",
+    ],
+    cmd = """
+        cp $(location //build_tools/bazel:dist_tar) $(location output/coralnpu-compiler-dist.tar.gz)
+        cp $(location //build_tools/bazel/python_packages/coralnpu_compiler:wheel) $(location output/coralnpu_compiler-0.0.1-py3-none-any.whl)
+        cp $(location //build_tools/bazel/python_packages/coralnpu_runtime:wheel) $(location output/coralnpu_runtime-0.0.1-py3-none-any.whl)
+    """,
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "riscv32_linker_copy",
+    srcs = ["@rv32_toolchain//:bin/riscv32-unknown-elf-ld"],
+    outs = ["toolchain_rv32/bin/riscv32-unknown-elf-ld"],
+    cmd = "mkdir -p $$(dirname $@) && cp $< $@",
+    executable = True,
+    visibility = ["//visibility:public"],
+)

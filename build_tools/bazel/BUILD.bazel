@@ -1,1 +1,118 @@
-# Empty BUILD file to mark this directory as a Bazel package.
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load(":multi_platform.bzl", "multi_platform_package")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["create_wheel.py"])
+
+# Binaries: iree-compile, iree-opt, iree-run-module, iree-benchmark-module
+pkg_tar(
+    name = "bin_tar",
+    srcs = [
+        "@iree_core//tools:iree-benchmark-module",
+        "@iree_core//tools:iree-compile",
+        "@iree_core//tools:iree-opt",
+        "@iree_core//tools:iree-run-module",
+    ],
+    package_dir = "bin",
+    symlinks = {
+        "bin/coralnpu-compile": "../compiler/tools/coralnpu-compile",
+    },
+)
+
+# Compiler tools: coralnpu-compile (placed in compiler/tools for single candidate findTool)
+pkg_tar(
+    name = "compiler_tools_tar",
+    srcs = ["//compiler/tools:coralnpu-compile"],
+    package_dir = "compiler/tools",
+)
+
+# Shared libraries: libIREECompiler.so, libcoralnpu_simulator_mpact.so
+pkg_tar(
+    name = "lib_tar",
+    srcs = [
+        "//runtime/sim:libcoralnpu_simulator_mpact.so",
+        "@iree_core//lib:libIREECompiler.so",
+    ],
+    package_dir = "lib",
+)
+
+# Target CRT files: libcoralnpu_crt.a, libcoralnpu_iree.a, coralnpu_tcm.ld
+pkg_tar(
+    name = "crt_tar",
+    srcs = ["//crt:crt_files"],
+    package_dir = "crt",
+)
+
+# RV32 Toolchain: riscv32-unknown-elf-ld
+pkg_tar(
+    name = "toolchain_rv32_tar",
+    srcs = ["@rv32_toolchain//:bin/riscv32-unknown-elf-ld"],
+    package_dir = "toolchain_rv32/bin",
+)
+
+# Combined binary distribution archive
+pkg_tar(
+    name = "dist_tar_uncompressed",
+    extension = "tar",
+    deps = [
+        ":bin_tar",
+        ":compiler_tools_tar",
+        ":crt_tar",
+        ":lib_tar",
+        ":toolchain_rv32_tar",
+    ],
+)
+
+genrule(
+    name = "dist_tar",
+    srcs = [":dist_tar_uncompressed"],
+    outs = ["dist_tar.tar.gz"],
+    cmd = "gzip -1 -c $< > $@",
+)
+
+# Native local installation binary (usage: bazel run //build_tools/bazel:install -- --prefix=/path/to/dir)
+sh_binary(
+    name = "install",
+    srcs = ["install.sh"],
+    data = [":dist_tar"],
+    env = {
+        "DIST_TARBALL": "$(location :dist_tar)",
+    },
+)
+
+# Multi-platform distribution archives across all target platforms (linux-x86_64, linux-aarch64, macosx, windows)
+multi_platform_package(
+    name = "all_dist_tars",
+    target = ":dist_tar",
+)
+
+# Multi-platform Python compiler wheels across all target platforms
+multi_platform_package(
+    name = "all_compiler_wheels",
+    target = "//build_tools/bazel/python_packages/coralnpu_compiler:wheel",
+)
+
+# Combined multi-platform release bundle
+filegroup(
+    name = "all_platform_packages",
+    srcs = [
+        ":all_compiler_wheels",
+        ":all_dist_tars",
+    ],
+)

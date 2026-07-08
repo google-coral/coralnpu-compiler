@@ -24,9 +24,6 @@ cc_library(
         "//crt:libcoralnpu_iree",
         "@rv32_toolchain//:bin/riscv32-unknown-elf-ld",
     ],
-    local_defines = [
-        "CORALNPU_LINKER_SCRIPT_PATH=\\\"$(rootpath //crt:coralnpu_tcm_ld)\\\"",
-    ],
     deps = [
         "//compiler/Transforms",
         "@iree_core//compiler/plugins/target/LLVMCPU",

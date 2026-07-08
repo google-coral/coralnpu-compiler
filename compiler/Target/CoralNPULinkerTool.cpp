@@ -48,15 +48,8 @@ class CoralNPULinkerTool final : public LinkerTool {
       return targetOptions.embeddedLinkerPath;
     }
 
-#ifdef CORALNPU_LINKER_PATH
-    const std::string configuredPath = CORALNPU_LINKER_PATH;
-    if (!configuredPath.empty()) {
-      return configuredPath;
-    }
-#endif
-
-    std::string toolPath =
-        mlir::iree_compiler::findTool("riscv32-unknown-elf-ld");
+    std::string toolPath = mlir::iree_compiler::findTool(
+        "../../toolchain_rv32/bin/riscv32-unknown-elf-ld");
     if (!toolPath.empty()) {
       return toolPath;
     }
@@ -64,44 +57,20 @@ class CoralNPULinkerTool final : public LinkerTool {
     llvm::errs() << "error: required `riscv32-unknown-elf-ld` was not found "
                     "after searching:\n"
                  << " * configured LLVM target linker path\n"
-                 << " * CMake-configured CoralNPU linker path\n"
+                 << " * compiler executable/dylib directory\n"
                  << " * system PATH\n";
 
     return "";
   }
 
   std::string getLinkerScriptPath() const {
-    std::string path = "";
-#ifdef CORALNPU_LINKER_SCRIPT_PATH
-    path = CORALNPU_LINKER_SCRIPT_PATH;
-#endif
-    if (path.empty()) {
-      return "";
+    std::string scriptPath =
+        mlir::iree_compiler::findTool("../../crt/coralnpu_tcm.ld");
+    if (!scriptPath.empty()) {
+      return scriptPath;
     }
 
-    if (llvm::sys::fs::exists(path)) {
-      return path;
-    }
-
-    if (!llvm::sys::path::is_relative(path)) {
-      return path;
-    }
-
-    // Try to resolve relative to executable
-    std::string mainExecutablePath =
-        llvm::sys::fs::getMainExecutable(nullptr, nullptr);
-    if (mainExecutablePath.empty()) {
-      return path;
-    }
-
-    llvm::SmallString<256> resolvedPath(mainExecutablePath);
-    llvm::sys::path::remove_filename(resolvedPath);  // to compiler/tools/
-    llvm::sys::path::append(resolvedPath, "..", "..", path);  // to crt/
-    if (!llvm::sys::fs::exists(resolvedPath)) {
-      return path;
-    }
-    llvm::sys::path::remove_dots(resolvedPath, /*remove_dot_dot=*/true);
-    return std::string(resolvedPath);
+    return "";
   }
 
   mlir::LogicalResult configureModule(

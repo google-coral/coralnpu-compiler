@@ -45,11 +45,6 @@ iree_cc_binary(
   SETUP_INSTALL_RPATH
 )
 
-if(CORALNPU_LINKER_PATH AND EXISTS "${CORALNPU_LINKER_PATH}")
-  add_custom_command(
-    TARGET coralnpu_compiler_tools_coralnpu-compile POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-            "${CORALNPU_LINKER_PATH}"
-            "$<TARGET_FILE_DIR:coralnpu_compiler_tools_coralnpu-compile>/"
-  )
-endif()
+set_target_properties(coralnpu_compiler_tools_coralnpu-compile PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/compiler/tools"
+)

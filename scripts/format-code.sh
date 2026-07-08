@@ -9,6 +9,7 @@ main() {
   # We also don't want to format the external directory link added by
   # refresh_compile_commands.
   local -a dirs=()
+  dirs+=(build_tools)
   dirs+=(compiler)
   dirs+=(examples)
   dirs+=(pjrt_plugin)

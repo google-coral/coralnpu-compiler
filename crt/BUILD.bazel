@@ -92,3 +92,12 @@ cc_library(
     name = "coralnpu_dispatch_hdrs",
     hdrs = ["coralnpu_dispatch.h"],
 )
+
+filegroup(
+    name = "crt_files",
+    srcs = [
+        ":coralnpu_tcm.ld",
+        ":libcoralnpu_crt.a",
+        ":libcoralnpu_iree.a",
+    ],
+)

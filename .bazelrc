@@ -126,7 +126,9 @@ build:dev --fission=yes
 # Options for release builds:
 ###############################################################################
 
-# Production Release Profile (Fully optimized, no debug symbols anywhere)
+# Production Release Profile (Fully optimized, hidden symbol visibility, no debug symbols)
 # Usage: bazel build --config=release <target>
 build:release -c opt
 build:release --strip=always
+build:release --copt=-fvisibility=hidden
+build:release --copt=-fvisibility-inlines-hidden

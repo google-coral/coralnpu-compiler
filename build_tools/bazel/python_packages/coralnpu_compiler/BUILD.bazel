@@ -1,0 +1,145 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+package(default_visibility = ["//visibility:public"])
+
+# Staged package directory target
+genrule(
+    name = "stage_package",
+    srcs = [
+        "@iree_core//compiler/bindings/python:compiler",
+        "//crt:crt_files",
+        "@rv32_toolchain//:bin/riscv32-unknown-elf-ld",
+        "@iree_core//compiler/bindings/python:_mlir.so",
+        "@iree_core//compiler/bindings/python:_site_initialize_0.so",
+        "@iree_core//compiler/bindings/python:_ireeCompilerDialects.so",
+        "@iree_core//compiler/bindings/python:_ireeDialects.so",
+        "@iree_core//tools:iree-compile",
+        "@iree_core//tools:iree-opt",
+        "@iree_core//lib:libIREECompiler.so",
+        "//compiler/tools:coralnpu-compile",
+    ],
+    outs = [
+        "coralnpu_compiler_package/coralnpu/__init__.py",
+        "coralnpu_compiler_package/coralnpu/compiler/__init__.py",
+        "coralnpu_compiler_package/coralnpu/compiler/_mlir_libs/libIREECompiler.so",
+        "coralnpu_compiler_package/coralnpu/compiler/_mlir_libs/_mlir.so",
+        "coralnpu_compiler_package/coralnpu/compiler/_mlir_libs/_site_initialize_0.so",
+        "coralnpu_compiler_package/coralnpu/compiler/_mlir_libs/_ireeCompilerDialects.so",
+        "coralnpu_compiler_package/coralnpu/compiler/_mlir_libs/_ireeDialects.so",
+        "coralnpu_compiler_package/coralnpu/compiler/_mlir_libs/iree-compile",
+        "coralnpu_compiler_package/coralnpu/compiler/_mlir_libs/iree-opt",
+        "coralnpu_compiler_package/coralnpu/compiler/_mlir_libs/coralnpu-compile",
+        "coralnpu_compiler_package/coralnpu/crt/coralnpu_tcm.ld",
+        "coralnpu_compiler_package/coralnpu/crt/libcoralnpu_crt.a",
+        "coralnpu_compiler_package/coralnpu/crt/libcoralnpu_iree.a",
+        "coralnpu_compiler_package/coralnpu/toolchain_rv32/bin/riscv32-unknown-elf-ld",
+        "coralnpu_compiler_package/coralnpu/compiler/tools/__init__.py",
+        "coralnpu_compiler_package/coralnpu/compiler/tools/binaries.py",
+        "coralnpu_compiler_package/coralnpu/compiler/tools/core.py",
+        "coralnpu_compiler_package/coralnpu/compiler/tools/debugging.py",
+        "coralnpu_compiler_package/coralnpu/compiler/tools/tf.py",
+        "coralnpu_compiler_package/coralnpu/compiler/tools/tflite.py",
+        "coralnpu_compiler_package/coralnpu/compiler/api/__init__.py",
+    ],
+    cmd = """
+        STAGE_DIR=$(@D)/coralnpu_compiler_package
+        mkdir -p $$STAGE_DIR/coralnpu/crt
+        mkdir -p $$STAGE_DIR/coralnpu/toolchain_rv32/bin
+        mkdir -p $$STAGE_DIR/coralnpu/compiler/_mlir_libs
+        mkdir -p $$STAGE_DIR/coralnpu/compiler/tools
+
+        # 1. Init files & Python binding files
+        touch $$STAGE_DIR/coralnpu/__init__.py
+        echo '\"\"\"CoralNPU Compiler Package.\"\"\"' > $$STAGE_DIR/coralnpu/compiler/__init__.py
+        echo 'from coralnpu.compiler import _mlir_libs' >> $$STAGE_DIR/coralnpu/compiler/__init__.py
+        echo 'try:' >> $$STAGE_DIR/coralnpu/compiler/__init__.py
+        echo '    from coralnpu.compiler._mlir_libs._site_initialize_0 import *' >> $$STAGE_DIR/coralnpu/compiler/__init__.py
+        echo 'except Exception:' >> $$STAGE_DIR/coralnpu/compiler/__init__.py
+        echo '    pass' >> $$STAGE_DIR/coralnpu/compiler/__init__.py
+
+        # Copy iree compiler python sources into coralnpu.compiler
+        for f in $(locations @iree_core//compiler/bindings/python:compiler); do
+          if [[ "$$f" == *.py && "$$f" == */iree/compiler/* ]]; then
+            rel_path=$${f#*/iree/compiler/}
+            mkdir -p $$STAGE_DIR/coralnpu/compiler/$$(dirname $$rel_path)
+            cp $$f $$STAGE_DIR/coralnpu/compiler/$$rel_path
+          fi
+        done
+
+        # Patch binaries.py to include coralnpu-compile in _BUILTIN_TOOLS and update imports
+        if [ -f $$STAGE_DIR/coralnpu/compiler/tools/binaries.py ]; then
+          sed -i 's/_BUILTIN_TOOLS = \\[/_BUILTIN_TOOLS = ["coralnpu-compile", /' $$STAGE_DIR/coralnpu/compiler/tools/binaries.py
+          sed -i 's/"iree-compile": "iree.tools.core"/"coralnpu-compile": "coralnpu.compiler.tools.core", "iree-compile": "coralnpu.compiler.tools.core"/' $$STAGE_DIR/coralnpu/compiler/tools/binaries.py
+          sed -i 's/"iree.tools.core": "<none>"/"coralnpu.compiler.tools.core": "<none>", "iree.tools.core": "<none>"/' $$STAGE_DIR/coralnpu/compiler/tools/binaries.py
+        fi
+
+        if [ -f $$STAGE_DIR/coralnpu/compiler/tools/core.py ]; then
+          sed -i 's/find_tool("iree-compile")/find_tool("coralnpu-compile")/g' $$STAGE_DIR/coralnpu/compiler/tools/core.py
+          sed -i 's/find_tool("iree-lld")/""/g' $$STAGE_DIR/coralnpu/compiler/tools/core.py
+        fi
+
+        for f in $$(find $$STAGE_DIR/coralnpu/compiler -name "*.py"); do
+          sed -i 's/iree\\.compiler/coralnpu\\.compiler/g' $$f
+        done
+
+        # Expose compile_str and compile_file at coralnpu.compiler
+        echo 'from coralnpu.compiler.tools.core import compile_str, compile_file' >> $$STAGE_DIR/coralnpu/compiler/__init__.py
+        echo 'from coralnpu.compiler.tools.binaries import CompilerToolError' >> $$STAGE_DIR/coralnpu/compiler/__init__.py
+
+        # 2. Shared objects & binaries
+        cp $(location @iree_core//lib:libIREECompiler.so) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/libIREECompiler.so
+        cp $(location @iree_core//compiler/bindings/python:_mlir.so) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/_mlir.so
+        cp $(location @iree_core//compiler/bindings/python:_site_initialize_0.so) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/_site_initialize_0.so
+        cp $(location @iree_core//compiler/bindings/python:_ireeCompilerDialects.so) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/_ireeCompilerDialects.so
+        cp $(location @iree_core//compiler/bindings/python:_ireeDialects.so) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/_ireeDialects.so
+        cp $(location @iree_core//tools:iree-compile) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/iree-compile
+        cp $(location @iree_core//tools:iree-opt) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/iree-opt
+        cp $(location //compiler/tools:coralnpu-compile) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/coralnpu-compile
+        cp $(location @rv32_toolchain//:bin/riscv32-unknown-elf-ld) $$STAGE_DIR/coralnpu/toolchain_rv32/bin/riscv32-unknown-elf-ld
+        chmod +x $$STAGE_DIR/coralnpu/compiler/_mlir_libs/coralnpu-compile
+        chmod +x $$STAGE_DIR/coralnpu/compiler/_mlir_libs/iree-compile
+        chmod +x $$STAGE_DIR/coralnpu/compiler/_mlir_libs/iree-opt
+        chmod +x $$STAGE_DIR/coralnpu/toolchain_rv32/bin/riscv32-unknown-elf-ld
+        touch $$STAGE_DIR/coralnpu/compiler/_mlir_libs/__init__.py
+
+        # 3. CRT files
+        for f in $(locations //crt:crt_files); do
+            cp $$f $$STAGE_DIR/coralnpu/crt/
+        done
+    """,
+)
+
+# Build wheel using create_wheel.py
+genrule(
+    name = "wheel",
+    srcs = [
+        ":stage_package",
+        "//build_tools/bazel:create_wheel.py",
+    ],
+    outs = ["coralnpu_compiler-0.0.1-py3-none-any.whl"],
+    cmd = """
+        STAGE_DIR=$$(dirname $$(dirname $$(echo $(locations :stage_package) | cut -d' ' -f1)))
+        python3 $(location //build_tools/bazel:create_wheel.py) \
+            --package-dir $$STAGE_DIR \
+            --dist-name coralnpu_compiler \
+            --version 0.0.1 \
+            --summary "CoralNPU Compiler for IREE" \
+            --requires-dist numpy \
+            --requires-dist ml_dtypes \
+            --output $@
+
+
+    """,
+)

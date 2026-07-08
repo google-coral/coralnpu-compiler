@@ -10,6 +10,7 @@ module(
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "rules_cc", version = "0.2.14")
 bazel_dep(name = "rules_python", version = "1.6.3")  # newer versions don't work well with bazel 7
+bazel_dep(name = "rules_pkg", version = "1.0.1")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1.2", dev_dependency = True)
 
@@ -241,3 +242,16 @@ scala_config.settings(
 
 scala_deps = use_extension("@io_bazel_rules_scala//scala/extensions:deps.bzl", "scala_deps")
 scala_deps.scala()
+
+# --- Cross-Compilation C++ Toolchain Registrations (Optional) ---
+# To enable cross-compilation for non-host platforms (e.g. AArch64 Linux, macOS ARM64, Windows),
+# register corresponding cross-compiler toolchains (such as toolchains_llvm / sysroots):
+#
+# bazel_dep(name = "toolchains_llvm", version = "1.3.0")
+# llvm = use_extension("@toolchains_llvm//toolchain:extensions.bzl", "llvm")
+# llvm.sysroot(
+#     name = "sysroot_linux_aarch64",
+#     label = "@sysroot_linux_aarch64//:sysroot",
+#     targets = ["linux-aarch64"],
+# )
+# register_toolchains("@llvm_toolchains//:all")

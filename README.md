@@ -157,6 +157,177 @@ Then, to build the compiler and runtime:
 cmake --build "${BUILD_DIR}" --target coralnpu-compile iree-run-module
 ```
 
+## Packaging and Distribution
+
+This repository supports building Python wheels, standalone binary distribution archives, and local installation trees via native Bazel targets.
+
+### 1. Staging Release Packages to `output/`
+
+To build and stage all release packages (dist tarball + Python wheels) into `bazel-bin/output/`:
+
+```shell
+bazel build --config=release //:output
+```
+
+This generates:
+- `bazel-bin/output/coralnpu-compiler-dist.tar.gz`
+- `bazel-bin/output/coralnpu_compiler-0.0.1-py3-none-any.whl`
+- `bazel-bin/output/coralnpu_runtime-0.0.1-py3-none-any.whl`
+
+---
+
+### 2. Specific Packaging Targets
+
+#### Build Python Wheels (`coralnpu_compiler` and `coralnpu_runtime`)
+```shell
+# Build Python wheels for the local host platform (saved under bazel-bin/build_tools/bazel/python_packages/...)
+bazel build --config=release //build_tools/bazel/python_packages/coralnpu_compiler:wheel //build_tools/bazel/python_packages/coralnpu_runtime:wheel
+```
+
+#### Build Standalone Binary Distribution Archive
+```shell
+# Build release tarball containing bin/, lib/, crt/, and toolchain_rv32/ (saved under bazel-bin/build_tools/bazel/dist_tar.tar.gz)
+bazel build --config=release //build_tools/bazel:dist_tar
+```
+
+#### Native Local Installation
+```shell
+# Unpack and install distribution archive directly to a specified directory
+bazel run --config=release //build_tools/bazel:install -- --prefix=/path/to/install
+```
+
+#### Testing the Installation
+
+To verify that the installed compiler package and runtime binaries work end-to-end:
+
+1. Save the following to model.mlir:
+   ```shell
+   module {
+     func.func @matmul(%arg0: tensor<32x64xf32>, %arg1: tensor<64x128xf32>) -> tensor<32x128xf32> {
+       %cst = arith.constant 0.000000e+00 : f32
+       %0 = tensor.empty() : tensor<32x128xf32>
+       %1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<32x128xf32>) -> tensor<32x128xf32>
+       %2 = linalg.matmul ins(%arg0, %arg1 : tensor<32x64xf32>, tensor<64x128xf32>)
+                          outs(%1 : tensor<32x128xf32>) -> tensor<32x128xf32>
+       return %2 : tensor<32x128xf32>
+     }
+   }
+   ```
+
+2. **Compile an MLIR model targeting CoralNPU**:
+   ```shell
+   /path/to/install/bin/coralnpu-compile \
+       --iree-hal-target-device=local \
+       --iree-hal-local-target-device-backends=llvm-cpu \
+       --iree-llvmcpu-target-cpu-features=host \
+       --iree-hal-target-device=coralnpu \
+       --coralnpu-target-abi=ilp32 \
+       --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
+       model.mlir \
+       -o model.vmfb
+   ```
+
+3. **Execute inference on the simulated CoralNPU device**:
+   ```shell
+   LD_LIBRARY_PATH=/path/to/install/lib /path/to/install/bin/iree-run-module \
+       --device=coralnpu \
+       --module=model.vmfb \
+       --function=matmul \
+       --input=32x64xf32=1.0 \
+       --input=64x128xf32=2.0
+   ```
+
+#### Testing the Python Packages
+
+To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime`) wheel packages:
+
+1. **Create and activate a virtual environment**:
+   ```shell
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+2. **Build and install the Python wheels**:
+   ```shell
+   bazel build --config=release //build_tools/bazel/python_packages/coralnpu_compiler:wheel //build_tools/bazel/python_packages/coralnpu_runtime:wheel
+   pip install bazel-bin/build_tools/bazel/python_packages/coralnpu_compiler/coralnpu_compiler-0.0.1-py3-none-any.whl \
+               bazel-bin/build_tools/bazel/python_packages/coralnpu_runtime/coralnpu_runtime-0.0.1-py3-none-any.whl
+   ```
+
+3. **Run end-to-end Python compilation and inference**:
+   ```python
+   import numpy as np
+   import coralnpu.compiler as coralnpu_compiler
+   import coralnpu.runtime as coralnpu_runtime
+
+   mlir_code = """
+   module {
+     func.func @matmul(%arg0: tensor<32x64xf32>, %arg1: tensor<64x128xf32>) -> tensor<32x128xf32> {
+       %cst = arith.constant 0.000000e+00 : f32
+       %0 = tensor.empty() : tensor<32x128xf32>
+       %1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<32x128xf32>) -> tensor<32x128xf32>
+       %2 = linalg.matmul ins(%arg0, %arg1 : tensor<32x64xf32>, tensor<64x128xf32>)
+                          outs(%1 : tensor<32x128xf32>) -> tensor<32x128xf32>
+       return %2 : tensor<32x128xf32>
+     }
+   }
+   """
+
+   # Compile MLIR to VMFB bytes
+   vmfb_bytes = coralnpu_compiler.compile_str(
+       mlir_code,
+       target_backends=["llvm-cpu", "coralnpu"],
+       extra_args=[
+           "--iree-hal-target-device=local",
+           "--iree-hal-local-target-device-backends=llvm-cpu",
+           "--iree-llvmcpu-target-cpu-features=host",
+           "--iree-hal-target-device=coralnpu",
+           "--coralnpu-target-abi=ilp32",
+           "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f",
+       ],
+   )
+
+   # Run inference on simulated CoralNPU
+   config = coralnpu_runtime.Config("coralnpu")
+   context = coralnpu_runtime.SystemContext(config=config)
+   vm_module = coralnpu_runtime.VmModule.from_flatbuffer(context.instance, vmfb_bytes)
+   context.add_vm_module(vm_module)
+
+   arg0 = np.ones((32, 64), dtype=np.float32)
+   arg1 = np.full((64, 128), 2.0, dtype=np.float32)
+   result = context.modules.module.matmul(arg0, arg1)
+   print("Output shape:", result.shape, "Output sample:", result[0, 0])
+   ```
+
+#### Multi-Platform Build (All Target Platforms)
+```shell
+# Build packages for all target platforms
+bazel build --config=release //build_tools/bazel:all_platform_packages
+```
+
+---
+
+### 3. Individual Cross-Compilation
+
+To cross-compile a single package for a specific target platform, pass `--platforms=//build_tools/bazel/platforms:<platform>`:
+
+For example:
+
+```shell
+# Build distribution tarball for Linux AArch64 (ARM64)
+bazel build --config=release --platforms=//build_tools/bazel/platforms:linux_aarch64 //build_tools/bazel:dist_tar
+```
+
+#### Available Platform Labels (`//build_tools/bazel/platforms:...`)
+- `//build_tools/bazel/platforms:linux_x86_64` (Linux x86_64)
+- `//build_tools/bazel/platforms:linux_aarch64` (Linux ARM64)
+- `//build_tools/bazel/platforms:macosx_x86_64` (macOS Intel)
+- `//build_tools/bazel/platforms:macosx_arm64` (macOS Apple Silicon)
+- `//build_tools/bazel/platforms:windows_x86_64` (Windows x86_64)
+
+> [!NOTE]
+> **TODO (Cross-Compilation C++ Toolchains)**: The build system infrastructure (`platform()` targets, Starlark transitions, and wheel tagging) is in place for multi-platform builds. However, actually compiling C++ binaries for non-host platforms (e.g., `linux_aarch64`, `macosx_arm64`, `windows_x86_64`) requires registering corresponding C++ cross-compiler toolchains / sysroots (e.g. `aarch64-linux-gnu`, `osxcross`, `mingw-w64`) in `MODULE.bazel`. Currently, only the host C++ toolchain is registered.
+
 ## Testing
 
 ### Running Tests with Bazel
@@ -294,6 +465,22 @@ It performs the following steps:
 3. Builds the CoralNPU PJRT plugin via Bazel
 4. Compiles JAX models for the RV32-based CoralNPU backend
 5. Runs the generated binaries
+
+## Developer Tools
+
+### MLIR Op Lister
+
+A tool to list all registered MLIR operations.
+
+Using Bazel:
+```shell
+bazel run //tools/list-mlir-ops -- [dialect_namespace]
+```
+
+Using CMake:
+```shell
+./build-cmake/tools/list-mlir-ops/list-mlir-ops [dialect_namespace]
+```
 
 ## Code style
 

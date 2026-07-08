@@ -80,28 +80,6 @@ set(RISCV_TOOLCHAIN_ROOT "${CMAKE_BINARY_DIR}/toolchain_rv32" CACHE PATH
 
 download_rv32_toolchain("${RISCV_TOOLCHAIN_ROOT}")
 
-set(
-  CORALNPU_LINKER_PATH
-  "${RISCV_TOOLCHAIN_ROOT}/bin/riscv32-unknown-elf-ld"
-  CACHE FILEPATH
-  "Default CoralNPU RV32 linker"
-)
-
-
-set(
-  CORALNPU_LINKER_SCRIPT_PATH
-  "${CMAKE_BINARY_DIR}/crt/coralnpu_tcm.ld"
-  CACHE FILEPATH
-  "Default generated CoralNPU linker script"
-)
-
-if(NOT EXISTS "${CORALNPU_LINKER_PATH}")
-  message(
-    FATAL_ERROR
-    "CoralNPU linker not found: ${CORALNPU_LINKER_PATH}"
-  )
-endif()
-
 set(LLVM_EXTERNAL_LIT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/llvm-project/llvm/utils/lit/lit.py" CACHE FILEPATH "Path to llvm-lit" FORCE)
 
 add_subdirectory(third_party/iree)

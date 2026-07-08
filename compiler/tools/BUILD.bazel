@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_import", "cc_library")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -24,6 +24,7 @@ cc_library(
     srcs = ["coralnpu_compile_lib.cc"],
     hdrs = ["coralnpu_compile_lib.h"],
     deps = [
+        "//compiler/Transforms",
         "@iree_core//compiler/bindings/c:headers",
         "@iree_core//compiler/src:defs",
         "@iree_core//compiler/src/iree/compiler/API/Internal:CompilerDriver",
@@ -39,20 +40,22 @@ cc_library(
 # Copy the NPU linker next to the compiler binary.
 # This allows the compiler to find the linker at runtime when executed manually
 # from bazel-bin, via the findTool fallback mechanism.
-genrule(
-    name = "riscv32_linker_copy",
-    srcs = ["@rv32_toolchain//:bin/riscv32-unknown-elf-ld"],
-    outs = ["riscv32-unknown-elf-ld"],
-    cmd = "cp $< $@",
-    executable = True,
+cc_import(
+    name = "libIREECompiler_import",
+    shared_library = "@iree_core//lib:libIREECompiler.so",
 )
 
 cc_binary(
     name = "coralnpu-compile",
     srcs = ["coralnpu-compile-main.cc"],
-    data = [":riscv32_linker_copy"],
+    data = [
+        "//:riscv32_linker_copy",
+        "//crt:crt_files",
+    ],
+    linkopts = ["-Wl,-rpath,$$ORIGIN:$$ORIGIN/../lib:$$ORIGIN/../../lib"],
     deps = [
         ":coralnpu_compile_lib",
+        ":libIREECompiler_import",
         "@iree_core//compiler/src:defs",
         "@iree_core//compiler/src/iree/compiler/API/Internal:IREECompileToolEntryPoint",
     ],
