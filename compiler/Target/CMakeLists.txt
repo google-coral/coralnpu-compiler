@@ -14,6 +14,21 @@
 
 iree_cc_library(
   NAME
+    Utils
+  HDRS
+    "Utils.h"
+  SRCS
+    "Utils.cpp"
+  INCLUDES
+    "${CMAKE_SOURCE_DIR}"
+  DEPS
+    iree::compiler::Dialect::HAL::Target
+    MLIRIR
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
     CoralNPUTarget
   HDRS
     "CoralNPULinkerTool.h"
@@ -25,6 +40,7 @@ iree_cc_library(
   INCLUDES
     "${CMAKE_SOURCE_DIR}"
   DEPS
+    coralnpu_compiler::Target::Utils
     coralnpu_compiler::Transforms
     iree::compiler::plugins::target::LLVMCPU::LLVMCPU
     iree::compiler::plugins::target::LLVMCPU::LLVMIRPasses

@@ -38,6 +38,7 @@ iree_cc_library(
     "${CMAKE_CURRENT_BINARY_DIR}"
   DEPS
     ::PassesIncGen
+    coralnpu_compiler::Target::Utils
     iree::compiler::Codegen::Dialect::CPU::IR::IREECPUDialect
     iree::compiler::Codegen::Dialect::Codegen::IR::IREECodegenDialect
     iree::compiler::Codegen::Utils
@@ -48,11 +49,13 @@ iree_cc_library(
     iree::compiler::Dialect::Util::IR
     LLVMSupport
     MLIRAffineDialect
+    MLIRFuncDialect
     MLIRFunctionInterfaces
     MLIRIR
     MLIRLinalgDialect
     MLIRLinalgUtils
     MLIRPass
+    MLIRTensorDialect
     MLIRTilingInterface
   PUBLIC
 )

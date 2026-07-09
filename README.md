@@ -127,7 +127,7 @@ If you use an LSP (e.g. clangd), you can run the following command to
 generate/refresh `compiler_commands.json`:
 
 ```shell
-bazel run //:refresh_compile_commands
+bazel run --config=dev //:refresh_compile_commands
 ```
 <br>
 

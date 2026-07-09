@@ -44,6 +44,7 @@ cc_library(
     ],
     deps = [
         ":PassesIncGen",
+        "//compiler/Target:Utils",
         "@iree_core//compiler/src/iree/compiler/Codegen/Dialect/CPU/IR:IREECPUDialect",
         "@iree_core//compiler/src/iree/compiler/Codegen/Dialect/Codegen/IR:IREECodegenDialect",
         "@iree_core//compiler/src/iree/compiler/Codegen/Utils",
@@ -55,12 +56,14 @@ cc_library(
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:AffineDialect",
         "@llvm-project//mlir:DialectUtils",
+        "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:FunctionInterfaces",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:LinalgDialect",
         "@llvm-project//mlir:LinalgUtils",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TensorDialect",
         "@llvm-project//mlir:TilingInterface",
     ],
 )

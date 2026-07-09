@@ -115,6 +115,8 @@ class CoralNPUTargetBackend final
 
   std::string getLegacyDefaultDeviceID() const override;
 
+  SupportedTypes getSupportedTypes(MLIRContext *context) const override;
+
   void getDefaultExecutableTargets(
       MLIRContext *context, StringRef deviceID, DictionaryAttr deviceConfigAttr,
       SmallVectorImpl<iree_compiler::IREE::HAL::ExecutableTargetAttr>

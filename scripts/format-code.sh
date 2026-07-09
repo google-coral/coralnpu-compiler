@@ -21,7 +21,7 @@ main() {
   local exit_code=0
 
   echo 'Formatting bazel files'
-  bazel --quiet run //:buildifier || exit_code=$?
+  bazel --quiet run --config=dev //:buildifier || exit_code=$?
 
   echo
   echo 'Formatting C/C++ files'

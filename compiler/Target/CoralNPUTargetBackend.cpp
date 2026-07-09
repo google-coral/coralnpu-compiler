@@ -15,6 +15,7 @@
 #include "compiler/Target/CoralNPUTargetBackend.h"
 
 #include "compiler/Target/CoralNPULinkerTool.h"
+#include "compiler/Target/Utils.h"
 #include "compiler/Transforms/Passes.h"
 
 // IREE headers
@@ -206,6 +207,11 @@ CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options)
 
 std::string CoralNPUTargetBackend::getLegacyDefaultDeviceID() const {
   return "coralnpu";
+}
+
+IREE::HAL::TargetBackend::SupportedTypes
+CoralNPUTargetBackend::getSupportedTypes(MLIRContext *context) const {
+  return getCoralNPUSupportedTypes(context);
 }
 
 void CoralNPUTargetBackend::getDefaultExecutableTargets(

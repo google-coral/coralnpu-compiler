@@ -8,6 +8,20 @@ package(
 )
 
 cc_library(
+    name = "Utils",
+    srcs = [
+        "Utils.cpp",
+    ],
+    hdrs = [
+        "Utils.h",
+    ],
+    deps = [
+        "@iree_core//compiler/src/iree/compiler/Dialect/HAL/Target",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+cc_library(
     name = "CoralNPUTarget",
     srcs = [
         "CoralNPULinkerTool.cpp",
@@ -25,6 +39,7 @@ cc_library(
         "@rv32_toolchain//:bin/riscv32-unknown-elf-ld",
     ],
     deps = [
+        ":Utils",
         "//compiler/Transforms",
         "@iree_core//compiler/plugins/target/LLVMCPU",
         "@iree_core//compiler/plugins/target/LLVMCPU:LLVMIRPasses",

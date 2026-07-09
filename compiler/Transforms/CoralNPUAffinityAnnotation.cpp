@@ -12,14 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "compiler/Target/Utils.h"
 #include "compiler/Transforms/Passes.h"
+
+// IREE
 #include "iree/compiler/Dialect/HAL/Analysis/DeviceAnalysis.h"
 #include "iree/compiler/Dialect/HAL/IR/HALTypes.h"
+#include "iree/compiler/Dialect/Util/IR/UtilOps.h"
+
+// MLIR
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Pass/Pass.h"
+
+// LLVM
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace mlir;
 using namespace mlir::iree_compiler;
@@ -40,53 +53,36 @@ bool isSupportedComputeOp(Operation *op) {
   return false;
 }
 
-bool isSupportedElementType(Type type) {
-  return type.isInteger(8) || type.isInteger(16) || type.isInteger(32) ||
-         type.isF32();
+bool isSupportedType(
+    Type type, const IREE::HAL::TargetBackend::SupportedTypes &supportedTypes) {
+  if (auto shapedType = dyn_cast<ShapedType>(type)) {
+    return shapedType.hasStaticShape() &&
+           supportedTypes.supportsElementType(shapedType.getElementType());
+  }
+
+  return supportedTypes.supportsScalarType(type);
 }
 
-bool isSupportedType(Type type) {
-  if (auto rankedTensorType = dyn_cast<RankedTensorType>(type)) {
-    return rankedTensorType.hasStaticShape() &&
-           isSupportedElementType(rankedTensorType.getElementType());
-  }
-
-  // TODO(sflur): do we support the same unshaped types as element types?
-  return isSupportedElementType(type);
-}
-
-bool isSupportedOperandAndResultTypes(Operation *op) {
-  for (Value operand : op->getOperands()) {
-    if (!isSupportedType(operand.getType())) {
-      return false;
-    }
-  }
-
-  for (Value result : op->getResults()) {
-    if (!isSupportedType(result.getType())) {
-      return false;
-    }
-  }
-
-  return true;
+bool isSupportedOperandAndResultTypes(
+    Operation *op,
+    const IREE::HAL::TargetBackend::SupportedTypes &supportedTypes) {
+  auto isSupported = [&](Type t) { return isSupportedType(t, supportedTypes); };
+  return llvm::all_of(op->getOperandTypes(), isSupported) &&
+         llvm::all_of(op->getResultTypes(), isSupported);
 }
 
 int64_t estimateBytesForType(Type type) {
-  if (auto rankedTensorType = dyn_cast<RankedTensorType>(type)) {
-    Type elementType = rankedTensorType.getElementType();
+  // NB: pay attention to sub-byte types.
+
+  if (auto shapedType = dyn_cast<ShapedType>(type)) {
+    Type elementType = shapedType.getElementType();
 
     unsigned elementBits = elementType.getIntOrFloatBitWidth();
-    // Checked in isSupportedElementType
-    assert(elementBits % 8 == 0);
-    int64_t elementBytes = elementBits / 8;
-
-    return rankedTensorType.getNumElements() * elementBytes;
+    return llvm::divideCeil(shapedType.getNumElements() * elementBits, 8);
   }
 
   unsigned bits = type.getIntOrFloatBitWidth();
-  // Checked in isSupportedType
-  assert(bits % 8 == 0);
-  return bits / 8;
+  return llvm::divideCeil(bits, 8);
 }
 
 // op must be an operation that can execute on coralnpu, type wise
@@ -126,16 +122,23 @@ IREE::HAL::DeviceAffinityAttr getCoralNPUDeviceAffinityAttr(
 
   return nullptr;
 }
+
 struct CoralNPUAffinityAnnotationPass
     : public impl::CoralNPUAffinityAnnotationBase<
           CoralNPUAffinityAnnotationPass> {
   using CoralNPUAffinityAnnotationBase::CoralNPUAffinityAnnotationBase;
 
+  // Return true iff the NPU can handle the computation.
+  bool canExecuteOnCoralNPU(
+      Operation *op,
+      const IREE::HAL::TargetBackend::SupportedTypes &supportedTypes) {
+    return isSupportedComputeOp(op) &&
+           isSupportedOperandAndResultTypes(op, supportedTypes);
+  }
+
+  // Return true iff we think it will be beneficial for the NPU to do the
+  // computation.
   bool shouldExecuteOnCoralNPU(Operation *op) {
-    if (!isSupportedComputeOp(op)) return false;
-
-    if (!isSupportedOperandAndResultTypes(op)) return false;
-
     return ioMinThresholdBytes < estimateIOBytes(op);
   }
 
@@ -154,16 +157,21 @@ struct CoralNPUAffinityAnnotationPass
         getCoralNPUDeviceAffinityAttr(context, moduleOp);
     if (!coralnpuAffinityAttr) return;
 
-    // TODO: decide which operations should execute on coralnpu
+    IREE::HAL::TargetBackend::SupportedTypes supportedTypes =
+        getCoralNPUSupportedTypes(context);
+
     moduleOp.walk([&](Operation *op) {
       // If op already has affinity, don't change it
       if (op->getAttr("stream.affinity")) return;
 
-      if (shouldExecuteOnCoralNPU(op))
+      if (canExecuteOnCoralNPU(op, supportedTypes) &&
+          shouldExecuteOnCoralNPU(op)) {
         op->setAttr("stream.affinity", coralnpuAffinityAttr);
+      }
     });
   }
 };
+
 }  // namespace
 
 std::unique_ptr<OperationPass<ModuleOp>>
