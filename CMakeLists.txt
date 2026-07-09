@@ -109,4 +109,5 @@ ExternalProject_Add(
   INSTALL_COMMAND ""
 )
 
+add_subdirectory(pjrt_plugin)
 add_subdirectory(tests)

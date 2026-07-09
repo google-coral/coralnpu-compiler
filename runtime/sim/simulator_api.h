@@ -30,6 +30,7 @@ extern uint32_t coralnpu_dtcm_start;
 extern uint32_t coralnpu_dtcm_size;
 
 void simulator_create(void);
+void simulator_reset(void);
 void simulator_write_mem(uint32_t addr, const void *data, size_t size);
 void simulator_read_mem(uint32_t addr, void *data, size_t size);
 void simulator_run(uint32_t start_pc);

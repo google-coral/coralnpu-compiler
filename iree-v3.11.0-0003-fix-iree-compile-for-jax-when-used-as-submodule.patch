@@ -1,7 +1,7 @@
-From 53c9a9fb7ccb409dad5f9ab4ed30d277558b7311 Mon Sep 17 00:00:00 2001
+From 60162737dc37cbf578da991157e00039a5481d22 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Thu, 28 May 2026 16:08:40 +0200
-Subject: [PATCH 03/10] fix iree compile for jax when used as submodule
+Subject: [PATCH] fix iree compile for jax when used as submodule
 
 ---
  .../Preprocessing/Canonicalization.cpp        |  12 +-
@@ -9,29 +9,31 @@ Subject: [PATCH 03/10] fix iree compile for jax when used as submodule
  .../Preprocessing/StableHLOToStableHLO.cpp    |  18 +++
  .../Conversion/StableHLOCustomCalls.cpp       |  49 +++++-
  .../StableHLOToIREEInputDialects.cpp          |   3 +-
- .../Conversion/StableHLOToLinalgExt.cpp       | 144 +++++++++++++++++-
+ .../Conversion/StableHLOToLinalgExt.cpp       | 147 +++++++++++++++++-
  .../Dialect/Stream/Analysis/Affinity.cpp      |   3 +
  .../Dialect/Util/Analysis/Explorer.cpp        |   6 +-
  .../iree/compiler/Dialect/Util/IR/UtilTypes.h |   9 +-
- .../pjrt/src/iree_pjrt/common/BUILD.bazel     |  94 ++++++++++++
- .../pjrt/src/iree_pjrt/common/api_impl.cc     |   8 +-
+ .../pjrt/src/iree_pjrt/common/BUILD.bazel     |  94 +++++++++++
+ .../pjrt/src/iree_pjrt/common/api_impl.cc     |  76 ++++++---
+ .../pjrt/src/iree_pjrt/common/api_impl.h      |   8 +
  .../pjrt/src/iree_pjrt/cpu/BUILD.bazel        |  57 +++++++
- integrations/pjrt/src/iree_pjrt/cpu/client.h  |   2 +-
  .../src/iree_pjrt/partitioner_api/BUILD.bazel |  33 ++++
  .../pjrt/third_party/pjrt_c_api/BUILD.bazel   |  38 +++++
- 15 files changed, 467 insertions(+), 14 deletions(-)
+ runtime/src/iree/modules/hal/inline/module.c  |  19 ++-
+ runtime/src/iree/modules/hal/module.c         |  21 ++-
+ 17 files changed, 560 insertions(+), 38 deletions(-)
  create mode 100644 integrations/pjrt/src/iree_pjrt/common/BUILD.bazel
  create mode 100644 integrations/pjrt/src/iree_pjrt/cpu/BUILD.bazel
  create mode 100644 integrations/pjrt/src/iree_pjrt/partitioner_api/BUILD.bazel
  create mode 100644 integrations/pjrt/third_party/pjrt_c_api/BUILD.bazel
 
 diff --git a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
-index 510e2ee1b4..a68243427f 100644
+index 510e2ee1b..a68243427 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
 +++ b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Canonicalization.cpp
 @@ -1217,9 +1217,9 @@ struct StableHLOCanonicalize final
  };
- 
+
  } // namespace
 -void populateCanonicalizationPatterns(MLIRContext *context,
 -                                      RewritePatternSet *patterns,
@@ -56,7 +58,7 @@ index 510e2ee1b4..a68243427f 100644
  }
  } // namespace mlir::iree_compiler::stablehlo
 diff --git a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Rewriters.h b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Rewriters.h
-index 6f11ec8f46..038c38659a 100644
+index 6f11ec8f4..038c38659 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Rewriters.h
 +++ b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/Rewriters.h
 @@ -20,6 +20,11 @@ namespace mlir::iree_compiler::stablehlo {
@@ -68,17 +70,17 @@ index 6f11ec8f46..038c38659a 100644
 +void populateCanonicalizationPatternsNoReorder(MLIRContext *context,
 +                                               RewritePatternSet *patterns,
 +                                               PatternBenefit benefit = 1);
- 
+
  /// Collection of rewrite patterns for lowering of StableHLO dot general
  /// operations.
 diff --git a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp
-index 387e788dd3..67694551fa 100644
+index 387e788dd..67694551f 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp
 +++ b/compiler/plugins/input/StableHLO/Conversion/Preprocessing/StableHLOToStableHLO.cpp
 @@ -576,6 +576,16 @@ struct ScatterImplicitBatch final
      auto indices = cast<Value>(op.getScatterIndices());
      auto indicesTy = dyn_cast<RankedTensorType>(indices.getType());
- 
+
 +    auto input = op.getInputs().front();
 +    auto update = op.getUpdates().front();
 +    auto inputTy = dyn_cast<RankedTensorType>(input.getType());
@@ -99,7 +101,7 @@ index 387e788dd3..67694551fa 100644
 +    auto update = op.getUpdates().front();
      auto indicesTy = cast<ShapedType>(indices.getType());
      auto operandTy = cast<ShapedType>(operand.getType());
- 
+
 +    auto updateTy = cast<ShapedType>(update.getType());
 +
 +    if (operandTy.getRank() == updateTy.getRank() &&
@@ -111,13 +113,13 @@ index 387e788dd3..67694551fa 100644
        return rewriter.notifyMatchFailure(op, "operand/indices have no rank");
      }
 diff --git a/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp b/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp
-index e7314c129b..4181e6077a 100644
+index e7314c129..4181e6077 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp
 +++ b/compiler/plugins/input/StableHLO/Conversion/StableHLOCustomCalls.cpp
 @@ -7,6 +7,7 @@
  // Implements logic for lowering CHLO ops to StableHLO and Shape dialect ops,
  // taking care of CHLO's broadcasting semantics
- 
+
 +#include <llvm/Support/Casting.h>
  #include "compiler/plugins/input/StableHLO/Conversion/Passes.h"
  #include "compiler/plugins/input/StableHLO/Conversion/Preprocessing/Rewriters.h"
@@ -133,7 +135,7 @@ index e7314c129b..4181e6077a 100644
 @@ -239,6 +241,50 @@ struct ShapeAssertionDrop final
    }
  };
- 
+
 +struct NoOpShardingDrop final
 +    : OpRewritePattern<mlir::stablehlo::CustomCallOp> {
 +  using Base::Base;
@@ -183,7 +185,7 @@ index e7314c129b..4181e6077a 100644
  //===----------------------------------------------------------------------===//
 @@ -255,7 +301,8 @@ struct LegalizeStableHLOCustomCalls final
      MLIRContext *ctx = f.getContext();
- 
+
      RewritePatternSet patterns(ctx);
 -    patterns.add<HouseholderReflectorRewriter, ShapeAssertionDrop>(ctx);
 +    patterns.add<HouseholderReflectorRewriter, ShapeAssertionDrop,
@@ -192,27 +194,37 @@ index e7314c129b..4181e6077a 100644
        signalPassFailure();
      }
 diff --git a/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp b/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp
-index 3b264d2603..be4bad6868 100644
+index 3b264d260..be4bad686 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp
 +++ b/compiler/plugins/input/StableHLO/Conversion/StableHLOToIREEInputDialects.cpp
 @@ -521,7 +521,8 @@ struct ConvertStableHloToIreeInputDialects final
- 
+
      // Run stablehlo canonicalization patterns with a high benefit to avoid some
      // expensive expansions.
 -    populateCanonicalizationPatterns(context, &patterns, /*benefit=*/1024);
 +    populateCanonicalizationPatternsNoReorder(context, &patterns,
 +                                              /*benefit=*/1024);
- 
+
      // Run custom patterns with a high benefit to override stablehlo patterns.
      patterns.add<ConcatenateOpConversion, FftOpConversion,
 diff --git a/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp b/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp
-index b6c9c8cac4..2f972fe514 100644
+index b6c9c8cac..928b9c2b8 100644
 --- a/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp
 +++ b/compiler/plugins/input/StableHLO/Conversion/StableHLOToLinalgExt.cpp
-@@ -274,7 +274,149 @@ struct ScatterOpConversion final
+@@ -258,9 +258,6 @@ struct ScatterOpConversion final
+   LogicalResult
+   matchAndRewrite(mlir::stablehlo::ScatterOp op, OpAdaptor adaptor,
+                   ConversionPatternRewriter &rewriter) const override {
+-    if (!hasCanonicalDimensionNumbers(op)) {
+-      return failure();
+-    }
+     if (llvm::size(op.getInputs()) != 1) {
+       return op.emitError("NYI variadic operands scatter");
+     }
+@@ -274,7 +271,149 @@ struct ScatterOpConversion final
      Value indices = adaptor.getScatterIndices();
      Value updates = adaptor.getUpdates().front();
- 
+
 -    auto originalType = dyn_cast<ShapedType>(original.getType());
 +    Location loc = op.getLoc();
 +    auto originalType = dyn_cast<RankedTensorType>(original.getType());
@@ -357,11 +369,11 @@ index b6c9c8cac4..2f972fe514 100644
 +
 +    if (!hasCanonicalDimensionNumbers(op))
 +      return failure();
- 
+
      llvm::SmallVector<int64_t> scatterDimMap;
      for (auto dim :
 diff --git a/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp b/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp
-index 868a54ef95..aaae079f69 100644
+index 868a54ef9..aaae079f6 100644
 --- a/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp
 +++ b/compiler/src/iree/compiler/Dialect/Stream/Analysis/Affinity.cpp
 @@ -538,6 +538,9 @@ TraversalResult ValueConsumerAffinityPVS::updateFromUse(Value value,
@@ -375,7 +387,7 @@ index 868a54ef95..aaae079f69 100644
                *this,
                Position::forValue(
 diff --git a/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp b/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp
-index 5b348cc213..ce240ce78f 100644
+index 5b348cc21..ce240ce78 100644
 --- a/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp
 +++ b/compiler/src/iree/compiler/Dialect/Util/Analysis/Explorer.cpp
 @@ -1279,8 +1279,10 @@ TraversalResult Explorer::walkTransitiveUses(Value value, UseWalkFn fn,
@@ -389,10 +401,10 @@ index 5b348cc213..ce240ce78f 100644
 +          worklist.insert(result);
 +        }
        }
- 
+
        // Step across global stores and into all of the loads across the program.
 diff --git a/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h b/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h
-index ecc630c043..fd08b9b0ac 100644
+index ecc630c04..fd08b9b0a 100644
 --- a/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h
 +++ b/compiler/src/iree/compiler/Dialect/Util/IR/UtilTypes.h
 @@ -369,7 +369,14 @@ static inline int32_t getRoundedElementByteWidth(Type type) {
@@ -413,7 +425,7 @@ index ecc630c043..fd08b9b0ac 100644
    unsigned byteAligned = (bitsUnaligned + 8 - 1) / 8;
 diff --git a/integrations/pjrt/src/iree_pjrt/common/BUILD.bazel b/integrations/pjrt/src/iree_pjrt/common/BUILD.bazel
 new file mode 100644
-index 0000000000..4898db620b
+index 000000000..4898db620
 --- /dev/null
 +++ b/integrations/pjrt/src/iree_pjrt/common/BUILD.bazel
 @@ -0,0 +1,94 @@
@@ -512,9 +524,18 @@ index 0000000000..4898db620b
 +    ],
 +)
 diff --git a/integrations/pjrt/src/iree_pjrt/common/api_impl.cc b/integrations/pjrt/src/iree_pjrt/common/api_impl.cc
-index ed76c8a469..bd1ccf4697 100644
+index ed76c8a46..625accedc 100644
 --- a/integrations/pjrt/src/iree_pjrt/common/api_impl.cc
 +++ b/integrations/pjrt/src/iree_pjrt/common/api_impl.cc
+@@ -758,7 +758,7 @@ void MemoryInstance::BindApi(PJRT_Api* api) {
+
+ int MemoryInstance::Id() { return device_->device_description()->device_id(); }
+ std::string_view MemoryInstance::Kind() {
+-  return device_->device_description()->kind_string();
++  return "device";
+ }
+ std::string_view MemoryInstance::DebugString() {
+   return device_->device_description()->debug_string();
 @@ -991,8 +991,8 @@ iree_status_t DeviceInstance::TransposeBroadcastDeviceBuffer(
      EventInstance** out_done_with_host_buffer_event,
      BufferInstance** out_buffer) {
@@ -524,7 +545,7 @@ index ed76c8a469..bd1ccf4697 100644
 +    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
 +                            "number of dimensions exceeded max supported");
    }
- 
+
    std::array<iree_hal_dim_t, kMaxDims> transpose_dims;
 @@ -1049,8 +1049,8 @@ iree_status_t DeviceInstance::TransposeBroadcastDeviceBuffer(
        input_ty.c_str(), transpose_ty.c_str(), output_ty.c_str(),
@@ -535,11 +556,183 @@ index ed76c8a469..bd1ccf4697 100644
 +    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
 +                            "program size exceeded limit");
    }
- 
+
    // Create an on stack program:
+@@ -1609,7 +1609,7 @@ PJRT_Error* ClientInstance::Compile(const PJRT_Program* program,
+     // TODO: This should be done as part of session setup from a named pool.
+     // TODO: The HAL backends and other flags should come from the assigned
+     // devices.
+-    if (!SetDefaultCompilerFlags(job.get())) {
++    if (!SetCompilerFlags(job.get(), options)) {
+       return MakeCompilerError(*job);
+     }
+     if (!job->SetFlags(options)) return MakeCompilerError(*job);
+@@ -1703,6 +1703,13 @@ std::tuple<uint64_t, uint64_t> ClientInstance::AdvanceTimeline() {
+   return std::make_tuple(current, next);
+ }
+
++std::tuple<uint64_t, uint64_t> DeviceInstance::AdvanceTimeline() {
++  uint64_t current = execution_timeline_;
++  uint64_t next = current + 1;
++  execution_timeline_ = next;
++  return std::make_tuple(current, next);
++}
++
+ //===----------------------------------------------------------------------===//
+ // EventInstance
+ //===----------------------------------------------------------------------===//
+@@ -2093,11 +2100,6 @@ iree_status_t LoadedExecutableInstance::BatchExecute(
+   // Make sure loaded.
+   IREE_RETURN_IF_ERROR(LoadAll());
+
+-  // Timeline setup. There are two timelines that we synchronize to:
+-  // the main execution timeline, which preserves as-called ordering to
+-  // execution, and the transfer timeline of each device.
+-  auto [wait_timepoint, signal_timepoint] = client_.AdvanceTimeline();
+-
+   // Initialize invocations.
+   auto allocator = client_.host_allocator();
+   auto& resident_executables_ecs = resident_executables_;
+@@ -2107,6 +2109,8 @@ iree_status_t LoadedExecutableInstance::BatchExecute(
+     iree::vm::ref<iree_vm_list_t> outputs;
+     iree::vm::ref<iree_hal_fence_t> wait_fence;
+     iree::vm::ref<iree_hal_fence_t> signal_fence;
++    uint64_t signal_timepoint;
++    bool expects_fences;
+   };
+   std::vector<Invocation> invs;
+   invs.resize(args->num_devices);
+@@ -2114,20 +2118,24 @@ iree_status_t LoadedExecutableInstance::BatchExecute(
+     auto& inv = invs[dev_index];
+     inv.res_exe = &resident_executables_ecs[dev_index];
+
++    // Timeline setup per device.
++    auto [wait_timepoint, signal_timepoint] =
++        inv.res_exe->device_instance->AdvanceTimeline();
++    inv.signal_timepoint = signal_timepoint;
++
+     // Wait fence initial value.
+     // We allocate it to be able to hold two semaphores (main timeline and
+-    // transfer timeline) and initialize it with the global invocation order
+-    // of the main timeline. As we process inputs, we will also insert their
++    // transfer timeline) and initialize it with the invocation order
++    // of the device main timeline. As we process inputs, we will also insert their
+     // transfer ready semaphore value so that execution can only begin once
+-    // all dependencies are ready. This at most represents two unique
+-    // semaphores.
++    // all dependencies are ready.
+     IREE_RETURN_IF_ERROR(
+         inv.res_exe->device_instance->CreateFence(&inv.wait_fence));
+     IREE_RETURN_IF_ERROR(IreeApi::hal_fence_insert(
+         inv.wait_fence.get(), inv.res_exe->device_instance->main_timeline(),
+         wait_timepoint));
+
+-    // Signal fence. This signals the next tick on the main execution
++    // Signal fence. This signals the next tick on the device main execution
+     // timeline.
+     IREE_RETURN_IF_ERROR(IreeApi::hal_fence_create_at(
+         inv.res_exe->device_instance->main_timeline(), signal_timepoint,
+@@ -2158,9 +2166,12 @@ iree_status_t LoadedExecutableInstance::BatchExecute(
+     }
+
+     // Add (wait, signal) fences as required by the async-external execution
+-    // model.
+-    iree_vm_list_push_ref_retain(inv.inputs.get(), inv.wait_fence);
+-    iree_vm_list_push_ref_retain(inv.inputs.get(), inv.signal_fence);
++    // model if the main function expects them.
++    inv.expects_fences = (inv.res_exe->arg_count == args->num_args + 2);
++    if (inv.expects_fences) {
++      iree_vm_list_push_ref_retain(inv.inputs.get(), inv.wait_fence);
++      iree_vm_list_push_ref_retain(inv.inputs.get(), inv.signal_fence);
++    }
+   }
+
+   // Issue invocations.
+@@ -2170,6 +2181,18 @@ iree_status_t LoadedExecutableInstance::BatchExecute(
+   iree_status_t status = iree_ok_status();
+   for (size_t dev_index = 0; dev_index < args->num_devices; ++dev_index) {
+     auto& inv = invs[dev_index];
++
++    if (!inv.expects_fences) {
++      auto wait_status = IreeApi::HandleStatus(
++          "wait_fence_host",
++          iree_hal_fence_wait(inv.wait_fence.get(), iree_infinite_timeout(),
++                              0));
++      if (!iree_status_is_ok(wait_status)) {
++        status = wait_status;
++        continue;
++      }
++    }
++
+     if (IreeApi::LOGGING_ENABLED) {
+       IreeApi::LogInvoke(
+           "vm_invoke[async]",
+@@ -2189,7 +2212,16 @@ iree_status_t LoadedExecutableInstance::BatchExecute(
+     // Any invocation that fails needs a barrier so that signal fence is
+     // incremented otherwise future waits will fail. We do this instead of
+     // incrementing as only a subset of devices may fail.
+-    if (!iree_status_is_ok(new_status)) {
++    if (iree_status_is_ok(new_status)) {
++      if (!inv.expects_fences) {
++        auto signal_status = IreeApi::HandleStatus(
++            "signal_fence_host",
++            iree_hal_fence_signal(inv.signal_fence.get()));
++        if (!iree_status_is_ok(signal_status)) {
++          status = signal_status;
++        }
++      }
++    } else {
+       status = new_status;
+       // We can ignore the error as we are already erroring out earlier.
+       IREE_IGNORE_ERROR(IreeApi::hal_device_queue_barrier(
+@@ -2213,9 +2245,9 @@ iree_status_t LoadedExecutableInstance::BatchExecute(
+       auto result_buffer = std::make_unique<BufferInstance>(
+           *inv.res_exe->device_instance, std::move(ret_buffer_view));
+       IREE_RETURN_IF_ERROR(result_buffer->AdvanceReadyFence(
+-          inv.res_exe->device_instance->main_timeline(), signal_timepoint));
++          inv.res_exe->device_instance->main_timeline(), inv.signal_timepoint));
+       IREE_RETURN_IF_ERROR(result_buffer->AdvanceDoneFence(
+-          inv.res_exe->device_instance->main_timeline(), signal_timepoint));
++          inv.res_exe->device_instance->main_timeline(), inv.signal_timepoint));
+       args->output_lists[dev_index][i] = *(result_buffer.release());
+     }
+
+diff --git a/integrations/pjrt/src/iree_pjrt/common/api_impl.h b/integrations/pjrt/src/iree_pjrt/common/api_impl.h
+index 95d8f4d97..1adc71837 100644
+--- a/integrations/pjrt/src/iree_pjrt/common/api_impl.h
++++ b/integrations/pjrt/src/iree_pjrt/common/api_impl.h
+@@ -288,6 +288,9 @@ class DeviceInstance {
+   // device.
+   iree_status_t CreateFence(iree_hal_fence_t** out_fence);
+
++  // Advances the device execution timeline, returning (current, next) time point values.
++  std::tuple<uint64_t, uint64_t> AdvanceTimeline();
++
+  private:
+   iree_status_t OpenDevice();
+   iree_status_t AcquireHostStagingBuffer(
+@@ -305,6 +308,7 @@ class DeviceInstance {
+   iree::vm::ref<iree_hal_fence_t> transfer_now_fence_;
+   // The timepoint of the last transfer.
+   uint64_t last_transfer_timepoint_ = 0;
++  uint64_t execution_timeline_ = 0ull;
+   DeviceDescription info_;
+   // Memory space attached to this device.
+   std::vector<MemoryInstance*> memories_;
+@@ -508,6 +512,10 @@ class ClientInstance {
+   // and devices.
+   // Returns false on failure (and sets error information on the compiler_job).
+   virtual bool SetDefaultCompilerFlags(CompilerJob* compiler_job) = 0;
++  virtual bool SetCompilerFlags(CompilerJob* compiler_job,
++                                const xla::CompileOptionsProto& options) {
++    return SetDefaultCompilerFlags(compiler_job);
++  }
+
+   // Advances the timeline, returning (current, next) time point values.
+   std::tuple<uint64_t, uint64_t> AdvanceTimeline();
 diff --git a/integrations/pjrt/src/iree_pjrt/cpu/BUILD.bazel b/integrations/pjrt/src/iree_pjrt/cpu/BUILD.bazel
 new file mode 100644
-index 0000000000..8e13762ca3
+index 000000000..8e13762ca
 --- /dev/null
 +++ b/integrations/pjrt/src/iree_pjrt/cpu/BUILD.bazel
 @@ -0,0 +1,57 @@
@@ -600,22 +793,9 @@ index 0000000000..8e13762ca3
 +        ":dylib",
 +    ],
 +)
-diff --git a/integrations/pjrt/src/iree_pjrt/cpu/client.h b/integrations/pjrt/src/iree_pjrt/cpu/client.h
-index 446aceb3b9..0f750d73c7 100644
---- a/integrations/pjrt/src/iree_pjrt/cpu/client.h
-+++ b/integrations/pjrt/src/iree_pjrt/cpu/client.h
-@@ -24,7 +24,7 @@ class CPUClientInstance final : public ClientInstance {
-   iree_status_t InitializeDeps();
- 
-   // Instance scoped options.
--  bool single_threaded_debug_ = false;
-+  bool single_threaded_debug_ = true;
-   iree_task_topology_t task_topology_options_;
- 
-   // Deps.
 diff --git a/integrations/pjrt/src/iree_pjrt/partitioner_api/BUILD.bazel b/integrations/pjrt/src/iree_pjrt/partitioner_api/BUILD.bazel
 new file mode 100644
-index 0000000000..d29c14a6a1
+index 000000000..d29c14a6a
 --- /dev/null
 +++ b/integrations/pjrt/src/iree_pjrt/partitioner_api/BUILD.bazel
 @@ -0,0 +1,33 @@
@@ -654,7 +834,7 @@ index 0000000000..d29c14a6a1
 +)
 diff --git a/integrations/pjrt/third_party/pjrt_c_api/BUILD.bazel b/integrations/pjrt/third_party/pjrt_c_api/BUILD.bazel
 new file mode 100644
-index 0000000000..daa8d78835
+index 000000000..daa8d7883
 --- /dev/null
 +++ b/integrations/pjrt/third_party/pjrt_c_api/BUILD.bazel
 @@ -0,0 +1,38 @@
@@ -696,6 +876,81 @@ index 0000000000..daa8d78835
 +    name = "compile_options_cc_proto",
 +    deps = [":compile_options-proto"],
 +)
--- 
-2.55.0
+diff --git a/runtime/src/iree/modules/hal/inline/module.c b/runtime/src/iree/modules/hal/inline/module.c
+index 350cf3227..38fa5c7b1 100644
+--- a/runtime/src/iree/modules/hal/inline/module.c
++++ b/runtime/src/iree/modules/hal/inline/module.c
+@@ -416,8 +416,6 @@ IREE_VM_ABI_EXPORT(iree_hal_inline_module_buffer_storage,  //
+ IREE_VM_ABI_EXPORT(iree_hal_inline_module_buffer_view_create,  //
+                    iree_hal_inline_module_state_t,             //
+                    rIIiiCID, r) {
+-  iree_hal_buffer_t* source_buffer = NULL;
+-  IREE_RETURN_IF_ERROR(iree_hal_buffer_check_deref(args->r0, &source_buffer));
+   iree_device_size_t source_offset = iree_hal_cast_device_size(args->i1);
+   iree_device_size_t source_length = iree_hal_cast_device_size(args->i2);
+   iree_hal_element_type_t element_type = (iree_hal_element_type_t)args->i3;
+@@ -428,6 +426,23 @@ IREE_VM_ABI_EXPORT(iree_hal_inline_module_buffer_view_create,  //
+   IREE_VM_ABI_VLA_STACK_CAST(args, a5_count, a5, iree_hal_dim_t, 128,
+                              &shape_rank, &shape_dims);
 
++  if (iree_vm_ref_is_null(&args->r0)) {
++    iree_hal_buffer_view_t* buffer_view = NULL;
++    iree_hal_buffer_params_t params = {
++        .type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
++        .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
++    };
++    IREE_RETURN_IF_ERROR(iree_hal_buffer_view_allocate_buffer_copy(
++        /*device=*/NULL, state->device_allocator, shape_rank, shape_dims,
++        element_type, encoding_type, params, iree_const_byte_span_empty(),
++        &buffer_view));
++    rets->r0 = iree_hal_buffer_view_move_ref(buffer_view);
++    return iree_ok_status();
++  }
++
++  iree_hal_buffer_t* source_buffer = NULL;
++  IREE_RETURN_IF_ERROR(iree_hal_buffer_check_deref(args->r0, &source_buffer));
++
+   iree_hal_buffer_t* subspan_buffer = NULL;
+   if (source_offset != 0 ||
+       source_length != iree_hal_buffer_byte_length(source_buffer)) {
+diff --git a/runtime/src/iree/modules/hal/module.c b/runtime/src/iree/modules/hal/module.c
+index a67a4734e..4f206f347 100644
+--- a/runtime/src/iree/modules/hal/module.c
++++ b/runtime/src/iree/modules/hal/module.c
+@@ -640,8 +640,6 @@ IREE_VM_ABI_EXPORT(iree_hal_module_buffer_store,  //
+ IREE_VM_ABI_EXPORT(iree_hal_module_buffer_view_create,  //
+                    iree_hal_module_state_t,             //
+                    rIIiiCID, r) {
+-  iree_hal_buffer_t* source_buffer = NULL;
+-  IREE_RETURN_IF_ERROR(iree_hal_buffer_check_deref(args->r0, &source_buffer));
+   iree_device_size_t source_offset = iree_hal_cast_device_size(args->i1);
+   iree_device_size_t source_length = iree_hal_cast_device_size(args->i2);
+   iree_hal_element_type_t element_type = (iree_hal_element_type_t)args->i3;
+@@ -652,6 +650,25 @@ IREE_VM_ABI_EXPORT(iree_hal_module_buffer_view_create,  //
+   IREE_VM_ABI_VLA_STACK_CAST(args, a5_count, a5, iree_hal_dim_t, 128,
+                              &shape_rank, &shape_dims);
+
++  if (iree_vm_ref_is_null(&args->r0)) {
++    iree_hal_buffer_view_t* buffer_view = NULL;
++    iree_hal_device_t* device =
++        iree_hal_device_group_device_at(state->device_group, 0);
++    iree_hal_buffer_params_t params = {
++        .type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
++        .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
++    };
++    IREE_RETURN_IF_ERROR(iree_hal_buffer_view_allocate_buffer_copy(
++        device, iree_hal_device_allocator(device), shape_rank, shape_dims,
++        element_type, encoding_type, params, iree_const_byte_span_empty(),
++        &buffer_view));
++    rets->r0 = iree_hal_buffer_view_move_ref(buffer_view);
++    return iree_ok_status();
++  }
++
++  iree_hal_buffer_t* source_buffer = NULL;
++  IREE_RETURN_IF_ERROR(iree_hal_buffer_check_deref(args->r0, &source_buffer));
++
+   iree_hal_buffer_t* subspan_buffer = NULL;
+   if (source_offset != 0 ||
+       source_length != iree_hal_buffer_byte_length(source_buffer)) {
+--
+2.55.0.691.gc56d675ccc-goog

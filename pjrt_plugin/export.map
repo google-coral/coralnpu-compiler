@@ -1,0 +1,7 @@
+{
+  global:
+    GetPjrtApiVersion;
+    GetPjrtApi;
+  local:
+    *;
+};

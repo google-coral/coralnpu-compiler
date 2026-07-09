@@ -98,6 +98,8 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
     iree_byte_span_t local_memory) {
   IREE_ASSERT_ARGUMENT(dispatch_state);
 
+  simulator_reset();
+
 #ifdef IREE_CORALNPU_SIMULATOR_DEBUG
   fprintf(stderr, "[CoralNPU simulator] dispatch entered\n");
   fflush(stderr);

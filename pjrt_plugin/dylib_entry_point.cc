@@ -25,7 +25,7 @@ namespace {
 
 // Declared but not implemented by the include file.
 void InitializeAPI(PJRT_Api* api) {
-  BindApi<DylibPlatform, coralnpu::CORALNPUClientInstance>(api);
+  BindApi<DylibPlatform, coralnpu::CoralNPUClientInstance>(api);
 }
 
 }  // namespace

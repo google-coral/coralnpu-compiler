@@ -21,7 +21,18 @@
 
 static CoralNPUSimulator* sim = NULL;
 
-void simulator_create(void) { sim = CoralNPUSimulator::Create(); }
+void simulator_create(void) {
+  if (!sim) {
+    sim = CoralNPUSimulator::Create();
+  }
+}
+
+void simulator_reset(void) {
+  if (sim) {
+    delete sim;
+  }
+  sim = CoralNPUSimulator::Create();
+}
 
 void simulator_write_mem(uint32_t addr, const void* data, size_t size) {
   sim->WriteMem(addr, size, static_cast<const char*>(data));

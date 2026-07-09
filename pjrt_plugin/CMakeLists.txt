@@ -12,6 +12,17 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+get_filename_component(IREE_PACKAGE_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+list(APPEND CMAKE_MODULE_PATH
+  "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/iree/integrations/pjrt/cmake"
+)
+include(protobuf_cc_library)
+
+add_subdirectory("../third_party/iree/integrations/pjrt/third_party/pjrt_c_api" pjrt_c_api)
+add_subdirectory("../third_party/iree/integrations/pjrt/src" integrations_pjrt)
+
 iree_cc_library(
   NAME
     client
@@ -20,9 +31,11 @@ iree_cc_library(
   SRCS
     "client.cc"
   DEPS
-    runtime::driver::coralnpu
-    iree::integrations::pjrt::common
+    coralnpu_runtime::driver::coralnpu
+    iree_pjrt::common
     iree::base
+    iree::hal
+    iree::hal::drivers::local_sync::sync_driver
     iree::hal::local::loaders::registration
     iree::hal::local::plugins::registration
   PUBLIC)
@@ -42,20 +55,23 @@ iree_cc_library(
     iree_pjrt::common::dylib_platform)
 
 # Output to the project wide python binary directory tree.
-set(_NATIVE_PYTHON_DIR
-    "${IREE_PJRT_PYTHON_BINARY_DIR}/iree/_pjrt_libs/coralnpu")
-file(WRITE "${_NATIVE_PYTHON_DIR}/__init__.py" "")
-set_target_properties(
-  iree_pjrt_coralnpu_dylib
-  PROPERTIES PREFIX "" # Disable "lib" prefix.
-             LIBRARY_OUTPUT_NAME iree_pjrt_coralnpu
-             RUNTIME_OUTPUT_DIRECTORY "${_NATIVE_PYTHON_DIR}"
-             LIBRARY_OUTPUT_DIRECTORY "${_NATIVE_PYTHON_DIR}")
+if(DEFINED IREE_PJRT_PYTHON_BINARY_DIR)
+  set(_NATIVE_PYTHON_DIR
+      "${IREE_PJRT_PYTHON_BINARY_DIR}/iree/_pjrt_libs/coralnpu")
+  file(MAKE_DIRECTORY "${_NATIVE_PYTHON_DIR}")
+  file(WRITE "${_NATIVE_PYTHON_DIR}/__init__.py" "")
+  set_target_properties(
+    pjrt_plugin_dylib
+    PROPERTIES PREFIX "" # Disable "lib" prefix.
+               LIBRARY_OUTPUT_NAME iree_pjrt_coralnpu
+               RUNTIME_OUTPUT_DIRECTORY "${_NATIVE_PYTHON_DIR}"
+               LIBRARY_OUTPUT_DIRECTORY "${_NATIVE_PYTHON_DIR}")
+endif()
 
 if(NOT IREE_ENABLE_ASAN)
   if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    target_link_options(iree_pjrt_coralnpu_dylib PRIVATE "-Wl,-undefined,error")
+    target_link_options(pjrt_plugin_dylib PRIVATE "-Wl,-undefined,error")
   else()
-    target_link_options(iree_pjrt_coralnpu_dylib PRIVATE "-Wl,--no-undefined")
+    target_link_options(pjrt_plugin_dylib PRIVATE "-fuse-ld=lld" "-Wl,--no-undefined")
   endif()
 endif()

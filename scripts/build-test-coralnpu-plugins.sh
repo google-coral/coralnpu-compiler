@@ -138,7 +138,6 @@ main() {
   # Configure the local device
   iree_compile_options+=(--iree-hal-target-device=local)
   iree_compile_options+=(--iree-hal-local-target-device-backends=llvm-cpu)
-  iree_compile_options+=(--iree-llvmcpu-link-embedded=false)
   iree_compile_options+=(--iree-llvmcpu-target-cpu=host)
 
   # Configure the CoralNPU device

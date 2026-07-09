@@ -14,30 +14,37 @@
  * limitations under the License.
  */
 
-#ifndef PJRT_PLUGIN__CLIENT_H_
-#define PJRT_PLUGIN__CLIENT_H_
+#ifndef PJRT_PLUGIN_CLIENT_H_
+#define PJRT_PLUGIN_CLIENT_H_
 
 #include "iree/hal/local/loaders/registration/init.h"
 #include "iree_pjrt/common/api_impl.h"
 
 namespace iree::pjrt::coralnpu {
 
-class CORALNPUClientInstance final : public ClientInstance {
+class CoralNPUClientInstance final : public ClientInstance {
  public:
-  CORALNPUClientInstance(std::unique_ptr<Platform> platform);
-  ~CORALNPUClientInstance();
+  CoralNPUClientInstance(std::unique_ptr<Platform> platform);
+  ~CoralNPUClientInstance();
   iree_status_t CreateDriver(iree_hal_driver_t **out_driver) override;
+  iree_status_t PopulateVMModules(
+      std::vector<iree::vm::ref<iree_vm_module_t>> &modules,
+      iree_hal_device_t *hal_device,
+      iree::vm::ref<iree_vm_module_t> &main_module) override;
   bool SetDefaultCompilerFlags(CompilerJob *compiler_job) override;
+  bool SetCompilerFlags(CompilerJob *compiler_job,
+                        const xla::CompileOptionsProto &options) override;
 
  private:
   iree_status_t InitializeDeps();
 
   // Deps.
   iree_hal_executable_plugin_manager_t *plugin_manager_ = nullptr;
-  iree_hal_executable_loader_t *loader_[1] = {nullptr};
+  iree_hal_executable_loader_t *loaders_[8] = {nullptr};
+  iree_host_size_t loader_count_ = 0;
   iree_hal_allocator_t *device_allocator_ = nullptr;
 };
 
 }  // namespace iree::pjrt::coralnpu
 
-#endif  // PJRT_PLUGIN__CLIENT_H_
+#endif  // PJRT_PLUGIN_CLIENT_H_

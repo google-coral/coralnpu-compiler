@@ -554,22 +554,27 @@ simulation).
 
 ### The `pjrt_plugin`:
 
-The PJRT plugin invokes the IREE HAL device APIs and builds the dynamic library used by JAX: `libiree_pjrt_coralnpu_dylib.so`. This library is intended to support compiling and running JAX models through the CoralNPU IREE backend.
+The PJRT plugin invokes the IREE HAL device APIs and builds the dynamic library used by JAX for Just-in-Time (JIT) compilation and execution:
+
+- **`libiree_pjrt_coralnpu_dylib.so`**: Unified multi-device PJRT plugin supporting both CPU (device 0) and CoralNPU (device 1) targets.
+
+#### Running Multi-Device JAX Tests (CPU + CoralNPU):
 
 ```shell
-# Build and test the JAX/PJRT flow
-./scripts/build-test-coralnpu-jax.sh
+./examples/gemma3-jax-pjrt/test_basic.sh
 ```
 
-This script provides a single-command flow for the JAX/PJRT path (Just-in-Time compilation).
+This script:
+1. Builds `libIREECompiler.so`, `libiree_pjrt_coralnpu_dylib.so`, and `coralnpu-compile` via Bazel.
+2. Runs [`examples/gemma3-jax-pjrt/basic.py`](examples/gemma3-jax-pjrt/basic.py) to test single-device CPU execution, single-device CoralNPU execution, and concurrent multi-device execution (CPU + CoralNPU) in JAX.
 
-It performs the following steps:
+#### Running Gemma3-270M JAX Chat (CPU):
 
-1. Applies required patches
-2. Builds the IREE compiler via Bazel
-3. Builds the CoralNPU PJRT plugin via Bazel
-4. Compiles JAX models for the RV32-based CoralNPU backend
-5. Runs the generated binaries
+```shell
+./examples/gemma3-jax-pjrt/test_chat.sh
+```
+
+This script builds `libiree_pjrt_coralnpu_dylib.so` and runs end-to-end interactive multi-turn chat with Gemma3-270M on CPU via JAX JIT compilation.
 ---
 
 ## Developer Tools

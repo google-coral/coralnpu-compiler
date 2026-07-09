@@ -28,7 +28,8 @@ cc_library(
         "//runtime/driver:coralnpu",
         "@iree_core//integrations/pjrt/src/iree_pjrt/common",
         "@iree_core//runtime/src/iree/base",
-        "@iree_core//runtime/src/iree/hal/local/loaders:embedded_elf_loader",
+        "@iree_core//runtime/src/iree/hal",
+        "@iree_core//runtime/src/iree/hal/drivers/local_sync:sync_driver",
         "@iree_core//runtime/src/iree/hal/local/loaders/registration",
         "@iree_core//runtime/src/iree/hal/local/plugins/registration",
     ],
@@ -50,10 +51,14 @@ cc_library(
 
 cc_shared_library(
     name = "iree_pjrt_coralnpu_dylib",
+    additional_linker_inputs = [
+        ":export.map",
+    ],
     user_link_flags = [
         # During dynamic linking at runtime, hide definitions of internal symbols
         # to avoid conflicts with other libraries loaded in the same process.
         "-Wl,-Bsymbolic",
+        "-Wl,--version-script=$(location :export.map)",
     ],
     deps = [
         ":dylib",
