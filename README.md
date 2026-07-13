@@ -35,7 +35,7 @@ At the root of the project there are patches for `third_part/iree` and
 Those can be applied using the script `scripts/patch-third_party.sh`:
 
 ```shell
-./scripts/patche-third_party.sh --restore-first all
+./scripts/patch-third_party.sh --restore-first all
 ```
 
 See the `--help` option for more details.
