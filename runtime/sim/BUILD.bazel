@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:defs.bzl", "cc_import")
 
@@ -32,21 +33,48 @@ config_setting(
     ],
 )
 
-# Target: mpact_simulator
+# Define the build flag
+string_flag(
+    name = "simulator_type",
+    build_setting_default = "mpact",
+    values = [
+        "mpact",
+        "verilator",
+    ],
+)
+
+config_setting(
+    name = "use_mpact",
+    flag_values = {":simulator_type": "mpact"},
+)
+
+config_setting(
+    name = "use_verilator",
+    flag_values = {":simulator_type": "verilator"},
+)
+
+# Target: simulator (formerly mpact_simulator)
 cc_library(
     name = "mpact_simulator",
     srcs = select({
-        ":linux_x86_64": ["simulator_mpact.cpp"],
+        ":linux_x86_64": ["simulator.cpp"],
         "//conditions:default": [],
     }),
     hdrs = select({
         ":linux_x86_64": ["simulator_api.h"],
         "//conditions:default": [],
     }),
+    local_defines = select({
+        ":use_mpact": ["USE_MPACT_PREBUILT"],
+        ":use_verilator": ["USE_VERILATOR"],
+    }),
     visibility = ["//visibility:public"],
     deps = select({
-        ":linux_x86_64": [":simulator_lib_import"],
-        "//conditions:default": [],
+        ":use_mpact": [":simulator_lib_import"],
+        ":use_verilator": [
+            "@coralnpu_hw//hw_sim:coralnpu_simulator_headers",
+            "@coralnpu_hw//hw_sim:core_mini_axi_simulator_rvv",
+        ],
     }),
 )
 
@@ -88,7 +116,6 @@ cc_library(
 )
 
 # Wrapper for the precompiled .so file
-# TODO(b/507534842): Build the .so file from source if possible.
 cc_import(
     name = "simulator_lib_import",
     shared_library = "libcoralnpu_simulator_mpact.so",

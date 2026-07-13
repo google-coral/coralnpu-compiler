@@ -23,8 +23,13 @@ build-crt() {
   local toolchain_root_abs
   toolchain_root_abs=$(cd "${build_dir}" && pwd)/toolchain_rv32
 
+  local cmake_gen=()
+  if command -v ninja >/dev/null 2>&1; then
+    cmake_gen=(-G Ninja)
+  fi
+
   if [[ ! -f "${crt_build_dir}/CMakeCache.txt" ]]; then
-    cmake -G Ninja \
+    cmake "${cmake_gen[@]}" \
       -S "${PWD}/crt" \
       -B "${crt_build_dir}" \
       -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}" \
@@ -45,13 +50,18 @@ setup-bazel() {
 
 setup-cmake() {
   MODE="cmake"
+  export PATH="${HOME}/.local/bin:${PATH}"
   local build_dir="../coralnpu-compiler-build"
+  local cmake_gen=()
+  if command -v ninja >/dev/null 2>&1; then
+    cmake_gen=(-G Ninja)
+  fi
   if [[ ! -f "${build_dir}/CMakeCache.txt" ]]; then
-    cmake -G Ninja -B "${build_dir}" -S . \
+    cmake "${cmake_gen[@]}" -B "${build_dir}" -S . \
       -DIREE_HAL_DRIVER_LOCAL_SYNC=ON
   fi
 
-  BUILD_TARGETS=(cmake --build "${build_dir}" --target coralnpu-compile iree-run-module)
+  BUILD_TARGETS=(cmake --build "${build_dir}" --target coralnpu_compiler_tools_coralnpu-compile iree-run-module)
   IREE_COMPILE=("${build_dir}"/compiler/tools/coralnpu-compile)
   IREE_RUN_MODULE=("${build_dir}"/third_party/iree/tools/iree-run-module)
 }
@@ -128,6 +138,7 @@ main() {
   # Configure the local device
   iree_compile_options+=(--iree-hal-target-device=local)
   iree_compile_options+=(--iree-hal-local-target-device-backends=llvm-cpu)
+  iree_compile_options+=(--iree-llvmcpu-link-embedded=false)
   iree_compile_options+=(--iree-llvmcpu-target-cpu=host)
 
   # Configure the CoralNPU device
