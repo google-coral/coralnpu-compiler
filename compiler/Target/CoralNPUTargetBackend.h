@@ -39,6 +39,8 @@ class OpPassManager;
 
 namespace mlir::coralnpu_compiler {
 
+class RegisterAllocationReportCollector;
+
 struct CoralNPUOptions {
   // CoralNPU specific options:
   int dtcmSizeKb = 32;
@@ -49,6 +51,9 @@ struct CoralNPUOptions {
   int tileUnrollAlignment = 0;
   int tileReductionAlignment = 1;
   int maxLoopUnrolling = 32;
+  std::string registerAllocationReportFormat = "none";
+  std::string registerAllocationReportDir = "";
+  std::string registerAllocationReportFilter = ".*dispatch.*|main";
 
   // LLVMCPU options:
   std::string targetABI = "ilp32";
@@ -122,6 +127,22 @@ struct CoralNPUOptions {
             "Maximum unroll factor allowed for any loop (default: 32). LLVM "
             "unrolling can be too aggressive, which leads to ITCM overflow. "
             "Setting this to 1 effectively disables unrolling."));
+
+    binder.opt<std::string>(
+        "coralnpu-dump-register-allocation-report-format",
+        registerAllocationReportFormat, llvm::cl::cat(category),
+        llvm::cl::desc(
+            "Register allocation report format (none, pretty, json)"));
+    binder.opt<std::string>(
+        "coralnpu-dump-register-allocation-report-dir",
+        registerAllocationReportDir, llvm::cl::cat(category),
+        llvm::cl::desc("Directory to dump register allocation reports. "
+                       "'-' for stdout, empty for stderr."));
+    binder.opt<std::string>(
+        "coralnpu-dump-register-allocation-report-filter",
+        registerAllocationReportFilter, llvm::cl::cat(category),
+        llvm::cl::desc("Regex pattern to filter functions in the report "
+                       "(default: '.*dispatch.*|main')"));
   }
 
   LogicalResult validate(MLIRContext *context = nullptr) const;
@@ -133,6 +154,8 @@ class CoralNPUTargetBackend final
   explicit CoralNPUTargetBackend(const CoralNPUOptions &options);
 
   std::string getLegacyDefaultDeviceID() const override;
+
+  SupportedTypes getSupportedTypes(MLIRContext *context) const override;
 
   void getDefaultExecutableTargets(
       MLIRContext *context, StringRef deviceID, DictionaryAttr deviceConfigAttr,
@@ -180,6 +203,10 @@ class CoralNPUTargetBackend final
       const llvm::Triple &targetTriple,
       const SmallVector<iree_compiler::IREE::HAL::Artifact> &objectFiles,
       iree_compiler::IREE::HAL::LinkerTool *linkerTool);
+
+  void dumpRegisterAllocationReport(
+      const RegisterAllocationReportCollector &collector,
+      iree_compiler::IREE::HAL::ExecutableVariantOp variantOp);
 
   iree_compiler::IREE::HAL::LLVMTargetOptions defaultOptions_;
   CoralNPUOptions options_;

@@ -14,7 +14,11 @@
 
 #include "compiler/Target/CoralNPUTargetBackend.h"
 
+#include "compiler/Target/CoralNPUDiagnosticHandler.h"
 #include "compiler/Target/CoralNPULinkerTool.h"
+#include "compiler/Target/RegisterAllocationReportCollector.h"
+#include "compiler/Target/RegisterUsageTrackerPass.h"
+#include "compiler/Target/Utils.h"
 #include "compiler/Transforms/Passes.h"
 
 // IREE headers
@@ -31,6 +35,7 @@
 #include "iree/compiler/Codegen/LLVMCPU/Passes.h"
 #include "iree/compiler/Codegen/Utils/Utils.h"
 #include "iree/compiler/Dialect/Encoding/IR/EncodingTypes.h"
+#include "iree/compiler/Dialect/HAL/IR/HALOps.h"
 #include "iree/compiler/Dialect/HAL/Utils/LLVMLinkerUtils.h"
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtDialect.h"
 #include "iree/compiler/Dialect/Util/IR/UtilTypes.h"
@@ -46,19 +51,31 @@
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
+// #include "mlir/Support/LLVM.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 
 // LLVM headers
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
+
+// Standard headers
+#include <mutex>
+#include <set>
+#include <vector>
 
 #define DEBUG_TYPE "coralnpu-target"
 using llvm::dbgs;
@@ -154,6 +171,60 @@ static LogicalResult appendDebugDatabase(
 static constexpr char kQueryFunctionName[] =
     "iree_hal_executable_library_query";
 
+std::mutex gReportMutex;
+
+class InterceptingPassManager : public llvm::legacy::PassManager {
+ public:
+  InterceptingPassManager(
+      RegisterAllocationReportCollector *collector = nullptr)
+      : collector(collector), virtRegRewriterCount(0) {}
+
+  void add(llvm::Pass *P) override {
+    std::string name = P->getPassName().str();
+    llvm::legacy::PassManager::add(P);
+
+    if (name == "Virtual Register Rewriter") {
+      virtRegRewriterCount++;
+      // Inject the tracker pass after the second Virtual Register Rewriter
+      // pass, which corresponds to when all virtual registers have been
+      // rewritten to physical registers in this target's pipeline.
+      if (virtRegRewriterCount == 2 && collector) {
+        llvm::legacy::PassManager::add(
+            createRegisterUsageTrackerPass(collector));
+      }
+    }
+  }
+
+ private:
+  RegisterAllocationReportCollector *collector;
+  int virtRegRewriterCount;
+};
+
+// Copied from
+// third_party/iree/compiler/plugins/target/LLVMCPU/LLVMIRPasses.cpp:runEmitObjFilePasses
+// Modified to inject RegisterUsageTrackerPass when collector is provided.
+LogicalResult runEmitObjFilePasses(
+    llvm::TargetMachine *machine, llvm::Module *module,
+    llvm::CodeGenFileType fileType, std::string *objData,
+    RegisterAllocationReportCollector *collector) {
+  llvm::SmallVector<char, 0> stream_buffer;
+  {
+    llvm::raw_svector_ostream ostream(stream_buffer);
+    InterceptingPassManager passManager(collector);
+    passManager.add(
+        new llvm::TargetLibraryInfoWrapperPass(machine->getTargetTriple()));
+    if (machine->addPassesToEmitFile(passManager, ostream,
+                                     /*DwoOut=*/nullptr, fileType,
+                                     /*DisableVerify=*/true)) {
+      return failure();
+    }
+
+    passManager.run(*module);
+  }
+  *objData = std::string(stream_buffer.begin(), stream_buffer.end());
+  return success();
+}
+
 }  // namespace
 
 LogicalResult CoralNPUOptions::validate(MLIRContext *context) const {
@@ -187,6 +258,15 @@ LogicalResult CoralNPUOptions::validate(MLIRContext *context) const {
            << "coralnpu-tile-parallel-alignment must be non-negative, got "
            << tileParallelAlignment;
   }
+  if (registerAllocationReportFormat != "none" &&
+      registerAllocationReportFormat != "pretty" &&
+      registerAllocationReportFormat != "json") {
+    return emitError(loc)
+           << "coralnpu-dump-register-allocation-report-format must be one of "
+              "none, pretty, json; got '"
+           << registerAllocationReportFormat << "'";
+  }
+
   return success();
 }
 
@@ -207,6 +287,11 @@ CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options)
 
 std::string CoralNPUTargetBackend::getLegacyDefaultDeviceID() const {
   return "coralnpu";
+}
+
+IREE::HAL::TargetBackend::SupportedTypes
+CoralNPUTargetBackend::getSupportedTypes(MLIRContext *context) const {
+  return getCoralNPUSupportedTypes(context);
 }
 
 void CoralNPUTargetBackend::getDefaultExecutableTargets(
@@ -321,6 +406,17 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
     const SerializationOptions &options,
     IREE::HAL::ExecutableVariantOp variantOp, OpBuilder &executableBuilder) {
   llvm::LLVMContext context;
+
+  bool registerAllocationReportEnabled =
+      options_.registerAllocationReportFormat != "none";
+  RegisterAllocationReportCollector collector;
+  std::unique_ptr<CoralNPUDiagnosticHandler> diagHandler;
+
+  if (registerAllocationReportEnabled) {
+    diagHandler = std::make_unique<CoralNPUDiagnosticHandler>(&collector);
+    context.setDiagnosticHandler(std::move(diagHandler));
+  }
+
   auto maybeTarget = getVariantTarget(variantOp);
   if (!maybeTarget) return failure();
   const IREE::HAL::LLVMTarget &target = *maybeTarget;
@@ -615,9 +711,11 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
 
   {
     std::string objectData;
-    if (failed(IREE::HAL::runEmitObjFilePasses(
+    RegisterAllocationReportCollector *objCollector =
+        registerAllocationReportEnabled ? &collector : nullptr;
+    if (failed(coralnpu_compiler::runEmitObjFilePasses(
             targetMachine.get(), llvmModule.get(),
-            llvm::CodeGenFileType::ObjectFile, &objectData))) {
+            llvm::CodeGenFileType::ObjectFile, &objectData, objCollector))) {
       return variantOp.emitError()
              << "failed to compile LLVM-IR module to an object file";
     }
@@ -636,9 +734,9 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
 
   if (!options.dumpIntermediatesPath.empty()) {
     std::string asmData;
-    if (failed(IREE::HAL::runEmitObjFilePasses(
+    if (failed(coralnpu_compiler::runEmitObjFilePasses(
             targetMachine.get(), llvmModule.get(),
-            llvm::CodeGenFileType::AssemblyFile, &asmData))) {
+            llvm::CodeGenFileType::AssemblyFile, &asmData, nullptr))) {
       return variantOp.emitError()
              << "failed to compile LLVM-IR module to an assembly file";
     }
@@ -671,14 +769,60 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
     }
   }
 
+  LogicalResult result = failure();
   if (target.linkStatic) {
-    return serializeStaticLibraryExecutable(options, target, variantOp,
-                                            executableBuilder, libraryName,
-                                            queryFunctionName, objectFiles);
+    result = serializeStaticLibraryExecutable(options, target, variantOp,
+                                              executableBuilder, libraryName,
+                                              queryFunctionName, objectFiles);
   } else {
-    return serializeDynamicLibraryExecutable(
+    result = serializeDynamicLibraryExecutable(
         options, target, variantOp, executableBuilder, libraryName,
         targetTriple, objectFiles, linkerTool.get());
+  }
+
+  dumpRegisterAllocationReport(collector, variantOp);
+
+  return result;
+}
+
+void CoralNPUTargetBackend::dumpRegisterAllocationReport(
+    const RegisterAllocationReportCollector &collector,
+    IREE::HAL::ExecutableVariantOp variantOp) {
+  if (collector.isEmpty()) return;
+
+  std::string format = options_.registerAllocationReportFormat;
+  std::string dir = options_.registerAllocationReportDir;
+  std::string filter = options_.registerAllocationReportFilter;
+
+  if (dir == "-" || dir.empty()) {
+    std::lock_guard<std::mutex> lock(gReportMutex);
+    llvm::raw_ostream &os = (dir == "-") ? llvm::outs() : llvm::errs();
+    if (format == "json") {
+      collector.dumpJson(os, filter);
+    } else {
+      collector.dumpPretty(os, filter);
+    }
+    return;
+  }
+
+  // Write to file in directory
+  SmallString<128> filePath(dir);
+  std::string variantName = variantOp.getName().str();
+  llvm::sys::path::append(filePath, variantName + "_regalloc." +
+                                        (format == "json" ? "json" : "txt"));
+
+  std::error_code ec;
+  llvm::raw_fd_ostream os(filePath, ec, llvm::sys::fs::OF_Text);
+  if (ec) {
+    variantOp.emitWarning()
+        << "failed to open register allocation report file: " << ec.message();
+    return;
+  }
+
+  if (format == "json") {
+    collector.dumpJson(os, filter);
+  } else {
+    collector.dumpPretty(os, filter);
   }
 }
 

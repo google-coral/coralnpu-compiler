@@ -31,12 +31,17 @@ iree_cc_library(
   NAME
     CoralNPUTarget
   HDRS
+    "CoralNPUDiagnosticHandler.h"
     "CoralNPULinkerTool.h"
     "CoralNPUTargetBackend.h"
+    "RegisterAllocationReportCollector.h"
+    "RegisterUsageTrackerPass.h"
   SRCS
     "CoralNPULinkerTool.cpp"
     "CoralNPUTarget.cpp"
     "CoralNPUTargetBackend.cpp"
+    "RegisterAllocationReportCollector.cpp"
+    "RegisterUsageTrackerPass.cpp"
   INCLUDES
     "${CMAKE_SOURCE_DIR}"
   DEPS
@@ -62,6 +67,7 @@ iree_cc_library(
     iree::compiler::PluginAPI
     iree::compiler::Utils
     LLVMBitWriter
+    LLVMCodeGen
     LLVMCore
     LLVMLinker
     LLVMSupport

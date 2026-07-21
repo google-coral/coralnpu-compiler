@@ -27,10 +27,15 @@ cc_library(
         "CoralNPULinkerTool.cpp",
         "CoralNPUTarget.cpp",
         "CoralNPUTargetBackend.cpp",
+        "RegisterAllocationReportCollector.cpp",
+        "RegisterUsageTrackerPass.cpp",
     ],
     hdrs = [
+        "CoralNPUDiagnosticHandler.h",
         "CoralNPULinkerTool.h",
         "CoralNPUTargetBackend.h",
+        "RegisterAllocationReportCollector.h",
+        "RegisterUsageTrackerPass.h",
     ],
     data = [
         "//crt:coralnpu_tcm_ld",
@@ -61,6 +66,7 @@ cc_library(
         "@iree_core//compiler/src/iree/compiler/PluginAPI",
         "@iree_core//compiler/src/iree/compiler/Utils",
         "@llvm-project//llvm:BitWriter",
+        "@llvm-project//llvm:CodeGen",
         "@llvm-project//llvm:Core",
         "@llvm-project//llvm:Linker",
         "@llvm-project//llvm:Support",
