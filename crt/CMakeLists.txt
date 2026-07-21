@@ -71,6 +71,9 @@ foreach(target
       -mcmodel=medany
       -ffreestanding
       -fno-builtin
+      -Os
+      -ffunction-sections
+      -fdata-sections
   )
 endforeach()
 

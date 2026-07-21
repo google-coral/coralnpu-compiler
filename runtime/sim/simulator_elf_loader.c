@@ -22,6 +22,12 @@
 
 #include "runtime/sim/simulator_api.h"
 
+// Global ITCM size used by the simulator ELF loader to validate segments.
+// This is needed because the simulator is a global singleton and does not
+// have access to the HAL device parameters during dispatch execution.
+// 0 is not a valid value! coralnpu_driver.c assigns the real value.
+uint32_t coralnpu_itcm_size = 0;
+
 static bool iree_hal_coralnpu_simulator_is_elf32(
     iree_const_byte_span_t elf_image) {
   if (elf_image.data_length < sizeof(Elf32_Ehdr)) {
@@ -51,6 +57,8 @@ static iree_status_t iree_hal_coralnpu_validate_segment(uint32_t address,
     return iree_ok_status();
   }
 
+  assert(coralnpu_itcm_size != 0);
+
   if (iree_hal_coralnpu_range_fits(coralnpu_itcm_start, coralnpu_itcm_size,
                                    address, size) ||
       iree_hal_coralnpu_range_fits(coralnpu_dtcm_start, coralnpu_dtcm_size,
@@ -70,6 +78,8 @@ static iree_status_t iree_hal_coralnpu_copy_segment(uint32_t address,
   if (size == 0) {
     return iree_ok_status();
   }
+
+  assert(coralnpu_itcm_size != 0);
 
   if (iree_hal_coralnpu_range_fits(coralnpu_itcm_start, coralnpu_itcm_size,
                                    address, size)) {

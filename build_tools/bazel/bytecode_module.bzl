@@ -49,6 +49,9 @@ def coralnpu_bytecode_module(
     actual_flags = list(flags) + [
         "--output-format=vm-bytecode",
         "--mlir-print-op-on-diagnostic=false",
+        # Disabling conv generalization prevents decomposition into generic ops,
+        # allowing convolutions to be vectorized directly for CoralNPU.
+        "--iree-global-opt-experimental-disable-conv-generalization",
     ]
 
     cmd = " && ".join([

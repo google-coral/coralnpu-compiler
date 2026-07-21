@@ -48,4 +48,5 @@ config.substitutions.append(
      '--iree-llvmcpu-target-cpu=host '
      '--iree-hal-target-device=coralnpu '
      '--coralnpu-target-abi=ilp32 '
-     '--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f '))
+     '--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f '
+     '--iree-global-opt-experimental-disable-conv-generalization '))

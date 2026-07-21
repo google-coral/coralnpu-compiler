@@ -32,11 +32,15 @@
 #include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenDialect.h"
 #include "iree/compiler/Codegen/Utils/CPUUtils.h"
 #include "iree/compiler/Codegen/Utils/Utils.h"
+#include "iree/compiler/Dialect/HAL/IR/HALOps.h"
 #include "iree/compiler/Dialect/HAL/IR/HALTypes.h"
+#include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtInterfaces.h"
 
 // MLIR headers
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/Builders.h"
@@ -102,25 +106,61 @@ struct LoopClassification {
   SmallVector<size_t> reductionLoops;
 };
 
+// Analyzes input operands to find a pair that forms a contraction structure.
+// Returns the indexing maps for (LHS, RHS) if found, otherwise nullopt.
+std::optional<std::pair<AffineMap, AffineMap>> findContractionOperands(
+    linalg::LinalgOp linalgOp, const LoopClassification &classification) {
+  if (linalgOp.getNumDpsInputs() < 2) return std::nullopt;
+
+  auto parallelLoops = classification.vectorLoops;  // currently all parallel
+  auto reductionLoops = classification.reductionLoops;
+
+  for (size_t i = 0; i < linalgOp.getNumDpsInputs(); ++i) {
+    for (size_t j = i + 1; j < linalgOp.getNumDpsInputs(); ++j) {
+      auto mapA =
+          linalgOp.getMatchingIndexingMap(linalgOp.getDpsInputOperand(i));
+      auto mapB =
+          linalgOp.getMatchingIndexingMap(linalgOp.getDpsInputOperand(j));
+
+      bool hasOnlyA = false;
+      bool hasOnlyB = false;
+      for (size_t pLoop : parallelLoops) {
+        bool inA = mapA.isFunctionOfDim(pLoop);
+        bool inB = mapB.isFunctionOfDim(pLoop);
+        if (inA && !inB) hasOnlyA = true;
+        if (!inA && inB) hasOnlyB = true;
+      }
+
+      bool hasSharedReduction = false;
+      for (size_t rLoop : reductionLoops) {
+        if (mapA.isFunctionOfDim(rLoop) && mapB.isFunctionOfDim(rLoop)) {
+          hasSharedReduction = true;
+          break;
+        }
+      }
+
+      // A contraction pair must:
+      // 1. Have at least one parallel loop unique to LHS (maps to vectorLoops).
+      // 2. Have at least one parallel loop unique to RHS (maps to unrollLoops).
+      // 3. Share at least one reduction loop.
+      if (hasOnlyA && hasOnlyB && hasSharedReduction) {
+        return std::make_pair(mapA, mapB);
+      }
+    }
+  }
+  return std::nullopt;
+}
+
 // Refines parallel loops for Linalg operations to distinguish M and N loops
-// for matmul-like alignment.
-void refineLinalgOpLoops(linalg::LinalgOp linalgOp,
+// for matmul-like alignment using the provided LHS and RHS indexing maps.
+void refineLinalgOpLoops(AffineMap lhsMap, AffineMap rhsMap,
                          LoopClassification &classification) {
-  if (linalgOp.getNumDpsInputs() < 2) return;
-
-  auto lhsMap = linalgOp.getMatchingIndexingMap(linalgOp.getDpsInputOperand(0));
-  auto rhsMap = linalgOp.getMatchingIndexingMap(linalgOp.getDpsInputOperand(1));
-
   SmallVector<size_t> parallelLoops;
   std::swap(parallelLoops, classification.vectorLoops);
 
   for (size_t parallelLoop : parallelLoops) {
-    if (lhsMap.isFunctionOfDim(parallelLoop)) {
-      classification.vectorLoops.push_back(parallelLoop);
-      continue;
-    }
-
-    if (rhsMap.isFunctionOfDim(parallelLoop)) {
+    if (rhsMap.isFunctionOfDim(parallelLoop) &&
+        !lhsMap.isFunctionOfDim(parallelLoop)) {
       classification.unrollLoops.push_back(parallelLoop);
       continue;
     }
@@ -144,10 +184,10 @@ LoopClassification classifyLoops(TilingInterface tilingOp) {
     classification.vectorLoops.push_back(index);
   }
 
-  // If it is a LinalgOp, we can try to distinguish M and N for matmul-like
-  // alignment
   if (auto linalgOp = dyn_cast<linalg::LinalgOp>(tilingOp.getOperation())) {
-    refineLinalgOpLoops(linalgOp, classification);
+    if (auto mapsOr = findContractionOperands(linalgOp, classification)) {
+      refineLinalgOpLoops(mapsOr->first, mapsOr->second, classification);
+    }
     return classification;
   }
 
@@ -406,12 +446,138 @@ int64_t estimateOperandFootprint(TilingInterface tilingOp, OpOperand *operand,
   return numElements * (type.getElementType().getIntOrFloatBitWidth() / 8);
 }
 
+// Estimates the footprint of the temporary buffers allocated during unpack
+// lowering.
+//
+// Unpack lowering uses temporary stack buffers in DTCM to perform the transpose
+// and unpacking operations. The size and number of these buffers depend on:
+// 1. Whether the register-level transpose reuse optimization succeeds (which
+//    requires register tile size N to be a multiple of inner tile size N).
+//    - If it succeeds, the footprint is small and constant (proportional to
+//      register tile sizes).
+//    - If it fails, the footprint is larger and proportional to DTCM tile
+//    sizes,
+//      often requiring 3 separate buffers.
+// 2. Vectorization padding (e.g., +2, +10) added to handle unaligned vector
+//    accesses.
+//
+// This function estimates the footprint by resolving the tile sizes to register
+// tile sizes (if available) or falling back to DTCM tile sizes, ensuring a safe
+// and accurate estimate in both cases.
+int64_t estimateUnpackTemporariesFootprint(
+    linalg::UnPackOp unpackOp, ArrayRef<int64_t> tileSizes,
+    ArrayRef<int64_t> registerTileSizes) {
+  auto destType = dyn_cast<RankedTensorType>(unpackOp.getDest().getType());
+  if (!destType) return 0;
+
+  int64_t elementBits = destType.getElementType().getIntOrFloatBitWidth();
+  int64_t elemSize = llvm::divideCeil(elementBits, 8);
+
+  auto innerDimsPos = unpackOp.getInnerDimsPos();
+  auto mixedTiles = unpackOp.getMixedTiles();
+
+  if (innerDimsPos.size() != 2) {
+    // Fallback if not 2D unpack
+    int64_t totalElements = 1;
+    for (size_t i = 0; i < innerDimsPos.size(); ++i) {
+      int64_t dim = innerDimsPos[i];
+      int64_t tileSize = tileSizes[dim];
+      if (dim < registerTileSizes.size() && registerTileSizes[dim] > 0) {
+        tileSize = registerTileSizes[dim];
+      }
+      int64_t innerTileSize = getConstantIntValue(mixedTiles[i]).value_or(1);
+      int64_t numTiles = llvm::divideCeil(tileSize, innerTileSize);
+      if (tileSize % innerTileSize != 0) numTiles += 1;
+      totalElements *= numTiles * innerTileSize;
+    }
+    return 2 * totalElements * elemSize;
+  }
+
+  int64_t dimM = innerDimsPos[0];
+  int64_t dimN = innerDimsPos[1];
+
+  int64_t tileM = tileSizes[dimM];
+  int64_t tileN = tileSizes[dimN];
+
+  int64_t regM = 0;
+  int64_t regN = 0;
+  if (dimM < registerTileSizes.size()) {
+    regM = registerTileSizes[dimM];
+  }
+  if (dimN < registerTileSizes.size()) {
+    regN = registerTileSizes[dimN];
+  }
+
+  // We use register tile sizes (if available) instead of DTCM tile sizes for
+  // footprint estimation. In the optimized codegen pipeline, the transpose
+  // temporary is bufferized to a register-tile-sized stack allocation that is
+  // reused.
+  // However, if the register tile size N (regN) is smaller than the inner tile
+  // size N (innerN), this reuse optimization fails, and the compiler allocates
+  // 3 separate buffers of sizes proportional to the DTCM tile size.
+  // Using resolvedTileM/N (which fallback to DTCM tile sizes if register sizes
+  // are not yet selected) handles both cases: it correctly estimates the large
+  // footprint when reuse fails, and significantly reduces the estimate (making
+  // it constant based on register tile size) when reuse succeeds.
+  // See unpack_footprint_analysis.md for details.
+  int64_t resolvedTileM = regM > 0 ? regM : tileM;
+  int64_t resolvedTileN = regN > 0 ? regN : tileN;
+
+  int64_t innerM = getConstantIntValue(mixedTiles[0]).value_or(1);
+  int64_t innerN = getConstantIntValue(mixedTiles[1]).value_or(1);
+
+  auto getMaxOuterTiles = [](int64_t tile, int64_t inner) -> int64_t {
+    if (tile == 0)
+      return int64_t(1);  // If not tiled, we might still need 1 tile?
+    if (tile % inner == 0) return tile / inner;
+    return llvm::divideCeil(tile, inner) + 1;
+  };
+
+  int64_t maxOuterM = getMaxOuterTiles(resolvedTileM, innerM);
+  int64_t maxOuterN = getMaxOuterTiles(resolvedTileN, innerN);
+
+  // The magic numbers `+ 2` and `paddingN = 10` (and the `+ 1` in
+  // getMaxOuterTiles when not a multiple) represent safety padding added by the
+  // compiler for vectorization (to handle boundary conditions and unaligned
+  // vector accesses).
+  // The 3-buffer structure `buffer1 + 2 * buffer2` represents the worst-case
+  // allocations when reuse optimization fails.
+  int64_t paddingN = 0;
+  if (resolvedTileN > 0 && resolvedTileN % innerN != 0) {
+    paddingN = 10;
+  }
+
+  int64_t sizeM = maxOuterM * innerM;
+  int64_t sizeN = maxOuterN * innerN;
+
+  int64_t buffer1 = innerM * (sizeN + 2) * elemSize;
+  int64_t buffer2 = (sizeM + 2) * (sizeN + paddingN) * elemSize;
+
+  return buffer1 + 2 * buffer2;
+}
+
 // Estimates the combined footprint of the op's operands.
 int64_t estimateFootprint(TilingInterface tilingOp,
                           ArrayRef<int64_t> tileSizes) {
   int64_t totalBytes = 0;
   for (OpOperand &operand : tilingOp.getOperation()->getOpOperands()) {
     totalBytes += estimateOperandFootprint(tilingOp, &operand, tileSizes);
+  }
+  if (auto unpackOp = dyn_cast<linalg::UnPackOp>(tilingOp.getOperation())) {
+    SmallVector<int64_t> registerTileSizes;
+    IREE::Codegen::LoweringConfigAttrInterface loweringConfig;
+    if (auto compilationInfo = getCompilationInfo(tilingOp.getOperation())) {
+      loweringConfig = compilationInfo.getLoweringConfig();
+    } else {
+      loweringConfig = getLoweringConfig(tilingOp.getOperation());
+    }
+    if (loweringConfig) {
+      auto regLevel = IREE::CPU::TilingLevel::VectorCommonParallelTiles;
+      registerTileSizes = loweringConfig.getStaticTilingLevelSizes(
+          static_cast<unsigned>(regLevel), tilingOp.getOperation());
+    }
+    totalBytes += estimateUnpackTemporariesFootprint(unpackOp, tileSizes,
+                                                     registerTileSizes);
   }
   return totalBytes;
 }
@@ -450,7 +616,7 @@ struct Alignments {
 
 // Computes optimal alignments dynamically based on register budget and vector
 // width.
-void resolveAlignments(int64_t vectorWidth, int64_t numRegisters,
+void resolveAlignments(Operation *op, int64_t vectorWidth, int64_t numRegisters,
                        const LoopClassification &loops,
                        ArrayRef<int64_t> staticLoopRanges,
                        int64_t parallelAlignmentOpt, Alignments &alignments) {
@@ -464,6 +630,8 @@ void resolveAlignments(int64_t vectorWidth, int64_t numRegisters,
 
     if (alignments.vectorAlign != 0) return;
 
+    // TODO: this seems to utilize one vector regiset, maybe we should use
+    // 32*vectorWidth / (num-operands + 1)?
     alignments.vectorAlign = vectorWidth;
     return;
   }
@@ -473,24 +641,33 @@ void resolveAlignments(int64_t vectorWidth, int64_t numRegisters,
   if (alignments.vectorAlign == 0) {
     // TODO (sflur): the 8 below is roughly `numRegisters / 4`, so maybe we
     // should do that instead of 8.
-    int64_t defaultMReg = std::min<int64_t>(vectorWidth, 8);
-    alignments.vectorAlign = defaultMReg;
+    alignments.vectorAlign = std::min<int64_t>(vectorWidth, 8);
   }
 
   if (alignments.unrollAlign != 0) return;
 
+  // Determine widening factor based on input element size (assume 32-bit acc).
+  double wideningFactor = 1.0;
+  if (auto linalgOp = dyn_cast<linalg::LinalgOp>(op)) {
+    if (linalgOp.getNumDpsInputs() >= 2) {
+      auto inputType =
+          dyn_cast<ShapedType>(linalgOp.getDpsInputOperand(0)->get().getType());
+      if (inputType) {
+        auto elemType = inputType.getElementType();
+        int64_t inputBits = elemType.getIntOrFloatBitWidth();
+        wideningFactor = 32.0 / inputBits;
+      }
+    }
+  }
+
   // Compute unroll factor U based on register budget:
-  // 1 (LHS) + U (RHS) + M_reg * U (Acc) <= numRegisters
-  // U * (1 + M_reg) <= numRegisters - 1
-  // U <= (numRegisters - 1) / (1 + M_reg)
-  int64_t uLimit = (numRegisters - 1) / (1 + alignments.vectorAlign);
-  uLimit = std::max<int64_t>(1, uLimit);
+  // 1 (LHS) + U (RHS) + M_reg * U * wideningFactor (Acc) <= numRegisters
+  // U * (1 + M_reg * wideningFactor) <= numRegisters - 15 (headroom)
+  double uLimit = static_cast<double>(numRegisters - 15) /
+                  (1.0 + alignments.vectorAlign * wideningFactor);
 
   // Consider actual unroll loop sizes to avoid over-aligning.
-  // If there are multiple unroll loops, we take the maximum required unroll
-  // factor so that larger loops can utilize the full budget, while smaller
-  // loops will be capped by their static range during tiling.
-  int64_t uOpt = uLimit;
+  double uOpt = uLimit;
   if (!loops.unrollLoops.empty()) {
     int64_t maxFullUnroll = 0;
     for (size_t unrollLoopIdx : loops.unrollLoops) {
@@ -500,10 +677,27 @@ void resolveAlignments(int64_t vectorWidth, int64_t numRegisters,
       maxFullUnroll = std::max(maxFullUnroll, fullUnroll);
     }
     assert(maxFullUnroll > 0);
-    uOpt = std::min(uLimit, maxFullUnroll);
+    uOpt = std::min(uLimit, static_cast<double>(maxFullUnroll));
   }
 
-  alignments.unrollAlign = vectorWidth * uOpt;
+  // Compute alignment. If uOpt is less than 1, we allow fractional vector
+  // width.
+  if (uOpt >= 1.0) {
+    alignments.unrollAlign = vectorWidth * static_cast<int64_t>(uOpt);
+  } else {
+    // Try power of 2 fractions: vectorWidth / 2, vectorWidth / 4, etc.
+    int64_t fraction = 2;
+    while (fraction <= vectorWidth) {
+      if (uOpt >= 1.0 / fraction) {
+        alignments.unrollAlign = vectorWidth / fraction;
+        break;
+      }
+      fraction *= 2;
+    }
+    if (alignments.unrollAlign == 0) {
+      alignments.unrollAlign = 1;  // Fallback
+    }
+  }
   return;
 }
 
@@ -524,6 +718,56 @@ void alignTileSizes(ArrayRef<size_t> loopIndices, int64_t alignment,
     if (dtcmTileSizes[loopIdx] <= alignment) continue;
     dtcmTileSizes[loopIdx] = llvm::alignDown(dtcmTileSizes[loopIdx], alignment);
   }
+}
+
+void distributeBudget(ArrayRef<size_t> loops,
+                      ArrayRef<int64_t> staticLoopRanges, int64_t &budget,
+                      SmallVectorImpl<int64_t> &sizes) {
+  for (auto loopIdx : llvm::reverse(loops)) {
+    int64_t range = staticLoopRanges[loopIdx];
+    int64_t tileSize = 1;
+    if (budget > 1 && range > 0) {
+      tileSize = std::min(range, budget);
+      // If tileSize is not a factor of range there's a good chance we will get
+      // dynamic shapes. Since vectorization does not work on dynamic shapes we
+      // want to prevent that.
+      // TODO(sflur): in some extrim cases this can lead to tileSize == 1 (e.g.
+      // when range is a prime number). Maybe limit how much we can decrease the
+      // size, and use peeling to eliminate dynamic shapes.
+      while (range % tileSize != 0) --tileSize;
+    }
+    sizes[loopIdx] = tileSize;
+    budget /= tileSize;
+  }
+}
+
+bool isConvolutionOp(Operation *op) {
+  if (!op) return false;
+  if (isa<linalg::ConvolutionOpInterface>(op)) return true;
+  if (auto linalgOp = dyn_cast<linalg::LinalgOp>(op)) {
+    return linalg::isaConvolutionOpInterface(linalgOp,
+                                             /*allowEmptyConvolvedDims=*/true);
+  }
+  return false;
+}
+
+IREE::Codegen::DispatchLoweringPassPipeline getDispatchLoweringPipeline(
+    Operation *op) {
+  if (!op) {
+    return IREE::Codegen::DispatchLoweringPassPipeline::None;
+  }
+  if (isConvolutionOp(op)) {
+    return IREE::Codegen::DispatchLoweringPassPipeline::
+        CPUConvTileAndDecomposeExpert;
+  }
+  if (isa<linalg::Mmt4DOp, linalg::BatchMmt4DOp>(op)) {
+    return IREE::Codegen::DispatchLoweringPassPipeline::Mmt4dTilingExpert;
+  }
+  if (isa<IREE::LinalgExt::LinalgExtOp>(op)) {
+    return IREE::Codegen::DispatchLoweringPassPipeline::
+        CPULinalgExtTileAndVectorize;
+  }
+  return IREE::Codegen::DispatchLoweringPassPipeline::CPUDoubleTilingExpert;
 }
 
 struct CoralNPUTilingAnalysis {
@@ -663,23 +907,26 @@ struct CoralNPUTileSizeSelectionRegisterPass
     // 3. Resolve alignments
     Alignments alignments = {vectorAlignment, unrollAlignment,
                              reductionAlignment};
-    resolveAlignments(vectorWidth, numVectorRegisters, analysis.classification,
-                      analysis.staticLoopRanges, parallelAlignment, alignments);
+    resolveAlignments(tilingOp.getOperation(), vectorWidth, numVectorRegisters,
+                      analysis.classification, analysis.staticLoopRanges,
+                      parallelAlignment, alignments);
 
     // 4. Compute register tile sizes
     int64_t numLoops = analysis.staticLoopRanges.size();
     SmallVector<int64_t> vectorParallelSizes(numLoops, 0);
     SmallVector<int64_t> vectorReductionSizes(numLoops, 0);
 
-    for (size_t vectorLoopIdx : analysis.classification.vectorLoops) {
-      vectorParallelSizes[vectorLoopIdx] = std::min<int64_t>(
-          analysis.staticLoopRanges[vectorLoopIdx], alignments.vectorAlign);
-    }
+    // Distribute vectorAlign budget to vectorLoops (innermost first)
+    int64_t vectorBudget = alignments.vectorAlign;
+    distributeBudget(analysis.classification.vectorLoops,
+                     analysis.staticLoopRanges, vectorBudget,
+                     vectorParallelSizes);
 
-    for (size_t unrollLoopIdx : analysis.classification.unrollLoops) {
-      vectorParallelSizes[unrollLoopIdx] = std::min<int64_t>(
-          analysis.staticLoopRanges[unrollLoopIdx], alignments.unrollAlign);
-    }
+    // Distribute unrollAlign budget to unrollLoops (innermost first)
+    int64_t unrollBudget = alignments.unrollAlign;
+    distributeBudget(analysis.classification.unrollLoops,
+                     analysis.staticLoopRanges, unrollBudget,
+                     vectorParallelSizes);
 
     for (size_t reductionLoopIdx : analysis.classification.reductionLoops) {
       vectorReductionSizes[reductionLoopIdx] =
@@ -707,9 +954,9 @@ struct CoralNPUTileSizeSelectionRegisterPass
     auto loweringConfig =
         IREE::CPU::LoweringConfigAttr::get(context, configItems);
 
-    auto translationInfo = IREE::Codegen::TranslationInfoAttr::get(
-        context,
-        IREE::Codegen::DispatchLoweringPassPipeline::CPUDoubleTilingExpert);
+    auto pipeline = getDispatchLoweringPipeline(tilingOp.getOperation());
+    auto translationInfo =
+        IREE::Codegen::TranslationInfoAttr::get(context, pipeline);
 
     auto compilationInfo = IREE::Codegen::CompilationInfoAttr::get(
         context, loweringConfig, translationInfo);
@@ -819,8 +1066,7 @@ struct CoralNPUTileSizeSelectionDTCMPass
     // it?).
     double safetyMultiplier = 1.2;
     bool fallback = false;
-    while (static_cast<double>(estimateFootprint(tilingOp, dtcmTileSizes)) *
-               safetyMultiplier >
+    while (estimateFootprint(tilingOp, dtcmTileSizes) * safetyMultiplier >
            dtcmLimitBytes) {
       if (shrinkLoops(analysis.classification.vectorLoops,
                       alignments.vectorAlign, dtcmTileSizes))
@@ -856,6 +1102,13 @@ struct CoralNPUTileSizeSelectionDTCMPass
       return;
     }
 
+    // Set untiled dimensions to 0
+    for (size_t i = 0; i < dtcmTileSizes.size(); ++i) {
+      dtcmTileSizes[i] = dtcmTileSizes[i] == analysis.staticLoopRanges[i]
+                             ? 0
+                             : dtcmTileSizes[i];
+    }
+
     LLVM_DEBUG({
       llvm::dbgs() << "    Selected DTCM tile sizes: [";
       for (auto size : dtcmTileSizes) llvm::dbgs() << size << " ";
@@ -880,9 +1133,6 @@ struct CoralNPUTileSizeSelectionDTCMPass
       cacheReductionSizes[reductionLoopIdx] = dtcmTileSizes[reductionLoopIdx];
     }
 
-    auto distParallelAttr = getTilingLevelAttr(context, distParallelSizes);
-    auto cacheReductionAttr = getTilingLevelAttr(context, cacheReductionSizes);
-
     SmallVector<NamedAttribute> configItems;
     DictionaryAttr oldDict = cpuLoweringConfig.getConfig();
     for (auto attr : oldDict.getValue()) {
@@ -901,8 +1151,11 @@ struct CoralNPUTileSizeSelectionDTCMPass
       configItems.push_back(NamedAttribute(name, attr));
     };
 
+    auto distParallelAttr = getTilingLevelAttr(context, distParallelSizes);
     updateConfigItem(IREE::CPU::TilingLevel::CacheParallelTiles,
                      distParallelAttr);
+
+    auto cacheReductionAttr = getTilingLevelAttr(context, cacheReductionSizes);
     updateConfigItem(IREE::CPU::TilingLevel::CacheReductionTiles,
                      cacheReductionAttr);
 
@@ -910,16 +1163,13 @@ struct CoralNPUTileSizeSelectionDTCMPass
       SmallVector<int64_t> vectorParallelSizes(numLoops, 0);
       SmallVector<int64_t> vectorReductionSizes(numLoops, 0);
       for (size_t vectorLoopIdx : analysis.classification.vectorLoops) {
-        vectorParallelSizes[vectorLoopIdx] =
-            std::min<int64_t>(dtcmTileSizes[vectorLoopIdx], 1);
+        vectorParallelSizes[vectorLoopIdx] = 1;
       }
       for (size_t unrollLoopIdx : analysis.classification.unrollLoops) {
-        vectorParallelSizes[unrollLoopIdx] =
-            std::min<int64_t>(dtcmTileSizes[unrollLoopIdx], 1);
+        vectorParallelSizes[unrollLoopIdx] = 1;
       }
       for (size_t reductionLoopIdx : analysis.classification.reductionLoops) {
-        vectorReductionSizes[reductionLoopIdx] =
-            std::min<int64_t>(dtcmTileSizes[reductionLoopIdx], 1);
+        vectorReductionSizes[reductionLoopIdx] = 1;
       }
       auto vectorParallelAttr =
           getTilingLevelAttr(context, vectorParallelSizes);

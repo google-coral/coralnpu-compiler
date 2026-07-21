@@ -40,8 +40,10 @@ using LLVMTargetOptions = iree_compiler::IREE::HAL::LLVMTargetOptions;
 class CoralNPULinkerTool final : public LinkerTool {
  public:
   CoralNPULinkerTool(const llvm::Triple& targetTriple,
-                     LLVMTargetOptions targetOptions)
-      : LinkerTool(targetTriple, std::move(targetOptions)) {}
+                     LLVMTargetOptions targetOptions,
+                     std::string linkerScriptPath)
+      : LinkerTool(targetTriple, std::move(targetOptions)),
+        linkerScriptPath_(std::move(linkerScriptPath)) {}
 
   std::string getLinkerPath() const {
     if (!targetOptions.embeddedLinkerPath.empty()) {
@@ -64,6 +66,10 @@ class CoralNPULinkerTool final : public LinkerTool {
   }
 
   std::string getLinkerScriptPath() const {
+    if (!linkerScriptPath_.empty()) {
+      return linkerScriptPath_;
+    }
+
     std::string scriptPath =
         mlir::iree_compiler::findTool("../../crt/coralnpu_tcm.ld");
     if (!scriptPath.empty()) {
@@ -87,6 +93,7 @@ class CoralNPULinkerTool final : public LinkerTool {
             llvm::GlobalValue::VisibilityTypes::DefaultVisibility);
         llvmFunc->setLinkage(llvm::GlobalValue::LinkageTypes::ExternalLinkage);
         llvmFunc->setUWTableKind(llvm::UWTableKind::Default);
+        llvmFunc->addFnAttr("noinline");
       }
     }
 
@@ -140,7 +147,6 @@ class CoralNPULinkerTool final : public LinkerTool {
             mlir::iree_compiler::escapeCommandLineComponent(linkerScriptPath),
         "--no-undefined",
         "--gc-sections",
-        "--discard-all",
         "--no-warn-rwx-segments",
     };
 
@@ -150,6 +156,7 @@ class CoralNPULinkerTool final : public LinkerTool {
 
     if (!targetOptions.target.debugSymbols) {
       flags.push_back("--strip-debug");
+      flags.push_back("--discard-all");
     }
 
     for (const auto& objectFile : objectFiles) {
@@ -193,15 +200,17 @@ class CoralNPULinkerTool final : public LinkerTool {
   }
 
  private:
-  CoralNPUOptions coralNPUOptions_;
+  std::string linkerScriptPath_;
 };
 
 }  // namespace
 
 std::unique_ptr<iree_compiler::IREE::HAL::LinkerTool> createCoralNPULinkerTool(
     const llvm::Triple& targetTriple,
-    iree_compiler::IREE::HAL::LLVMTargetOptions& targetOptions) {
-  return std::make_unique<CoralNPULinkerTool>(targetTriple, targetOptions);
+    iree_compiler::IREE::HAL::LLVMTargetOptions& targetOptions,
+    std::string linkerScriptPath) {
+  return std::make_unique<CoralNPULinkerTool>(targetTriple, targetOptions,
+                                              std::move(linkerScriptPath));
 }
 
 }  // namespace mlir::coralnpu_compiler

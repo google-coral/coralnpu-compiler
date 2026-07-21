@@ -108,8 +108,8 @@ def CoralNPUTileSizeSelectionDTCM : InterfacePass<"coralnpu-tile-size-selection-
   }];
   let options = [
     Option<"dtcmSizeKb", "dtcm-size-kb", "int",
-           /*default=*/"8",
-           "Size of the DTCM in KB.">,
+           /*default=*/"32",
+           "Size of the DTCM in KB.">
   ];
 }
 
@@ -122,6 +122,20 @@ def CoralNPUTileSizeSelectionWorkgroup : InterfacePass<"coralnpu-tile-size-selec
   let constructor = [{
     ::mlir::coralnpu_compiler::createCoralNPUTileSizeSelectionWorkgroupPass()
   }];
+}
+
+def CoralNPULimitLoopUnrolling : Pass<"coralnpu-limit-loop-unrolling", "mlir::func::FuncOp"> {
+  let summary = "Limit loop unrolling by annotating loops";
+  let description = [{
+    This pass limits unrolling with llvm.loop_annotation to disable further unrolling in LLVM.
+  }];
+  let constructor = [{
+    ::mlir::coralnpu_compiler::createCoralNPULimitLoopUnrollingPass()
+  }];
+  let options = [
+    Option<"maxLoopUnrolling", "max-loop-unrolling", "int", /*default=*/"32",
+           "Maximum unroll factor allowed for any loop (default: 32). LLVM unrolling can be too aggressive, which leads to ITCM overflow. Setting this to 1 effectively disables unrolling.">
+  ];
 }
 
 #endif // IREE_CORALNPU_PASSES

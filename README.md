@@ -364,30 +364,27 @@ To run the tests with CMake, you need to configure CMake with testing enabled (`
 cmake -G Ninja -B "${BUILD_DIR}" -S . -DIREE_BUILD_TESTS=ON
 ```
 
-Then build the compiler, runtime, and test dependencies. Note that `iree-check-module` (required for running tests) is not built by default and must be built explicitly:
+Then build the compiler, runtime, test runner, and test dependencies (including generated test bytecode modules):
 
 ```shell
-# Build default targets (compiler, runtime, generated tests)
-cmake --build "${BUILD_DIR}" -j $(nproc)
+# Build all test dependencies and test bytecode modules
+cmake --build "${BUILD_DIR}" --target iree-test-deps -j $(nproc)
 
-# Build test runner dependency
-cmake --build "${BUILD_DIR}" --target iree-check-module -j $(nproc)
+# (Optional) Or build only model test dependencies
+cmake --build "${BUILD_DIR}" --target tests/models/all -j $(nproc)
 ```
 
-Finally, run the tests using `ctest`. It is recommended to run tests in parallel:
+Finally, run the tests using `ctest`. Always pass `-L "ci"` to run the passing CI test suite and exclude manual/failing test instances:
 
 ```shell
-# Run all tests
-ctest --test-dir "${BUILD_DIR}" -j $(nproc)
-
-# Run only CI tests
+# Run all CI tests
 ctest --test-dir "${BUILD_DIR}" -L "ci" -j $(nproc)
 
-# Run only StableHLO tests
-ctest --test-dir "${BUILD_DIR}" -R "tests/models/stablehlo/.*" -j $(nproc)
+# Run only StableHLO CI tests
+ctest --test-dir "${BUILD_DIR}" -R "tests/models/stablehlo/.*" -L "ci" -j $(nproc)
 
-# Run only Linalg op tests
-ctest --test-dir "${BUILD_DIR}" -R "tests/models/linalg/.*" -j $(nproc)
+# Run only Linalg CI tests
+ctest --test-dir "${BUILD_DIR}" -R "tests/models/linalg/.*" -L "ci" -j $(nproc)
 ```
 
 ## Run the compiler (using Bazel)

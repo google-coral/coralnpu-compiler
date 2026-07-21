@@ -193,29 +193,14 @@ def stablehlo_op_tests_f32(name = "stablehlo_op_f32_tests"):
     # Reason: VMVX lacks math.copysign legalization for f32
     op_tests_f32(name = "sign_rank4_f32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "sign_rank4_f32.mlir", tags = ["manual"])
 
-    # Reason: CoralNPU atan2(0,0) returns NaN (spec expects 0)
-    op_tests_f32(name = "atan2_rank1_f32", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "atan2_rank1_f32.mlir", tags = ["manual"])
-
-    # Reason: CoralNPU atan2(0,0) returns NaN (spec expects 0)
-    op_tests_f32(name = "atan2_rank2_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "atan2_rank2_f32.mlir", tags = ["manual"])
-
-    # Reason: CoralNPU atan2(0,0) returns NaN (spec expects 0)
-    op_tests_f32(name = "atan2_rank3_f32", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "atan2_rank3_f32.mlir", tags = ["manual"])
-
-    # Reason: CoralNPU atan2(0,0) returns NaN (spec expects 0)
-    op_tests_f32(name = "atan2_rank4_f32", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "atan2_rank4_f32.mlir", tags = ["manual"])
-
-    # Reason: CoralNPU pow(0,0) returns NaN (spec expects 1)
-    op_tests_f32(name = "power_rank1_f32", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "power_rank1_f32.mlir", tags = ["manual"])
-
-    # Reason: CoralNPU pow(0,0) returns NaN (spec expects 1)
-    op_tests_f32(name = "power_rank2_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "power_rank2_f32.mlir", tags = ["manual"])
-
-    # Reason: CoralNPU pow(0,0) returns NaN (spec expects 1)
-    op_tests_f32(name = "power_rank3_f32", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "power_rank3_f32.mlir", tags = ["manual"])
-
-    # Reason: CoralNPU pow(0,0) returns NaN (spec expects 1)
-    op_tests_f32(name = "power_rank4_f32", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "power_rank4_f32.mlir", tags = ["manual"])
+    op_tests_f32(name = "atan2_rank1_f32", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "atan2_rank1_f32.mlir")
+    op_tests_f32(name = "atan2_rank2_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "atan2_rank2_f32.mlir")
+    op_tests_f32(name = "atan2_rank3_f32", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "atan2_rank3_f32.mlir")
+    op_tests_f32(name = "atan2_rank4_f32", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "atan2_rank4_f32.mlir")
+    op_tests_f32(name = "power_rank1_f32", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "power_rank1_f32.mlir")
+    op_tests_f32(name = "power_rank2_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "power_rank2_f32.mlir")
+    op_tests_f32(name = "power_rank3_f32", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "power_rank3_f32.mlir")
+    op_tests_f32(name = "power_rank4_f32", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "power_rank4_f32.mlir")
     op_tests_f32(name = "remainder_rank1_f32", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "remainder_rank1_f32.mlir")
     op_tests_f32(name = "remainder_rank2_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "remainder_rank2_f32.mlir")
     op_tests_f32(name = "remainder_rank3_f32", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "remainder_rank3_f32.mlir")

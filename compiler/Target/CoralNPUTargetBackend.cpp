@@ -15,7 +15,6 @@
 #include "compiler/Target/CoralNPUTargetBackend.h"
 
 #include "compiler/Target/CoralNPULinkerTool.h"
-#include "compiler/Target/Utils.h"
 #include "compiler/Transforms/Passes.h"
 
 // IREE headers
@@ -201,17 +200,13 @@ CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options)
   clOptions.linkEmbedded = options.linkEmbedded;
   clOptions.debugSymbols = options.debugSymbols;
   clOptions.embeddedLinkerPath = options.embeddedLinkerPath;
+  clOptions.keepLinkerArtifacts = options.keepLinkerArtifacts;
 
   defaultOptions_ = clOptions.getTargetOptions();
 }
 
 std::string CoralNPUTargetBackend::getLegacyDefaultDeviceID() const {
   return "coralnpu";
-}
-
-IREE::HAL::TargetBackend::SupportedTypes
-CoralNPUTargetBackend::getSupportedTypes(MLIRContext *context) const {
-  return getCoralNPUSupportedTypes(context);
 }
 
 void CoralNPUTargetBackend::getDefaultExecutableTargets(
@@ -303,7 +298,11 @@ void CoralNPUTargetBackend::buildConfigurationPassPipeline(
 
 void CoralNPUTargetBackend::buildTranslationPassPipeline(
     IREE::HAL::ExecutableTargetAttr targetAttr, OpPassManager &passManager) {
-  buildLLVMCPUCodegenPassPipeline(passManager, /*enableAArch64SME=*/false);
+  buildLLVMCPUCodegenPassPipeline(
+      passManager, /*enableAArch64SME=*/false, [this](OpPassManager &pm) {
+        pm.nest<ModuleOp>().addNestedPass<func::FuncOp>(
+            createCoralNPULimitLoopUnrollingPass(options_.maxLoopUnrolling));
+      });
 }
 
 void CoralNPUTargetBackend::buildLinkingPassPipeline(
@@ -497,7 +496,8 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
     targetOptions.target = target;
 
     if (target.getLinkEmbedded()) {
-      linkerTool = createCoralNPULinkerTool(targetTriple, targetOptions);
+      linkerTool = createCoralNPULinkerTool(targetTriple, targetOptions,
+                                            options_.linkerScriptPath);
     } else {
       linkerTool = iree_compiler::IREE::HAL::LinkerTool::getForTarget(
           targetTriple, targetOptions);

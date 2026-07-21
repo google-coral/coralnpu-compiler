@@ -17,7 +17,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-RV32_COPTS = "-march=rv32imf_zicsr_zifencei_zbb -mabi=ilp32 -mcmodel=medany -ffreestanding -fno-builtin -I. -Ithird_party/iree/runtime/src"
+RV32_COPTS = "-march=rv32imf_zicsr_zifencei_zbb -mabi=ilp32 -mcmodel=medany -ffreestanding -fno-builtin -I. -Ithird_party/iree/runtime/src -Os -ffunction-sections -fdata-sections"
 
 TOOLCHAIN_DIR = "$$(dirname $$(dirname $(location @rv32_toolchain//:bin/riscv32-unknown-elf-clang)))"
 

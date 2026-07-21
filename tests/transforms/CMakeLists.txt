@@ -16,6 +16,7 @@ iree_lit_test_suite(
   NAME
     lit
   SRCS
+    "affinity_annotation.mlir"
     "dump_affinity_execution_profile.mlir"
     "dump_affinity_execution_profile_empty.mlir"
   TOOLS

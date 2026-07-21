@@ -31,6 +31,7 @@ iree_cc_library(
   SRCS
     "CoralNPUAffinityAnnotation.cpp"
     "CoralNPUDumpAffinityExecutionProfile.cpp"
+    "CoralNPULimitLoopUnrolling.cpp"
     "CoralNPUTileSizeSelection.cpp"
     "Passes.cpp"
   INCLUDES
@@ -44,18 +45,26 @@ iree_cc_library(
     iree::compiler::Codegen::Utils
     iree::compiler::Dialect::HAL::Analysis
     iree::compiler::Dialect::HAL::IR
+    iree::compiler::Dialect::LinalgExt::IR
     iree::compiler::Dialect::Stream::IR
     iree::compiler::Dialect::TensorExt::IR
     iree::compiler::Dialect::Util::IR
     LLVMSupport
     MLIRAffineDialect
+    MLIRArithDialect
     MLIRFuncDialect
     MLIRFunctionInterfaces
     MLIRIR
+    MLIRLLVMDialect
     MLIRLinalgDialect
     MLIRLinalgUtils
+    MLIRMathDialect
+    MLIRMemRefDialect
     MLIRPass
+    MLIRSCFDialect
+    MLIRSCFTransforms
     MLIRTensorDialect
     MLIRTilingInterface
+    MLIRVectorDialect
   PUBLIC
 )

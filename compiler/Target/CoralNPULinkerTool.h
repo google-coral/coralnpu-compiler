@@ -16,8 +16,8 @@
 #define COMPILER_TARGET_CORALNPULINKERTOOL_H_
 
 #include <memory>
+#include <string>
 
-#include "compiler/Target/CoralNPUTargetBackend.h"
 #include "compiler/plugins/target/LLVMCPU/LLVMTargetOptions.h"
 #include "compiler/plugins/target/LLVMCPU/LinkerTool.h"
 #include "llvm/TargetParser/Triple.h"
@@ -26,7 +26,8 @@ namespace mlir::coralnpu_compiler {
 
 std::unique_ptr<iree_compiler::IREE::HAL::LinkerTool> createCoralNPULinkerTool(
     const llvm::Triple& targetTriple,
-    iree_compiler::IREE::HAL::LLVMTargetOptions& targetOptions);
+    iree_compiler::IREE::HAL::LLVMTargetOptions& targetOptions,
+    std::string linkerScriptPath);
 
 }  // namespace mlir::coralnpu_compiler
 

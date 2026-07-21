@@ -16,22 +16,26 @@
 
 #include "runtime/driver/coralnpu_device.h"
 
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
-
-#include "iree/base/internal/arena.h"
-#include "iree/base/internal/cpu.h"
-#include "iree/hal/utils/deferred_command_buffer.h"
-#include "iree/hal/utils/file_registry.h"
-#include "iree/hal/utils/file_transfer.h"
-#include "iree/hal/utils/queue_emulation.h"
 #include "runtime/driver/coralnpu_command_buffer.h"
 #include "runtime/driver/coralnpu_event.h"
 #include "runtime/driver/coralnpu_executable_cache.h"
 #include "runtime/driver/coralnpu_semaphore.h"
 #include "runtime/sim/simulator_api.h"
 #include "runtime/sim/simulator_format.h"
+
+// IREE
+#include "iree/base/internal/arena.h"
+#include "iree/base/internal/cpu.h"
+#include "iree/hal/utils/deferred_command_buffer.h"
+#include "iree/hal/utils/file_registry.h"
+#include "iree/hal/utils/file_transfer.h"
+#include "iree/hal/utils/queue_emulation.h"
+
+// Standard headers
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 typedef struct iree_hal_coralnpu_device_t {
   iree_hal_resource_t resource;
@@ -68,6 +72,16 @@ void iree_hal_coralnpu_device_params_initialize(
     iree_hal_coralnpu_device_params_t *out_params) {
   memset(out_params, 0, sizeof(*out_params));
   out_params->arena_block_size = 32 * 1024;
+
+  uint32_t itcm_size = 8 * 1024;  // Default to 8KB
+  const char *itcm_size_env = getenv("CORALNPU_ITCM_SIZE_KB");
+  if (itcm_size_env) {
+    int kb = atoi(itcm_size_env);
+    if (kb > 0) {
+      itcm_size = kb * 1024;
+    }
+  }
+  out_params->itcm_size = itcm_size;
 }
 
 static iree_status_t iree_hal_coralnpu_device_check_params(
@@ -123,6 +137,7 @@ iree_status_t iree_hal_coralnpu_device_create(
     iree_hal_coralnpu_semaphore_state_initialize(&device->semaphore_state);
   }
 
+  coralnpu_itcm_size = params->itcm_size;
   simulator_create();
 
   if (iree_status_is_ok(status)) {

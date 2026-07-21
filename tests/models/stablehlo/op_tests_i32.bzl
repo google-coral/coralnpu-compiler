@@ -95,7 +95,7 @@ def stablehlo_op_tests_i32(name = "stablehlo_op_i32_tests"):
     op_tests_i32(name = "transpose_rank3_i32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "transpose_rank3_i32.mlir")
     op_tests_i32(name = "transpose_rank4_i32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "transpose_rank4_i32.mlir")
     op_tests_i32(name = "iota_rank2_i32", instances = ["(4,8)"], test = "iota_rank2_i32.mlir")
-    op_tests_i32(name = "reverse_rank2_i32", instances = ["(4,8)", ("(120,256)", ["manual"]), "(300,450)"], test = "reverse_rank2_i32.mlir")
+    op_tests_i32(name = "reverse_rank2_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "reverse_rank2_i32.mlir")
     op_tests_i32(name = "while_rank1_i32", instances = ["(8)", "(256)"], test = "while_rank1_i32.mlir")
 
     # Elementwise operations

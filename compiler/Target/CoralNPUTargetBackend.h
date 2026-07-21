@@ -41,18 +41,21 @@ namespace mlir::coralnpu_compiler {
 
 struct CoralNPUOptions {
   // CoralNPU specific options:
-  int dtcmSizeKb = 8;
+  int dtcmSizeKb = 32;
+  std::string linkerScriptPath = "";
   int numVectorRegisters = 32;
   int tileParallelAlignment = 0;
   int tileVectorAlignment = 0;
   int tileUnrollAlignment = 0;
   int tileReductionAlignment = 1;
+  int maxLoopUnrolling = 32;
 
   // LLVMCPU options:
   std::string targetABI = "ilp32";
   std::string targetCPUFeatures = "+m,+f,+zvl128b,+zve32f";
   bool linkEmbedded = true;
   bool debugSymbols = false;
+  bool keepLinkerArtifacts = false;
   std::string embeddedLinkerPath = "";
 
   void bindOptions(iree_compiler::OptionsBinder &binder) {
@@ -75,12 +78,21 @@ struct CoralNPUOptions {
         llvm::cl::cat(category),
         llvm::cl::desc("Tool used to link embedded ELFs produced by CoralNPU"));
 
+    binder.opt<std::string>(
+        "coralnpu-linker-script-path", linkerScriptPath,
+        llvm::cl::cat(category),
+        llvm::cl::desc("Path to the linker script used to link embedded ELFs"));
+
     binder.opt<bool>("coralnpu-debug-symbols", debugSymbols,
                      llvm::cl::cat(category),
                      llvm::cl::desc("Generate and embed debug information"));
+    binder.opt<bool>(
+        "coralnpu-keep-linker-artifacts", keepLinkerArtifacts,
+        llvm::cl::cat(category),
+        llvm::cl::desc("Keep LLVM linker target artifacts (.so/.elf/etc)"));
     binder.opt<int>("coralnpu-dtcm-size-kb", dtcmSizeKb,
                     llvm::cl::cat(category),
-                    llvm::cl::desc("Size of the DTCM in KB (default: 8)"));
+                    llvm::cl::desc("Size of the DTCM in KB (default: 32)"));
     binder.opt<int>("coralnpu-num-vector-registers", numVectorRegisters,
                     llvm::cl::cat(category),
                     llvm::cl::desc("Number of vector registers (default: 32)"));
@@ -103,6 +115,13 @@ struct CoralNPUOptions {
         llvm::cl::cat(category),
         llvm::cl::desc(
             "Tile alignment for generic parallel loops (0 for auto)"));
+    binder.opt<int>(
+        "coralnpu-max-loop-unrolling", maxLoopUnrolling,
+        llvm::cl::cat(category),
+        llvm::cl::desc(
+            "Maximum unroll factor allowed for any loop (default: 32). LLVM "
+            "unrolling can be too aggressive, which leads to ITCM overflow. "
+            "Setting this to 1 effectively disables unrolling."));
   }
 
   LogicalResult validate(MLIRContext *context = nullptr) const;
@@ -114,8 +133,6 @@ class CoralNPUTargetBackend final
   explicit CoralNPUTargetBackend(const CoralNPUOptions &options);
 
   std::string getLegacyDefaultDeviceID() const override;
-
-  SupportedTypes getSupportedTypes(MLIRContext *context) const override;
 
   void getDefaultExecutableTargets(
       MLIRContext *context, StringRef deviceID, DictionaryAttr deviceConfigAttr,

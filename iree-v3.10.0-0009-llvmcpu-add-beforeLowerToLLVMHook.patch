@@ -1,0 +1,72 @@
+From 5aba118b7714faa8a48688de004ed0a18ccfe89f Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Sun, 12 Jul 2026 20:04:49 +0200
+Subject: [PATCH] [llvmcpu] add beforeLowerToLLVMHook
+
+---
+ compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp | 10 ++++++++--
+ compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h   |  6 ++++--
+ 2 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
+index 754e8d7916..fd80866064 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
+@@ -263,6 +263,7 @@ void addMultiTilingExpertPassPipeline(
+     };
+     funcPassManager.addPass(createFuseTensorPadWithConsumerPass());
+     funcPassManager.addPass(createConcretizePadResultShapePass());
++    funcPassManager.addPass(createCanonicalizerPass());
+   }
+ 
+   // `VectorInnerParallelTiles` level models the tiling and fusion for the
+@@ -686,8 +687,9 @@ void buildLLVMCPUCodegenConfigurationPassPipeline(
+   buildLLVMCPUCodegenConfigurationPassPipelineImpl(modulePassManager);
+ }
+ 
+-void buildLLVMCPUCodegenPassPipeline(OpPassManager &variantPassManager,
+-                                     bool enableAArch64SME) {
++void buildLLVMCPUCodegenPassPipeline(
++    OpPassManager &variantPassManager, bool enableAArch64SME,
++    std::function<void(OpPassManager &)> beforeLowerToLLVMHook) {
+ 
+   {
+     OpPassManager &modulePassManager = variantPassManager.nest<ModuleOp>();
+@@ -705,6 +707,10 @@ void buildLLVMCPUCodegenPassPipeline(OpPassManager &variantPassManager,
+   variantPassManager.addPass(createIREECodegenLowerAffinePass());
+   variantPassManager.addPass(IREE::Util::createDropCompilerHintsPass());
+ 
++  if (beforeLowerToLLVMHook) {
++    beforeLowerToLLVMHook(variantPassManager);
++  }
++
+   // Run conversion to LLVM at `ModuleOp` granularity.
+   {
+     OpPassManager &modulePassManager = variantPassManager.nest<ModuleOp>();
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h
+index 273dc739b9..eb951ca2a1 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h
+@@ -12,6 +12,7 @@
+ #ifndef IREE_COMPILER_CODEGEN_LLVMCPU_PASSES_H_
+ #define IREE_COMPILER_CODEGEN_LLVMCPU_PASSES_H_
+ 
++#include <functional>
+ #include <optional>
+ 
+ #include "iree/compiler/Codegen/Dialect/CPU/IR/IREECPUTypes.h"
+@@ -128,8 +129,9 @@ void buildLLVMCPUCodegenConfigurationPassPipeline(
+ /// Populates passes needed to lower high level ops, e.g., linalg, vector, etc,
+ /// to LLVM dialect via the structured ops path. The  `variantPassManager`
+ /// should operate on the module within the IREE::HAL::ExecutableOp.
+-void buildLLVMCPUCodegenPassPipeline(OpPassManager &variantPassManager,
+-                                     bool enableAArch64SME = false);
++void buildLLVMCPUCodegenPassPipeline(
++    OpPassManager &variantPassManager, bool enableAArch64SME = false,
++    std::function<void(OpPassManager &)> beforeLowerToLLVMHook = nullptr);
+ 
+ //----------------------------------------------------------------------------//
+ // LLVMCPU Linking Passes and Pipelines
+-- 
+2.55.0.795.g602f6c329a-goog
+

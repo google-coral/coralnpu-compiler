@@ -89,7 +89,7 @@ op_tests(
   INSTANCES
     "(4,8)(8,4)"
     "(120,256)(256,300)"
-    "(300,100)(100,450), [manual]"
+    "(300,100)(100,450)"
 )
 
 op_tests(
@@ -97,7 +97,7 @@ op_tests(
   TEST "batch_matmul_i16.mlir"
   INSTANCES
     "(2,4,8)(2,8,4)"
-    "(3,12,25)(3,25,30), [manual]"
+    "(3,12,25)(3,25,30)"
 )
 
 op_tests(
@@ -112,7 +112,7 @@ op_tests(
   NAME "conv_2d_nhwc_hwcf_i16"
   TEST "conv_2d_nhwc_hwcf_i16.mlir"
   INSTANCES
-    "(1,6,6,4)(3,3,4,4)"
+    "(1,6,6,4)(3,3,4,4), [manual]"
     "(1,8,8,8)(3,3,8,16)"
 )
 
@@ -120,7 +120,7 @@ op_tests(
   NAME "conv_2d_nhwc_hwcf_stride2_i16"
   TEST "conv_2d_nhwc_hwcf_stride2_i16.mlir"
   INSTANCES
-    "(1,6,6,4)(3,3,4,4)"
+    "(1,6,6,4)(3,3,4,4), [manual]"
     "(1,8,8,8)(3,3,8,16)"
 )
 
@@ -130,6 +130,8 @@ op_tests(
   INSTANCES
     "(1,6,6,4)(3,3,4,4)"
     "(1,8,8,8)(3,3,8,16)"
+  LABELS
+    "manual"
 )
 
 op_tests(
@@ -277,7 +279,7 @@ op_tests(
   TEST "transpose_3d_i16.mlir"
   INSTANCES
     "(2,3,4)"
-    "(10,20,30), [manual]"
+    "(10,20,30)"
     "(5,100,2)"
 )
 
@@ -342,7 +344,7 @@ op_tests(
     "(4,8)(4,8)"
     "(120,256)(120,256)"
     "(300,450)(300,450)"
-  DEFAULT_GEN "tools_check_gen_generators_positive_sequential_vmfb"
+  DEFAULT_GEN "//tools/check_gen/generators:positive_sequential_vmfb"
 )
 
 op_tests(
@@ -352,7 +354,7 @@ op_tests(
     "(4,8)(4,8)"
     "(120,256)(120,256)"
     "(300,450)(300,450)"
-  DEFAULT_GEN "tools_check_gen_generators_positive_sequential_vmfb"
+  DEFAULT_GEN "//tools/check_gen/generators:positive_sequential_vmfb"
 )
 
 op_tests(
@@ -390,7 +392,7 @@ op_tests(
   INSTANCES
     "(4,8)(8,4)"
     "(120,256)(256,300)"
-    "(300,100)(100,450), [manual]"
+    "(300,100)(100,450)"
 )
 
 op_tests(
@@ -398,7 +400,7 @@ op_tests(
   TEST "batch_reduce_matmul_i16.mlir"
   INSTANCES
     "(2,4,8)(2,8,4)"
-    "(3,12,25)(3,25,30), [manual]"
+    "(3,12,25)(3,25,30)"
 )
 
 op_tests(
@@ -406,7 +408,7 @@ op_tests(
   TEST "batch_mmt4d_i16.mlir"
   INSTANCES
     "(2,1,2,4,4)(2,2,2,4,4)"
-    "(3,2,3,4,2)(3,3,3,2,2), [manual]"
+    "(3,2,3,4,2)(3,3,3,2,2)"
 )
 
 op_tests(
@@ -458,7 +460,7 @@ op_tests(
   INSTANCES
     "(11)(3)"
     "(258)(5)"
-    "(453)(4), [manual]"
+    "(453)(4)"
 )
 
 op_tests(
@@ -482,7 +484,7 @@ op_tests(
   TEST "conv_2d_i16.mlir"
   INSTANCES
     "(11,11)(3,3)"
-    "(125,256)(5,7), [manual]"
+    "(125,256)(5,7)"
 )
 
 op_tests(
@@ -609,7 +611,7 @@ op_tests(
   NAME "conv_2d_nchw_fchw_i16"
   TEST "conv_2d_nchw_fchw_i16.mlir"
   INSTANCES
-    "(1,4,6,6)(4,4,3,3)"
+    "(1,4,6,6)(4,4,3,3), [manual]"
     "(1,8,8,8)(16,8,3,3)"
 )
 

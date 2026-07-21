@@ -60,6 +60,12 @@ createCoralNPUTileSizeSelectionDTCMPass(
 std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
 createCoralNPUTileSizeSelectionWorkgroupPass();
 
+std::unique_ptr<Pass> createCoralNPULimitLoopUnrollingPass();
+std::unique_ptr<Pass> createCoralNPULimitLoopUnrollingPass(
+    CoralNPULimitLoopUnrollingOptions options);
+std::unique_ptr<Pass> createCoralNPULimitLoopUnrollingPass(
+    int maxLoopUnrolling);
+
 }  // namespace mlir::coralnpu_compiler
 
 #endif  // COMPILER_TRANSFORMS_PASSES_H_

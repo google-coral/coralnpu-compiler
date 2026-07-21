@@ -727,6 +727,50 @@ op_tests(
 )
 
 op_tests(
+  NAME "cbrt_rank1_f32"
+  TEST "cbrt_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "cbrt_rank2_f32"
+  TEST "cbrt_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "cbrt_rank3_f32"
+  TEST "cbrt_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "cbrt_rank4_f32"
+  TEST "cbrt_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+  LABELS
+    "manual"
+)
+
+op_tests(
   NAME "ceil_rank1_f32"
   TEST "ceil_rank1_f32.mlir"
   INSTANCES
@@ -1123,6 +1167,50 @@ op_tests(
 )
 
 op_tests(
+  NAME "tan_rank1_f32"
+  TEST "tan_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "tan_rank2_f32"
+  TEST "tan_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "tan_rank3_f32"
+  TEST "tan_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "tan_rank4_f32"
+  TEST "tan_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+  LABELS
+    "manual"
+)
+
+op_tests(
   NAME "tanh_rank1_f32"
   TEST "tanh_rank1_f32.mlir"
   INSTANCES
@@ -1156,6 +1244,122 @@ op_tests(
     "(2,2,3,2)"
     "(2,3,4,50)"
     "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "sign_rank1_f32"
+  TEST "sign_rank1_f32.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "sign_rank2_f32"
+  TEST "sign_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "sign_rank3_f32"
+  TEST "sign_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "sign_rank4_f32"
+  TEST "sign_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "atan2_rank1_f32"
+  TEST "atan2_rank1_f32.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "atan2_rank2_f32"
+  TEST "atan2_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "atan2_rank3_f32"
+  TEST "atan2_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "atan2_rank4_f32"
+  TEST "atan2_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
+)
+
+op_tests(
+  NAME "power_rank1_f32"
+  TEST "power_rank1_f32.mlir"
+  INSTANCES
+    "(8)(8)"
+    "(256)(256)"
+    "(450)(450)"
+)
+
+op_tests(
+  NAME "power_rank2_f32"
+  TEST "power_rank2_f32.mlir"
+  INSTANCES
+    "(4,8)(4,8)"
+    "(120,256)(120,256)"
+    "(300,450)(300,450)"
+)
+
+op_tests(
+  NAME "power_rank3_f32"
+  TEST "power_rank3_f32.mlir"
+  INSTANCES
+    "(2,3,4)(2,3,4)"
+    "(10,20,30)(10,20,30)"
+    "(5,100,2)(5,100,2)"
+)
+
+op_tests(
+  NAME "power_rank4_f32"
+  TEST "power_rank4_f32.mlir"
+  INSTANCES
+    "(2,2,3,2)(2,2,3,2)"
+    "(2,3,4,50)(2,3,4,50)"
+    "(1,1,5,400)(1,1,5,400)"
 )
 
 op_tests(
@@ -1229,4 +1433,3 @@ op_tests(
     "(2,3,4,50)"
     "(1,1,5,400)"
 )
-

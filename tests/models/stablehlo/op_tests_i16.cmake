@@ -213,7 +213,7 @@ op_tests(
   INSTANCES
     "(4,8)(8,4)"
     "(120,256)(256,300)"
-    "(300,100)(100,450), [manual]"
+    "(300,100)(100,450)"
 )
 
 op_tests(
@@ -311,7 +311,7 @@ op_tests(
   INSTANCES
     "(4,8)(8,4)"
     "(120,256)(256,300)"
-    "(300,100)(100,450), [manual]"
+    "(300,100)(100,450)"
 )
 
 op_tests(
@@ -630,6 +630,42 @@ op_tests(
 )
 
 op_tests(
+  NAME "count_leading_zeros_rank1_i16"
+  TEST "count_leading_zeros_rank1_i16.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+)
+
+op_tests(
+  NAME "count_leading_zeros_rank2_i16"
+  TEST "count_leading_zeros_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+)
+
+op_tests(
+  NAME "count_leading_zeros_rank3_i16"
+  TEST "count_leading_zeros_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+)
+
+op_tests(
+  NAME "count_leading_zeros_rank4_i16"
+  TEST "count_leading_zeros_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+)
+
+op_tests(
   NAME "not_rank1_i16"
   TEST "not_rank1_i16.mlir"
   INSTANCES
@@ -663,6 +699,50 @@ op_tests(
     "(2,2,3,2)"
     "(2,3,4,50)"
     "(1,1,5,400)"
+)
+
+op_tests(
+  NAME "popcnt_rank1_i16"
+  TEST "popcnt_rank1_i16.mlir"
+  INSTANCES
+    "(8)"
+    "(256)"
+    "(450)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "popcnt_rank2_i16"
+  TEST "popcnt_rank2_i16.mlir"
+  INSTANCES
+    "(4,8)"
+    "(120,256)"
+    "(300,450)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "popcnt_rank3_i16"
+  TEST "popcnt_rank3_i16.mlir"
+  INSTANCES
+    "(2,3,4)"
+    "(10,20,30)"
+    "(5,100,2)"
+  LABELS
+    "manual"
+)
+
+op_tests(
+  NAME "popcnt_rank4_i16"
+  TEST "popcnt_rank4_i16.mlir"
+  INSTANCES
+    "(2,2,3,2)"
+    "(2,3,4,50)"
+    "(1,1,5,400)"
+  LABELS
+    "manual"
 )
 
 op_tests(
@@ -988,4 +1068,3 @@ op_tests(
     "(2,3,4,50)(2,3,4,50)"
     "(1,1,5,400)(1,1,5,400)"
 )
-
