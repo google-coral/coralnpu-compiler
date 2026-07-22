@@ -18,7 +18,7 @@ project(coralnpu_crt LANGUAGES C CXX ASM)
 
 # Generate coralnpu_tcm.ld without modifying the upstream template.
 file(READ
-  "${CMAKE_CURRENT_LIST_DIR}/coralnpu_tcm.ld.tpl"
+  "${CMAKE_CURRENT_LIST_DIR}/../third_party/coralnpu/toolchain/coralnpu_tcm.ld.tpl"
   CORALNPU_LINKER_SCRIPT
 )
 
@@ -44,10 +44,10 @@ file(WRITE
 )
 
 add_library(coralnpu_crt STATIC
-  crt.S
-  coralnpu_start.S
-  coralnpu_exceptions.cc
-  cxx_guards.cc
+  "${CMAKE_CURRENT_LIST_DIR}/../third_party/coralnpu/toolchain/crt/crt.S"
+  "${CMAKE_CURRENT_LIST_DIR}/../third_party/coralnpu/toolchain/crt/coralnpu_start.S"
+  "${CMAKE_CURRENT_LIST_DIR}/../third_party/coralnpu/toolchain/crt/coralnpu_exceptions.cc"
+  "${CMAKE_CURRENT_LIST_DIR}/../third_party/coralnpu/toolchain/crt/cxx_guards.cc"
 )
 
 add_library(coralnpu_iree STATIC

@@ -32,17 +32,17 @@ expand_template(
         "@@HEAP_SIZE_SPEC@@": ". = ORIGIN(DTCM) + LENGTH(DTCM) - STACK_SIZE;",
         "@@STACK_START_SPEC@@": "",
     },
-    template = "coralnpu_tcm.ld.tpl",
+    template = "@coralnpu_hw//toolchain:coralnpu_tcm.ld.tpl",
 )
 
 # Compile and archive coralnpu_crt using the local RV32 toolchain
 genrule(
     name = "libcoralnpu_crt",
     srcs = [
-        "crt.S",
-        "coralnpu_start.S",
-        "coralnpu_exceptions.cc",
-        "cxx_guards.cc",
+        "@coralnpu_hw//toolchain/crt:crt.S",
+        "@coralnpu_hw//toolchain/crt:coralnpu_start.S",
+        "@coralnpu_hw//toolchain/crt:coralnpu_exceptions.cc",
+        "@coralnpu_hw//toolchain/crt:cxx_guards.cc",
         "coralnpu_dispatch.h",
         "@rv32_toolchain//:all_files",
         "@rv32_toolchain//:bin/riscv32-unknown-elf-gcc",
@@ -51,10 +51,10 @@ genrule(
     ],
     outs = ["libcoralnpu_crt.a"],
     cmd = """
-        {gcc} {copts} -c $(location crt.S) -o crt.o
-        {gcc} {copts} -c $(location coralnpu_start.S) -o coralnpu_start.o
-        {gxx} {copts} -c $(location coralnpu_exceptions.cc) -o coralnpu_exceptions.o
-        {gxx} {copts} -c $(location cxx_guards.cc) -o cxx_guards.o
+        {gcc} {copts} -c $(location @coralnpu_hw//toolchain/crt:crt.S) -o crt.o
+        {gcc} {copts} -c $(location @coralnpu_hw//toolchain/crt:coralnpu_start.S) -o coralnpu_start.o
+        {gxx} {copts} -c $(location @coralnpu_hw//toolchain/crt:coralnpu_exceptions.cc) -o coralnpu_exceptions.o
+        {gxx} {copts} -c $(location @coralnpu_hw//toolchain/crt:cxx_guards.cc) -o cxx_guards.o
         {ar} rcs $@ crt.o coralnpu_start.o coralnpu_exceptions.o cxx_guards.o
     """.format(
         ar = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-ar)",
