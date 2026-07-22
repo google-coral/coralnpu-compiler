@@ -18,13 +18,11 @@ setup-bazel() {
 setup-cmake() {
   local build_dir="../coralnpu-compiler-build"
   if [[ ! -d "${build_dir}" ]]; then
-    cmake -G Ninja -B "${build_dir}" -S . \
-      -DIREE_TARGET_BACKEND_VMVX=ON \
-      -DIREE_HAL_DRIVER_LOCAL_SYNC=ON
+    cmake -G Ninja -B "${build_dir}" -S .
   fi
 
   BUILD_TARGETS=(cmake --build "${build_dir}" --target coralnpu-compile iree-run-module)
-  IREE_COMPILE=("${build_dir}"/coralnpu_compiler/tools/coralnpu-compile)
+  IREE_COMPILE=("${build_dir}"/compiler/tools/coralnpu-compile)
   IREE_RUN_MODULE=("${build_dir}"/third_party/iree/tools/iree-run-module)
 }
 
@@ -63,7 +61,8 @@ main() {
 
   # Configure the local device
   iree_compile_options+=(--iree-hal-target-device=local)
-  iree_compile_options+=(--iree-hal-local-target-device-backends=vmvx)
+  iree_compile_options+=(--iree-hal-local-target-device-backends=llvm-cpu)
+  iree_compile_options+=(--iree-llvmcpu-target-cpu=host)
 
   # Configure the CoralNPU device
   iree_compile_options+=(--iree-hal-target-device=coralnpu)

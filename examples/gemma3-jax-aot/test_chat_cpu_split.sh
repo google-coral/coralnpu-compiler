@@ -49,7 +49,7 @@ main() {
   local -a iree_options=()
   iree_options+=('--iree-hal-target-device=local')
   iree_options+=('--iree-hal-local-target-device-backends=llvm-cpu')
-  iree_options+=('--iree-llvmcpu-target-cpu-features=host')
+  iree_options+=('--iree-llvmcpu-target-cpu=host')
   # iree_options+=('--iree-llvmcpu-loop-unrolling=false')
   # iree_options+=('--iree-llvmcpu-loop-interleaving=false')
   # iree_options+=('--iree-llvmcpu-loop-vectorization=false')

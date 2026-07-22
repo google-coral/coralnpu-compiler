@@ -52,7 +52,7 @@ setup-cmake() {
   fi
 
   BUILD_TARGETS=(cmake --build "${build_dir}" --target coralnpu-compile iree-run-module)
-  IREE_COMPILE=("${build_dir}"/coralnpu_compiler/tools/coralnpu-compile)
+  IREE_COMPILE=("${build_dir}"/compiler/tools/coralnpu-compile)
   IREE_RUN_MODULE=("${build_dir}"/third_party/iree/tools/iree-run-module)
 }
 
@@ -93,7 +93,7 @@ main() {
   # Configure the CoralNPU device
   iree_compile_options+=(--iree-hal-target-device=coralnpu)
   iree_compile_options+=(--coralnpu-target-abi=ilp32)
-  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32x")
+  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32f")
 
   "${IREE_COMPILE[@]}" "${iree_compile_options[@]}"
 
@@ -128,12 +128,12 @@ main() {
   # Configure the local device
   iree_compile_options+=(--iree-hal-target-device=local)
   iree_compile_options+=(--iree-hal-local-target-device-backends=llvm-cpu)
-  iree_compile_options+=(--iree-llvmcpu-target-cpu-features=host)
+  iree_compile_options+=(--iree-llvmcpu-target-cpu=host)
 
   # Configure the CoralNPU device
   iree_compile_options+=(--iree-hal-target-device=coralnpu)
   iree_compile_options+=(--coralnpu-target-abi=ilp32)
-  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32x")
+  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32f")
 
   "${IREE_COMPILE[@]}" "${iree_compile_options[@]}"
 

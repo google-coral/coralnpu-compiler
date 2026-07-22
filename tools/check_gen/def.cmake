@@ -118,7 +118,7 @@ function(check_gen_tests)
       SRC
         "${OUT_FILE}"
       TARGET_BACKEND
-        "vmvx"
+        "llvm-cpu"
       DRIVER
         "local-sync"
       COMPILER_FLAGS

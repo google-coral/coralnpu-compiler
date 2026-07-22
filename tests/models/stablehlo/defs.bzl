@@ -5,7 +5,8 @@ load("//tests:defs.bzl", "coralnpu_check_gen_tests", "coralnpu_check_test")
 _COMMON_COMPILER_FLAGS = [
     # configure the local target
     "--iree-hal-target-device=local",
-    "--iree-hal-local-target-device-backends=vmvx",
+    "--iree-hal-local-target-device-backends=llvm-cpu",
+    "--iree-llvmcpu-target-cpu=host",
 
     # configure the coralnpu target
     "--iree-hal-target-device=coralnpu",

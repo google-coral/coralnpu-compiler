@@ -93,7 +93,10 @@ To generate check tests, you first need to compile the generators to `.vmfb` fil
 
 To compile a generator manually:
 ```bash
-coralnpu-compile --iree-hal-target-backends=vmvx \
+coralnpu-compile \
+  --iree-hal-target-device=local \
+  --iree-hal-local-target-device-backends=llvm-cpu \
+  --iree-llvmcpu-target-cpu=host \
   tools/check_gen/generators/sequential.mlir \
   -o tools/check_gen/generators/sequential.vmfb
 ```
@@ -200,10 +203,12 @@ check_gen_tests(
     # ],
     instances = ["(2,16)(2,16)"],
     compiler_flags = [
-        "--iree-hal-target-backends=vmvx",
+        "--iree-hal-target-device=local",
+        "--iree-hal-local-target-device-backends=llvm-cpu",
+        "--iree-llvmcpu-target-cpu=host",
     ],
     runner_args = [
-        "--device=local-task",
+        "--device=local-sync",
     ],
 )
 ```
@@ -260,7 +265,11 @@ iree_bytecode_module(
     name = "add_rank2_i32_8_4-1_8_4_vmfb_bytecode",
     src = ":add_rank2_i32_mlir_8_4-1_8_4",
     compile_tool = "//compiler/tools:coralnpu-compile",
-    flags = ["--iree-hal-target-backends=vmvx"],
+    flags = [
+        "--iree-hal-target-device=local",
+        "--iree-hal-local-target-device-backends=llvm-cpu",
+        "--iree-llvmcpu-target-cpu=host",
+    ],
 )
 
 # 2. Run the compiled module using iree-check-module

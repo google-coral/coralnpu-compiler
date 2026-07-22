@@ -219,7 +219,7 @@ To verify that the installed compiler package and runtime binaries work end-to-e
    /path/to/install/bin/coralnpu-compile \
        --iree-hal-target-device=local \
        --iree-hal-local-target-device-backends=llvm-cpu \
-       --iree-llvmcpu-target-cpu-features=host \
+       --iree-llvmcpu-target-cpu=host \
        --iree-hal-target-device=coralnpu \
        --coralnpu-target-abi=ilp32 \
        --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
@@ -280,7 +280,7 @@ To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime
        extra_args=[
            "--iree-hal-target-device=local",
            "--iree-hal-local-target-device-backends=llvm-cpu",
-           "--iree-llvmcpu-target-cpu-features=host",
+           "--iree-llvmcpu-target-cpu=host",
            "--iree-hal-target-device=coralnpu",
            "--coralnpu-target-abi=ilp32",
            "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f",
@@ -410,7 +410,7 @@ For example, to compile model.mlir:
 bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     --iree-hal-target-device=local \
     --iree-hal-local-target-device-backends=llvm-cpu \
-    --iree-llvmcpu-target-cpu-features=host \
+    --iree-llvmcpu-target-cpu=host \
     --iree-hal-target-device=coralnpu \
     --coralnpu-target-abi=ilp32 \
     --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \

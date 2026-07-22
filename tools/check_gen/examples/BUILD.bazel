@@ -15,11 +15,13 @@ check_gen_tests(
         "//tools/check_gen/generators:sequential_vmfb",
     ],
     compiler_flags = [
-        "--iree-hal-target-backends=vmvx",
+        "--iree-hal-target-device=local",
+        "--iree-hal-local-target-device-backends=llvm-cpu",
+        "--iree-llvmcpu-target-cpu=host",
     ],
     instances = ["(2,16)(2,16)"],
     runner_args = [
-        "--device=local-task",
+        "--device=local-sync",
     ],
     test = "add_rank2_i32.mlir",
 )
@@ -41,7 +43,9 @@ iree_bytecode_module(
     src = ":add_rank2_i32_mlir_8_4-8_4",
     compile_tool = "//compiler/tools:coralnpu-compile",
     flags = [
-        "--iree-hal-target-backends=vmvx",
+        "--iree-hal-target-device=local",
+        "--iree-hal-local-target-device-backends=llvm-cpu",
+        "--iree-llvmcpu-target-cpu=host",
     ],
 )
 
@@ -70,7 +74,9 @@ iree_bytecode_module(
     src = ":add_rank2_i32_jit_mlir_4_8-4_8",
     compile_tool = "//compiler/tools:coralnpu-compile",
     flags = [
-        "--iree-hal-target-backends=vmvx",
+        "--iree-hal-target-device=local",
+        "--iree-hal-local-target-device-backends=llvm-cpu",
+        "--iree-llvmcpu-target-cpu=host",
     ],
 )
 
@@ -90,13 +96,15 @@ check_gen_tests(
         "//tools/check_gen/generators:fill_vmfb",
     ],
     compiler_flags = [
-        "--iree-hal-target-backends=vmvx",
+        "--iree-hal-target-device=local",
+        "--iree-hal-local-target-device-backends=llvm-cpu",
+        "--iree-llvmcpu-target-cpu=host",
     ],
     instances = [
         "(42, 4, 8)",
     ],
     runner_args = [
-        "--device=local-task",
+        "--device=local-sync",
     ],
     test = "test_fill.mlir",
 )
@@ -108,13 +116,15 @@ check_gen_tests(
         "fill_rank_2_f32.mlir",
     ],
     compiler_flags = [
-        "--iree-hal-target-backends=vmvx",
+        "--iree-hal-target-device=local",
+        "--iree-hal-local-target-device-backends=llvm-cpu",
+        "--iree-llvmcpu-target-cpu=host",
     ],
     instances = [
         "(42, 4, 8)",
     ],
     runner_args = [
-        "--device=local-task",
+        "--device=local-sync",
     ],
     test = "test_float.mlir",
 )
@@ -127,14 +137,16 @@ check_gen_tests(
         "default",
     ],
     compiler_flags = [
-        "--iree-hal-target-backends=vmvx",
+        "--iree-hal-target-device=local",
+        "--iree-hal-local-target-device-backends=llvm-cpu",
+        "--iree-llvmcpu-target-cpu=host",
     ],
     default_gen = "//tools/check_gen/generators:sequential_vmfb",
     instances = [
         "(3,5)(3,5)",
     ],
     runner_args = [
-        "--device=local-task",
+        "--device=local-sync",
     ],
     test = "add_rank2_i32.mlir",
 )
@@ -144,14 +156,16 @@ check_gen_tests(
     name = "add_rank2_i32_default_autocomplete",
     arg_gens = [],
     compiler_flags = [
-        "--iree-hal-target-backends=vmvx",
+        "--iree-hal-target-device=local",
+        "--iree-hal-local-target-device-backends=llvm-cpu",
+        "--iree-llvmcpu-target-cpu=host",
     ],
     default_gen = "//tools/check_gen/generators:sequential_vmfb",
     instances = [
         "(6,7)(6,7)",
     ],
     runner_args = [
-        "--device=local-task",
+        "--device=local-sync",
     ],
     test = "add_rank2_i32.mlir",
 )

@@ -10,7 +10,11 @@ echo "=== Building Targets ==="
 # Combine bazel targets to save Bazel analysis time
 bazel build --config=dev \
   @iree_core//lib:libIREECompiler.so \
-  //pjrt_plugin:iree_pjrt_coralnpu_dylib
+  //pjrt_plugin:iree_pjrt_coralnpu_dylib \
+  //compiler/tools:coralnpu-compile
+
+# Link CRT and toolchain outputs so libIREECompiler.so in external/iree_core+/lib can resolve relative paths
+ln -sf ../crt ../toolchain_rv32 "${ROOT_DIR}/bazel-bin/external/"
 
 echo
 echo "=== Running JAX Test ==="

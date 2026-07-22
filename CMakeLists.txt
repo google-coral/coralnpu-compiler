@@ -42,11 +42,10 @@ set(IREE_CMAKE_PLUGIN_PATHS ${CMAKE_CURRENT_LIST_DIR}/build_tools/cmake)
 set(IREE_TARGET_BACKEND_DEFAULTS OFF)
 # enable IREE llvm-cpu backed plugin that is used to compile code for CSS
 set(IREE_TARGET_BACKEND_LLVM_CPU ON)
-set(IREE_TARGET_BACKEND_VMVX ON)
 set(IREE_TARGET_BACKEND_CORALNPU ON)
 # disable the default runtime HAL drivers
 set(IREE_HAL_DRIVER_DEFAULTS OFF)
-# Explicitly enable local-sync driver (needed for VMVX tests)
+# Explicitly enable local-sync driver (needed for host cpu)
 set(IREE_HAL_DRIVER_LOCAL_SYNC ON CACHE BOOL "Enable local-sync driver" FORCE)
 # Explicitly disable local-task driver
 set(IREE_HAL_DRIVER_LOCAL_TASK OFF CACHE BOOL "Disable local-task driver" FORCE)

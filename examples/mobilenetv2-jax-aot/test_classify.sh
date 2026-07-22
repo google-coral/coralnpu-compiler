@@ -31,7 +31,7 @@ main() {
   bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     --iree-hal-target-device=local \
     --iree-hal-local-target-device-backends=llvm-cpu \
-    --iree-llvmcpu-target-cpu-features=host \
+    --iree-llvmcpu-target-cpu=host \
     --iree-hal-target-device=coralnpu \
     --coralnpu-target-abi=ilp32 \
     --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \

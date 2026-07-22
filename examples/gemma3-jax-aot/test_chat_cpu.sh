@@ -40,7 +40,7 @@ main() {
   bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     --iree-hal-target-device=local \
     --iree-hal-local-target-device-backends=llvm-cpu \
-    --iree-llvmcpu-target-cpu-features=host \
+    --iree-llvmcpu-target-cpu=host \
     --iree-llvmcpu-loop-unrolling=false \
     --iree-llvmcpu-loop-interleaving=false \
     --iree-llvmcpu-loop-vectorization=false \

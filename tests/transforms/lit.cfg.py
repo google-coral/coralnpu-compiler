@@ -44,7 +44,8 @@ config.test_exec_root = (os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR") or
 config.substitutions.append(
     ('%coralnpu_compile', 'coralnpu-compile '
      '--iree-hal-target-device=local '
-     '--iree-hal-local-target-device-backends=vmvx '
+     '--iree-hal-local-target-device-backends=llvm-cpu '
+     '--iree-llvmcpu-target-cpu=host '
      '--iree-hal-target-device=coralnpu '
      '--coralnpu-target-abi=ilp32 '
      '--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f '))
