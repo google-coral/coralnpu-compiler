@@ -14,9 +14,9 @@ def _coralnpuc_extension_impl(module_ctx):
         )
         http_archive(
             name = "rv32_toolchain",
-            url = "https://storage.googleapis.com/shodan-public-artifacts/toolchain_iree_rv32.tar.gz",
-            sha256 = "01481183814cc66d6a8efb32681e2f74f5a7de321e93c81d563b65e64e3846a8",
-            strip_prefix = "toolchain_iree_rv32imf",
+            url = "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.07.15/riscv32-elf-ubuntu-22.04-gcc.tar.xz",
+            sha256 = "ae36abbec394b29643154c1b4a1322e829937d04e82f41b47f9c27d3bd68e543",
+            strip_prefix = "riscv",
             build_file = "//build_tools/bazel:rv32_toolchain.BUILD",
         )
 
