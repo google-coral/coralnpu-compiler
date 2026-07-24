@@ -22,8 +22,8 @@ filegroup(
 filegroup(
     name = "compiler",
     srcs = [
-        "bin/riscv32-unknown-elf-g++",
-        "bin/riscv32-unknown-elf-gcc",
+        "bin/riscv32-unknown-elf-clang",
+        "bin/riscv32-unknown-elf-clang++",
     ],
 )
 

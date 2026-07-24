@@ -19,6 +19,10 @@ package(default_visibility = ["//visibility:public"])
 
 RV32_COPTS = "-march=rv32imf_zicsr_zifencei_zbb -mabi=ilp32 -mcmodel=medany -ffreestanding -fno-builtin -I. -Ithird_party/iree/runtime/src"
 
+TOOLCHAIN_DIR = "$$(dirname $$(dirname $(location @rv32_toolchain//:bin/riscv32-unknown-elf-clang)))"
+
+CLANG_FLAGS = "--gcc-toolchain=" + TOOLCHAIN_DIR
+
 # Generate linker script from template
 expand_template(
     name = "coralnpu_tcm_ld",
@@ -45,22 +49,23 @@ genrule(
         "@coralnpu_hw//toolchain/crt:cxx_guards.cc",
         "coralnpu_dispatch.h",
         "@rv32_toolchain//:all_files",
-        "@rv32_toolchain//:bin/riscv32-unknown-elf-gcc",
-        "@rv32_toolchain//:bin/riscv32-unknown-elf-g++",
+        "@rv32_toolchain//:bin/riscv32-unknown-elf-clang",
+        "@rv32_toolchain//:bin/riscv32-unknown-elf-clang++",
         "@rv32_toolchain//:bin/riscv32-unknown-elf-ar",
     ],
     outs = ["libcoralnpu_crt.a"],
     cmd = """
-        {gcc} {copts} -c $(location @coralnpu_hw//toolchain/crt:crt.S) -o crt.o
-        {gcc} {copts} -c $(location @coralnpu_hw//toolchain/crt:coralnpu_start.S) -o coralnpu_start.o
-        {gxx} {copts} -c $(location @coralnpu_hw//toolchain/crt:coralnpu_exceptions.cc) -o coralnpu_exceptions.o
-        {gxx} {copts} -c $(location @coralnpu_hw//toolchain/crt:cxx_guards.cc) -o cxx_guards.o
+        {clang} {clang_flags} {copts} -c $(location @coralnpu_hw//toolchain/crt:crt.S) -o crt.o
+        {clang} {clang_flags} {copts} -c $(location @coralnpu_hw//toolchain/crt:coralnpu_start.S) -o coralnpu_start.o
+        {clangxx} {clang_flags} {copts} -c $(location @coralnpu_hw//toolchain/crt:coralnpu_exceptions.cc) -o coralnpu_exceptions.o
+        {clangxx} {clang_flags} {copts} -c $(location @coralnpu_hw//toolchain/crt:cxx_guards.cc) -o cxx_guards.o
         {ar} rcs $@ crt.o coralnpu_start.o coralnpu_exceptions.o cxx_guards.o
     """.format(
         ar = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-ar)",
+        clang = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-clang)",
+        clang_flags = CLANG_FLAGS,
+        clangxx = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-clang++)",
         copts = RV32_COPTS,
-        gcc = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-gcc)",
-        gxx = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-g++)",
     ),
 )
 
@@ -71,18 +76,19 @@ genrule(
         "coralnpu_main.c",
         "coralnpu_dispatch.h",
         "@rv32_toolchain//:all_files",
-        "@rv32_toolchain//:bin/riscv32-unknown-elf-gcc",
+        "@rv32_toolchain//:bin/riscv32-unknown-elf-clang",
         "@rv32_toolchain//:bin/riscv32-unknown-elf-ar",
         "@iree_core//runtime/src/iree/hal/local:executable_library.h",
     ],
     outs = ["libcoralnpu_iree.a"],
     cmd = """
-        {gcc} {copts} -I{iree_inc} -c $(location coralnpu_main.c) -o coralnpu_main.o
+        {clang} {clang_flags} {copts} -I{iree_inc} -c $(location coralnpu_main.c) -o coralnpu_main.o
         {ar} rcs $@ coralnpu_main.o
     """.format(
         ar = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-ar)",
+        clang = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-clang)",
+        clang_flags = CLANG_FLAGS,
         copts = RV32_COPTS,
-        gcc = "$(location @rv32_toolchain//:bin/riscv32-unknown-elf-gcc)",
         iree_inc = "$$(dirname $$(dirname $$(dirname $$(dirname $(location @iree_core//runtime/src/iree/hal/local:executable_library.h)))))",
     ),
 )

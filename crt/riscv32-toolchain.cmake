@@ -12,6 +12,11 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+if(RISCV_TOOLCHAIN_INCLUDED)
+  return()
+endif()
+set(RISCV_TOOLCHAIN_INCLUDED true)
+
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR riscv32)
 
@@ -28,15 +33,20 @@ set(RISCV_TOOLCHAIN_PREFIX
     "${RISCV_TOOLCHAIN_ROOT}/bin/riscv32-unknown-elf")
 
 set(CMAKE_C_COMPILER
-    "${RISCV_TOOLCHAIN_PREFIX}-gcc")
+    "${RISCV_TOOLCHAIN_PREFIX}-clang")
 set(CMAKE_CXX_COMPILER
-    "${RISCV_TOOLCHAIN_PREFIX}-g++")
+    "${RISCV_TOOLCHAIN_PREFIX}-clang++")
 set(CMAKE_ASM_COMPILER
-    "${RISCV_TOOLCHAIN_PREFIX}-gcc")
+    "${RISCV_TOOLCHAIN_PREFIX}-clang")
 set(CMAKE_AR
     "${RISCV_TOOLCHAIN_PREFIX}-ar")
 set(CMAKE_RANLIB
     "${RISCV_TOOLCHAIN_PREFIX}-ranlib")
+
+set(CLANG_TARGET_FLAGS "--gcc-toolchain=${RISCV_TOOLCHAIN_ROOT}")
+set(CMAKE_C_FLAGS_INIT "${CLANG_TARGET_FLAGS}")
+set(CMAKE_CXX_FLAGS_INIT "${CLANG_TARGET_FLAGS}")
+set(CMAKE_ASM_FLAGS_INIT "${CLANG_TARGET_FLAGS}")
 
 foreach(tool
     CMAKE_C_COMPILER
