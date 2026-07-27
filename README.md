@@ -13,25 +13,26 @@ To clone the project and its submodules (**very big**, read ahead):
 
 ```shell
 git clone --recurse-submodules sso://spacebeaker/coralnpu-compiler
+cd coralnpu-compiler
 ```
 
 If you already cloned without `--recurse-submodules` (**very big**, read ahead):
 
 ```shell
-git submodule update --init --recursive sso://spacebeaker/coralnpu-compiler
+git submodule update --init --recursive
 ```
 
 To reduce the size of submodules (especially `third_party/llvm-project`) you can
 add `--shallow-submodules` to `git clone`, or `--depth=1` to `git submodule update`.
 These will create a shallow clone of the submodules, with a history truncated to 1 revision.
 
+
 ### Patching submodules
 
 *This is a temporary solution; we should have git forks of iree and llvm-project,
 that we can patch normally.*
 
-At the root of the project there are patches for `third_part/iree` and
-`third_part/llvm-project`.
+At the root of the project there are patches for `third_part/iree` and `third_part/llvm-project`.
 Those can be applied using the script `scripts/patch-third_party.sh`:
 
 ```shell
@@ -40,40 +41,54 @@ Those can be applied using the script `scripts/patch-third_party.sh`:
 
 See the `--help` option for more details.
 
+*In any case, if you need to revert all the applied patches (uncommitted work will be lost):*
+
+```shell
+git submodule foreach 'git clear -fd && git reset --hard HEAD'
+git submodule update --init --recursive --force
+```
+
 ## Prerequisites
 
 We try to use bazel/cmake as much as possible to manage dependencies. The following
 are prerequisites that are not handled by bazel/cmake:
+
 - git
 - Bash >= 4.0
 - Bazel 8.6.0
 - clang 19
 - lld 19
 - cmake >= 3.21
+- Python 3.12
 - shfmt, for bash scripts formatting (https://github.com/mvdan/sh)
 
 In a Debian based linux distro you can get all of the above like this:
+
 ```shell
-sudo apt install git bash bazel-8.6.0 clang-19 lld-19 shfmt cmake
+sudo apt install git bash bazel-8.6.0 clang-19 lld-19 cmake python3.12 python3.12-venv shfmt
 ```
 
-## Dependencies
+To install Bazel for other distributions, please refer to [the official Bazel documentation](https://bazel.build/install).
 
-In-tree dependencies are located in the [third_party](third_party) directory.
+### Dependencies
+
+In-tree dependencies are located in the [`third_party`](third_party) directory.
 
 Iree requires a specific commit of llvm-project. We have it checked out in
-[third_party/llvm-project](third_party/llvm-project).
+[`third_party/llvm-project`](third_party/llvm-project).
 If you want to use a different revision of IREE, after checking it out in
-[third_party/iree](third_party/iree), you can check the required llvm-project
+[`third_party/iree`](third_party/iree), you can check the required llvm-project
 commit hash by inspecting
-[third_party/iree/third_party/llvm-project](third_party/iree/third_party/llvm-project)
+[`third_party/iree/third_party/llvm-project`](third_party/iree/third_party/llvm-project)
 (e.g. `git -C third_party/iree/third_party/llvm-project/ rev-parse HEAD`), and
-then checking it out in [third_party/llvm-project](third_party/llvm-project).
+then checking it out in [`third_party/llvm-project`](third_party/llvm-project).
+
+---
 
 ## Build - bazel
 
 Bazel's version has to be backward compatible with IREE's requirements
-(i.e. [third_party/iree/.bazelversion](third_party/iree/.bazelversion)).
+(i.e. [`third_party/iree/.bazelversion`](third_party/iree/.bazelversion)).
 
 ### Development build (initially long; incremental builds fast)
 
@@ -113,9 +128,18 @@ pip install -r requirements_lock.txt
 # if the above failes, try it with requirements.txt
 ```
 
-Dependencies:
-Put direct dependencies in requirements.txt
-Run the following to update requirements_lock.txt
+You can also sandbox your Python 3.12 installation through [conda/miniconda](https://www.anaconda.com/docs/getting-started/working-with-conda/environments):
+
+```shell
+conda create --name venv python=3.12
+conda activate venv
+export PYTHONPATH=$CONDA_PREFIX
+pip install -r requirements_lock.txt
+```
+
+### Dependencies:
+
+Put direct dependencies in `requirements.txt`, Run the following to update `requirements_lock.txt`
 
 ```shell
 bazel run //:requirements.update
@@ -129,11 +153,10 @@ generate/refresh `compiler_commands.json`:
 ```shell
 bazel run --config=dev //:refresh_compile_commands
 ```
-<br>
 
 ## Build - cmake
 
-Create a python venv with the required dependencies:
+Create a Python virtural environment with the required dependencies (See the [Python](#python) section):
 
 ```shell
 python3.12 -m venv venv
@@ -157,11 +180,66 @@ Then, to build the compiler and runtime:
 cmake --build "${BUILD_DIR}" --target coralnpu-compile iree-run-module
 ```
 
+---
+
+## Run the standalone compiler (using Bazel)
+
+A normal compilation, without errors or warnings, does not print anything to
+stdout or stderr, unless a commandline option that specifically prints
+information is used.
+
+```shell
+# NB: anything before the -- will be interperted by bazel and not coralnpu-compile
+bazel run --config={dev|release} //compiler/tools:coralnpu-compile -- [coralnpu-compile options]
+```
+
+For example, to compile model.mlir:
+
+```shell
+# Compile for the host machine + CoralNPU (will run in simulation)
+bazel run --config=dev //compiler/tools:coralnpu-compile -- \
+    --iree-hal-target-device=local \
+    --iree-hal-local-target-device-backends=llvm-cpu \
+    --iree-llvmcpu-target-cpu=host \
+    --iree-hal-target-device=coralnpu \
+    --iree-global-opt-experimental-disable-conv-generalization \
+    --coralnpu-target-abi=ilp32 \
+    --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
+    model.mlir \
+    -o model.vmfb
+```
+
+See the help message for the complete list of options:
+
+```shell
+bazel run --config=dev //compiler/tools:coralnpu-compile -- --help
+```
+
+CoralNPU compiler specific options are prefixed with `--coralnpu`.
+
+
+### Useful options:
+
+**Affinity execution profile report:**
+
+`--coralnpu-dump-affinity-profile-format={pretty|csv|json}` dumps statistics about the compilation (such as the number of dispatches, estimated data size, and estimated work) grouped by the device affinity (e.g., host vs CoralNPU).
+
+
+**Register allocation report**
+
+`--coralnpu-dump-register-allocation-report-format={pretty|json}`
+`--coralnpu-dump-register-allocation-report-dir=<directory>`
+`--coralnpu-dump-register-allocation-report-filter=<pattern>`
+
+Dumps a report containing vector register utilization (unique registers used, vector configuration) and register allocator remarks (spills, reloads, copies) for each loop and at the function level. If the directory is `-`, the report is written to stdout; if empty or omitted, it is written to stderr. The filter option accepts a regex pattern to only report functions matching the name (default: `.*dispatch.*|main`).
+
+---
+
 ## Packaging and Distribution
 
 This repository supports building Python wheels, standalone binary distribution archives, and local installation trees via native Bazel targets.
 
-### 1. Staging Release Packages to `output/`
+### Staging Release Packages to `output/`
 
 To build and stage all release packages (dist tarball + Python wheels) into `bazel-bin/output/`:
 
@@ -170,29 +248,25 @@ bazel build --config=release //:output
 ```
 
 This generates:
+
 - `bazel-bin/output/coralnpu-compiler-dist.tar.gz`
 - `bazel-bin/output/coralnpu_compiler-0.0.1-py3-none-any.whl`
 - `bazel-bin/output/coralnpu_runtime-0.0.1-py3-none-any.whl`
 
----
 
-### 2. Specific Packaging Targets
-
-#### Build Python Wheels (`coralnpu_compiler` and `coralnpu_runtime`)
-```shell
-# Build Python wheels for the local host platform (saved under bazel-bin/build_tools/bazel/python_packages/...)
-bazel build --config=release //build_tools/bazel/python_packages/coralnpu_compiler:wheel //build_tools/bazel/python_packages/coralnpu_runtime:wheel
-```
+### Specific Packaging Targets
 
 #### Build Standalone Binary Distribution Archive
+Build release tarball containing `bin/`, `lib/`, `crt/`, and `toolchain_rv32/` (saved under `bazel-bin/build_tools/bazel/dist_tar.tar.gz`):
+
 ```shell
-# Build release tarball containing bin/, lib/, crt/, and toolchain_rv32/ (saved under bazel-bin/build_tools/bazel/dist_tar.tar.gz)
 bazel build --config=release //build_tools/bazel:dist_tar
 ```
 
 #### Native Local Installation
+Unpack and install distribution archive directly to a specified directory:
+
 ```shell
-# Unpack and install distribution archive directly to a specified directory
 bazel run --config=release //build_tools/bazel:install -- --prefix=/path/to/install
 ```
 
@@ -200,7 +274,7 @@ bazel run --config=release //build_tools/bazel:install -- --prefix=/path/to/inst
 
 To verify that the installed compiler package and runtime binaries work end-to-end:
 
-1. Save the following to model.mlir:
+1. **Save the following to `model.mlir`**:
    ```shell
    module {
      func.func @matmul(%arg0: tensor<32x64xf32>, %arg1: tensor<64x128xf32>) -> tensor<32x128xf32> {
@@ -216,45 +290,75 @@ To verify that the installed compiler package and runtime binaries work end-to-e
 
 2. **Compile an MLIR model targeting CoralNPU**:
    ```shell
-   /path/to/install/bin/coralnpu-compile \
+    bazel run --config=dev //compiler/tools:coralnpu-compile -- \
        --iree-hal-target-device=local \
        --iree-hal-local-target-device-backends=llvm-cpu \
        --iree-llvmcpu-target-cpu=host \
        --iree-hal-target-device=coralnpu \
+       --iree-global-opt-experimental-disable-conv-generalization \
        --coralnpu-target-abi=ilp32 \
        --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
-       model.mlir \
-       -o model.vmfb
+       $(pwd)/model.mlir \
+       -o $(pwd)/model.vmfb
    ```
 
 3. **Execute inference on the simulated CoralNPU device**:
    ```shell
-   LD_LIBRARY_PATH=/path/to/install/lib /path/to/install/bin/iree-run-module \
+    bazel run --config=dev @iree_core//tools:iree-run-module -- \
        --device=coralnpu \
-       --module=model.vmfb \
+       --module=$(pwd)/model.vmfb \
        --function=matmul \
        --input=32x64xf32=1.0 \
        --input=64x128xf32=2.0
    ```
 
+### Build Python Wheels (`coralnpu_compiler` and `coralnpu_runtime`)
+To build Python wheels for the local host platform (saved under `bazel-bin/build_tools/bazel/python_packages/...`):
+
+```shell
+bazel build --config=release \
+    //build_tools/bazel/python_packages/coralnpu_compiler:wheel \
+    //build_tools/bazel/python_packages/coralnpu_runtime:wheel
+```
+
 #### Testing the Python Packages
 
-To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime`) wheel packages:
+To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime`) wheel packages,
 
 1. **Create and activate a virtual environment**:
    ```shell
-   python3 -m venv .venv
-   source .venv/bin/activate
+    python3.12 -m venv .venv
+    source .venv/bin/activate
    ```
+    The Python version has to be 3.12, if this is not available see the [Python section](#python).
 
 2. **Build and install the Python wheels**:
    ```shell
-   bazel build --config=release //build_tools/bazel/python_packages/coralnpu_compiler:wheel //build_tools/bazel/python_packages/coralnpu_runtime:wheel
-   pip install bazel-bin/build_tools/bazel/python_packages/coralnpu_compiler/coralnpu_compiler-0.0.1-py3-none-any.whl \
-               bazel-bin/build_tools/bazel/python_packages/coralnpu_runtime/coralnpu_runtime-0.0.1-py3-none-any.whl
+    bazel build --config=release \
+        //build_tools/bazel/python_packages/coralnpu_compiler:wheel \
+        //build_tools/bazel/python_packages/coralnpu_runtime:wheel
+   ```
+
+   ```shell
+    pip install \
+        bazel-bin/build_tools/bazel/python_packages/coralnpu_compiler/coralnpu_compiler-0.0.1-py3-none-any.whl \
+        bazel-bin/build_tools/bazel/python_packages/coralnpu_runtime/coralnpu_runtime-0.0.1-py3-none-any.whl
+   ```
+
+3. **Test if you can import and use the Python wheels**:
+   ```shell
+    python -c "import coralnpu.compiler as cnpuc; print(cnpuc)"
+    <module 'coralnpu.compiler' from '/path/to/python3.12/site-packages/coralnpu/compiler/__init__.py'>
+   ```
+    The runtime needs `runtime/sim/libcoralnpu_simulator_mpact.so` static lib.
+
+   ```shell
+    LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./runtime/sim python -c "import coralnpu.runtime as cnpurt; print(cnpurt)"
+    <module 'coralnpu.runtime' from '/path/to/python3.12/site-packages/coralnpu/runtime/__init__.py'>
    ```
 
 3. **Run end-to-end Python compilation and inference**:
+    The runtime needs `runtime/sim/libcoralnpu_simulator_mpact.so` static lib.
    ```python
    import numpy as np
    import coralnpu.compiler as coralnpu_compiler
@@ -282,6 +386,7 @@ To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime
            "--iree-hal-local-target-device-backends=llvm-cpu",
            "--iree-llvmcpu-target-cpu=host",
            "--iree-hal-target-device=coralnpu",
+           "--iree-global-opt-experimental-disable-conv-generalization"
            "--coralnpu-target-abi=ilp32",
            "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f",
        ],
@@ -299,15 +404,14 @@ To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime
    print("Output shape:", result.shape, "Output sample:", result[0, 0])
    ```
 
-#### Multi-Platform Build (All Target Platforms)
+### Multi-Platform Build (All Target Platforms)
+Build packages for all target platforms
+
 ```shell
-# Build packages for all target platforms
 bazel build --config=release //build_tools/bazel:all_platform_packages
 ```
 
----
-
-### 3. Individual Cross-Compilation
+### Individual Cross-Compilation
 
 To cross-compile a single package for a specific target platform, pass `--platforms=//build_tools/bazel/platforms:<platform>`:
 
@@ -327,6 +431,8 @@ bazel build --config=release --platforms=//build_tools/bazel/platforms:linux_aar
 
 > [!NOTE]
 > **TODO (Cross-Compilation C++ Toolchains)**: The build system infrastructure (`platform()` targets, Starlark transitions, and wheel tagging) is in place for multi-platform builds. However, actually compiling C++ binaries for non-host platforms (e.g., `linux_aarch64`, `macosx_arm64`, `windows_x86_64`) requires registering corresponding C++ cross-compiler toolchains / sysroots (e.g. `aarch64-linux-gnu`, `osxcross`, `mingw-w64`) in `MODULE.bazel`. Currently, only the host C++ toolchain is registered.
+
+---
 
 ## Testing
 
@@ -356,7 +462,7 @@ We also have Linalg op tests. To run just those:
 bazel test --config=dev //tests/models/linalg/...
 ```
 
-### Running Tests with CMake
+### Running Tests with CMake/CTest
 
 To run the tests with CMake, you need to configure CMake with testing enabled (`-DIREE_BUILD_TESTS=ON`):
 
@@ -387,53 +493,7 @@ ctest --test-dir "${BUILD_DIR}" -R "tests/models/stablehlo/.*" -L "ci" -j $(npro
 ctest --test-dir "${BUILD_DIR}" -R "tests/models/linalg/.*" -L "ci" -j $(nproc)
 ```
 
-## Run the compiler (using Bazel)
-<!-- TODO: bazel and cmake should have an install target, and this section
-should assume the compiler was installed using those -->
-
-A normal compilation, without errors or warnings, does not print anything to
-stdout or stderr, unless a commandline option that specifically prints
-information is used.
-
-```shell
-# NB: anything before the -- will be interperted by bazel and not coralnpu-compile
-bazel run --config={dev|release} //compiler/tools:coralnpu-compile -- [coralnpu-compile options]
-```
-
-For example, to compile model.mlir:
-
-```shell
-# Compile for the host machine + CoralNPU (will run in simulation)
-bazel run --config=dev //compiler/tools:coralnpu-compile -- \
-    --iree-hal-target-device=local \
-    --iree-hal-local-target-device-backends=llvm-cpu \
-    --iree-llvmcpu-target-cpu=host \
-    --iree-hal-target-device=coralnpu \
-    --coralnpu-target-abi=ilp32 \
-    --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
-    model.mlir \
-    -o model.vmfb
-```
-
-See the help message for the complete list of options:
-
-```shell
-bazel run --config=dev //compiler/tools:coralnpu-compile -- --help
-```
-
-CoralNPU compiler specific options are prefixed with `--coralnpu`.
-
-### Useful options:
-
-** Affinity execution profile report **
-`--coralnpu-dump-affinity-profile-format={pretty|csv|json}`
-Dumps statistics about the compilation (such as the number of dispatches, estimated data size, and estimated work) grouped by the device affinity (e.g., host vs CoralNPU).
-
-** Register allocation report **
-`--coralnpu-dump-register-allocation-report-format={pretty|json}`
-`--coralnpu-dump-register-allocation-report-dir=<directory>`
-`--coralnpu-dump-register-allocation-report-filter=<pattern>`
-Dumps a report containing vector register utilization (unique registers used, vector configuration) and register allocator remarks (spills, reloads, copies) for each loop and at the function level. If the directory is `-`, the report is written to stdout; if empty or omitted, it is written to stderr. The filter option accepts a regex pattern to only report functions matching the name (default: `.*dispatch.*|main`).
+---
 
 ## Examples:
 
@@ -450,9 +510,9 @@ compiles the model to a vmfb, targeting the local host + CoralNPU. And finally
 runs an inference using the compiled model (the CoralNPU payload runs in
 simulation).
 
-### pjrt_plugin
+### The `pjrt_plugin`:
 
-The PJRT plugin invokes the IREE HAL device APIs and builds the dynamic library used by JAX: libiree_pjrt_coralnpu_dylib.so. This library is intended to support compiling and running JAX models through the CoralNPU IREE backend.
+The PJRT plugin invokes the IREE HAL device APIs and builds the dynamic library used by JAX: `libiree_pjrt_coralnpu_dylib.so`. This library is intended to support compiling and running JAX models through the CoralNPU IREE backend.
 
 ```shell
 # Build and test the JAX/PJRT flow
@@ -468,6 +528,7 @@ It performs the following steps:
 3. Builds the CoralNPU PJRT plugin via Bazel
 4. Compiles JAX models for the RV32-based CoralNPU backend
 5. Runs the generated binaries
+---
 
 ## Developer Tools
 
@@ -482,8 +543,10 @@ bazel run //tools/list-mlir-ops -- [dialect_namespace]
 
 Using CMake:
 ```shell
-./build-cmake/tools/list-mlir-ops/list-mlir-ops [dialect_namespace]
+./$BUILD_DIR/tools/list-mlir-ops/list-mlir-ops [dialect_namespace]
 ```
+
+---
 
 ## Code style
 
@@ -516,4 +579,3 @@ Always use bash. Use this header:
 # unset variable
 set -euo pipefail
 ```
-
