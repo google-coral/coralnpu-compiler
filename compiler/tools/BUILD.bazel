@@ -51,6 +51,7 @@ cc_binary(
     data = [
         "//:riscv32_linker_copy",
         "//crt:crt_files",
+        "@iree_core//lib:libIREECompiler.so",
     ],
     linkopts = ["-Wl,-rpath,$$ORIGIN:$$ORIGIN/../lib:$$ORIGIN/../../lib"],
     deps = [

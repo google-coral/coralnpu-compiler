@@ -32,7 +32,7 @@ build:generic_clang --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
 # TODO: OSS assert builds of TF became non functional around 1/27/2022. RIP.
 # Default to adding back asserts in optimized builds.
 # This is a good compromise between runtime and debugability.
-build:generic_clang --copt=-UNDEBUG
+build:generic_clang --copt=-UNDEBUG --host_copt=-UNDEBUG
 
 # Treat warnings as errors...
 build:generic_clang --copt=-Werror --host_copt=-Werror
@@ -111,6 +111,7 @@ build --@iree_core//runtime/src/iree/hal/drivers:enabled_drivers=local-sync,loca
 
 # Fast development
 build:dev -c fastbuild
+build:dev --host_compilation_mode=fastbuild
 # Enables Fission (splits dwarf out of .o files, see
 # https://bazel.build/docs/user-manual). This substantially reduces the input
 # size to links and reduces link times significantly.

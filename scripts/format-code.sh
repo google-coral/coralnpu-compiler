@@ -31,7 +31,7 @@ main() {
   echo
   echo 'Formating Python files'
   find "${dirs[@]}" -type f -name '*.py' -print0 \
-    | xargs -0 bazel --quiet run --run_in_cwd //:yapf -- -i || exit_code=$?
+    | xargs -0 bazel --quiet run --config=dev --run_in_cwd //:yapf -- -i || exit_code=$?
 
   echo
   echo 'Formatting bash files'
