@@ -33,7 +33,7 @@ func.func @main(%arg0: tensor<?x?x?x?xi8>, %arg1: tensor<?x?x?xi8>) -> tensor<?x
   %empty = tensor.empty(%n, %output_h, %output_w, %c) : tensor<?x?x?x?xi32>
   %fill = linalg.fill ins(%c0 : i32) outs(%empty : tensor<?x?x?x?xi32>) -> tensor<?x?x?x?xi32>
   %0 = linalg.depthwise_conv_2d_nhwc_hwc_q
-       {strides = dense<2> : vector<2xi64>, dilations = dense<1> : vector<2xi64>}
+       {strides = dense<2> : tensor<2xi64>, dilations = dense<1> : tensor<2xi64>}
        ins(%arg0, %arg1, %izp, %kzp : tensor<?x?x?x?xi8>, tensor<?x?x?xi8>, i32, i32)
        outs(%fill : tensor<?x?x?x?xi32>) -> tensor<?x?x?x?xi32>
   return %0 : tensor<?x?x?x?xi32>

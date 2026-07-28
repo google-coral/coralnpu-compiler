@@ -24,7 +24,7 @@ func.func @main(%arg0: tensor<?x?x?x?xi8>, %arg1: tensor<?x?x?x?xi8>) -> tensor<
   %empty = tensor.empty(%n, %oh, %ow, %c_out) : tensor<?x?x?x?xi32>
   %fill = linalg.fill ins(%c0 : i32) outs(%empty : tensor<?x?x?x?xi32>) -> tensor<?x?x?x?xi32>
   %0 = linalg.conv_2d_nhwc_hwcf_q
-       {strides = dense<1> : vector<2xi64>, dilations = dense<1> : vector<2xi64>}
+       {strides = dense<1> : tensor<2xi64>, dilations = dense<1> : tensor<2xi64>}
        ins(%arg0, %arg1, %izp, %kzp : tensor<?x?x?x?xi8>, tensor<?x?x?x?xi8>, i32, i32)
        outs(%fill : tensor<?x?x?x?xi32>) -> tensor<?x?x?x?xi32>
   return %0 : tensor<?x?x?x?xi32>

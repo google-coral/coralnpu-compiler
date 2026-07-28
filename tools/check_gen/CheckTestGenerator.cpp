@@ -32,9 +32,11 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/Interfaces/DestinationStyleOpInterface.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 // StableHLO headers
@@ -395,29 +397,82 @@ std::vector<TypedAttr> CheckTestGenerator::evaluateGenerators(
   return inputAttrs;
 }
 
-OwningOpRef<ModuleOp> CheckTestGenerator::refineShapes(
-    const std::vector<TypedAttr> &inputAttrs, size_t instIdx) {
-  OwningOpRef<ModuleOp> refinedTestModuleOp =
-      ModuleOp::create(Builder(context).getUnknownLoc());
-  SymbolTable refinedSymbolTable(*refinedTestModuleOp);
-  refinedSymbolTable.insert(testFunc.clone());
-
-  std::vector<Type> refinedTypes;
-  for (auto attr : inputAttrs) {
-    refinedTypes.push_back(attr.getType());
+static LogicalResult refineLinalgDynamicShapes(ModuleOp module,
+                                               ArrayRef<Type> refinedTypes) {
+  auto funcOp = dyn_cast_or_null<func::FuncOp>(module.lookupSymbol("main"));
+  if (!funcOp || funcOp.getNumArguments() != refinedTypes.size()) {
+    return failure();
   }
 
-  PassManager pmRefine(context);
+  auto initialFuncType = FunctionType::get(
+      module.getContext(), refinedTypes, funcOp.getFunctionType().getResults());
+  funcOp.setFunctionTypeAttr(TypeAttr::get(initialFuncType));
+  for (unsigned i = 0; i < refinedTypes.size(); ++i) {
+    funcOp.getArgument(i).setType(refinedTypes[i]);
+  }
+
+  RewritePatternSet patterns(module.getContext());
+  (void)applyPatternsGreedily(funcOp, std::move(patterns));
+
+  // Walk all ops and update result types for DestinationStyleOps
+  funcOp.walk([&](Operation *op) {
+    if (auto dps = dyn_cast<DestinationStyleOpInterface>(op)) {
+      for (unsigned i = 0; i < op->getNumResults(); ++i) {
+        if (i < dps.getNumDpsInits()) {
+          op->getResult(i).setType(dps.getDpsInitOperand(i)->get().getType());
+        }
+      }
+    }
+  });
+
+  SmallVector<Type> returnTypes;
+  if (auto returnOp = dyn_cast_or_null<func::ReturnOp>(
+          funcOp.getFunctionBody().front().getTerminator())) {
+    for (Value operand : returnOp.getOperands()) {
+      returnTypes.push_back(operand.getType());
+    }
+  }
+  auto newFuncType =
+      FunctionType::get(module.getContext(), refinedTypes, returnTypes);
+  funcOp.setFunctionTypeAttr(TypeAttr::get(newFuncType));
+
+  PassManager pm(module.getContext());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+  return pm.run(module);
+}
+
+static bool isStableHLOTest(func::FuncOp testFunc) {
+  auto *ctx = testFunc.getContext();
+  const Dialect *chloDialect = ctx->getLoadedDialect("chlo");
+  const Dialect *stablehloDialect = ctx->getLoadedDialect("stablehlo");
+  const Dialect *vhloDialect = ctx->getLoadedDialect("vhlo");
+
+  bool hasStableHLO = false;
+  testFunc.walk([&](Operation *op) {
+    Dialect *d = op->getDialect();
+    if (d == chloDialect || d == stablehloDialect || d == vhloDialect) {
+      hasStableHLO = true;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return hasStableHLO;
+}
+
+static OwningOpRef<ModuleOp> refineStableHLODynamicShapes(
+    ModuleOp refinedTestModuleOp, ArrayRef<Type> refinedTypes) {
+  PassManager pmRefine(refinedTestModuleOp.getContext());
 
   // Clone to try refinement, keep original as fallback
-  OwningOpRef<ModuleOp> refinedClone = refinedTestModuleOp->clone();
+  OwningOpRef<ModuleOp> refinedClone = refinedTestModuleOp.clone();
 
   mlir::stablehlo::createStablehloRemoveDynamismPipeline(pmRefine,
                                                          refinedTypes);
   if (failed(pmRefine.run(*refinedClone))) {
     llvm::errs() << "Warning: Failed to run shape refinement pipeline, falling "
                     "back to unrefined module.\n";
-    return refinedTestModuleOp;
+    return nullptr;
   }
 
   // Check if shape refinement left wrapper custom calls (which happens if it
@@ -435,10 +490,32 @@ OwningOpRef<ModuleOp> CheckTestGenerator::refineShapes(
   if (hasWrapper) {
     llvm::errs() << "Warning: Shape refinement left wrapper custom calls, "
                     "falling back to unrefined module.\n";
-    return refinedTestModuleOp;
+    return nullptr;
   }
 
   return refinedClone;
+}
+
+OwningOpRef<ModuleOp> CheckTestGenerator::refineShapes(
+    const std::vector<TypedAttr> &inputAttrs, size_t instIdx) {
+  OwningOpRef<ModuleOp> refinedTestModuleOp =
+      ModuleOp::create(testFunc.getLoc());
+  refinedTestModuleOp->push_back(testFunc.clone());
+
+  std::vector<Type> refinedTypes;
+  for (auto attr : inputAttrs) {
+    refinedTypes.push_back(attr.getType());
+  }
+
+  if (isStableHLOTest(testFunc))
+    return refineStableHLODynamicShapes(*refinedTestModuleOp, refinedTypes);
+
+  if (failed(refineLinalgDynamicShapes(*refinedTestModuleOp, refinedTypes))) {
+    // TODO: should we try to fix this? not a problem so far.
+    llvm::errs() << "Warning: Failed to refine Linalg dynamic shapes, falling "
+                    "back to unrefined module.\n";
+  }
+  return refinedTestModuleOp;
 }
 
 std::vector<TypedAttr> CheckTestGenerator::evaluateRefinedTest(
