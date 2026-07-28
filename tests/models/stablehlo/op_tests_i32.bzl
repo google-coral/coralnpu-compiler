@@ -109,17 +109,10 @@ def stablehlo_op_tests_i32(name = "stablehlo_op_i32_tests"):
     op_tests_i32(name = "not_rank3_i32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "not_rank3_i32.mlir")
     op_tests_i32(name = "not_rank4_i32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "not_rank4_i32.mlir")
 
-    # Reason: VMVX lacks math.ctpop legalization
-    op_tests_i32(name = "popcnt_rank1_i32", instances = ["(8)", "(256)", "(450)"], test = "popcnt_rank1_i32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.ctpop legalization
-    op_tests_i32(name = "popcnt_rank2_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "popcnt_rank2_i32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.ctpop legalization
-    op_tests_i32(name = "popcnt_rank3_i32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "popcnt_rank3_i32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.ctpop legalization
-    op_tests_i32(name = "popcnt_rank4_i32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "popcnt_rank4_i32.mlir", tags = ["manual"])
+    op_tests_i32(name = "popcnt_rank1_i32", instances = ["(8)", "(256)", "(450)"], test = "popcnt_rank1_i32.mlir")
+    op_tests_i32(name = "popcnt_rank2_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "popcnt_rank2_i32.mlir")
+    op_tests_i32(name = "popcnt_rank3_i32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "popcnt_rank3_i32.mlir")
+    op_tests_i32(name = "popcnt_rank4_i32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "popcnt_rank4_i32.mlir")
     op_tests_i32(name = "sign_rank1_i32", instances = ["(8)", "(256)", "(450)"], test = "sign_rank1_i32.mlir")
     op_tests_i32(name = "sign_rank2_i32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "sign_rank2_i32.mlir")
     op_tests_i32(name = "sign_rank3_i32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "sign_rank3_i32.mlir")

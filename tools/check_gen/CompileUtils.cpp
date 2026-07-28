@@ -61,16 +61,6 @@ LogicalResult writeModuleToFile(ModuleOp module, const std::string &outPath) {
 iree_compiler_session_t *initCompiler(MLIRContext *&context) {
   iree_compiler_session_t *session = ireeCompilerSessionCreate();
 
-  std::vector<const char *> flags = {
-      "--iree-hal-target-backends=vmvx",
-  };
-
-  if (checkError(
-          ireeCompilerSessionSetFlags(session, flags.size(), flags.data()))) {
-    ireeCompilerSessionDestroy(session);
-    return nullptr;
-  }
-
   MlirContext c_context = ireeCompilerSessionBorrowContext(session);
   if (!c_context.ptr) {
     llvm::errs() << "Failed to borrow context from session\n";

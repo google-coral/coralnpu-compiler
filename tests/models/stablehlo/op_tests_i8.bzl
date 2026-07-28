@@ -106,17 +106,10 @@ def stablehlo_op_tests_i8(name = "stablehlo_op_i8_tests"):
     op_tests_i8(name = "not_rank3_i8", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "not_rank3_i8.mlir")
     op_tests_i8(name = "not_rank4_i8", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "not_rank4_i8.mlir")
 
-    # Reason: VMVX lacks math.ctpop legalization
-    op_tests_i8(name = "popcnt_rank1_i8", instances = ["(8)", "(256)", "(450)"], test = "popcnt_rank1_i8.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.ctpop legalization
-    op_tests_i8(name = "popcnt_rank2_i8", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "popcnt_rank2_i8.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.ctpop legalization
-    op_tests_i8(name = "popcnt_rank3_i8", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "popcnt_rank3_i8.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.ctpop legalization
-    op_tests_i8(name = "popcnt_rank4_i8", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "popcnt_rank4_i8.mlir", tags = ["manual"])
+    op_tests_i8(name = "popcnt_rank1_i8", instances = ["(8)", "(256)", "(450)"], test = "popcnt_rank1_i8.mlir")
+    op_tests_i8(name = "popcnt_rank2_i8", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "popcnt_rank2_i8.mlir")
+    op_tests_i8(name = "popcnt_rank3_i8", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "popcnt_rank3_i8.mlir")
+    op_tests_i8(name = "popcnt_rank4_i8", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "popcnt_rank4_i8.mlir")
     op_tests_i8(name = "sign_rank1_i8", instances = ["(8)", "(256)", "(450)"], test = "sign_rank1_i8.mlir")
     op_tests_i8(name = "sign_rank2_i8", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "sign_rank2_i8.mlir")
     op_tests_i8(name = "sign_rank3_i8", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "sign_rank3_i8.mlir")

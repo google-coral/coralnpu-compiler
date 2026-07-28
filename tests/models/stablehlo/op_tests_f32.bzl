@@ -109,17 +109,10 @@ def stablehlo_op_tests_f32(name = "stablehlo_op_f32_tests"):
 
     # Elementwise operations
 
-    # Reason: VMVX lacks math.cbrt legalization
-    op_tests_f32(name = "cbrt_rank1_f32", instances = ["(8)", "(256)", "(450)"], test = "cbrt_rank1_f32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.cbrt legalization
-    op_tests_f32(name = "cbrt_rank2_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "cbrt_rank2_f32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.cbrt legalization
-    op_tests_f32(name = "cbrt_rank3_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "cbrt_rank3_f32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.cbrt legalization
-    op_tests_f32(name = "cbrt_rank4_f32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "cbrt_rank4_f32.mlir", tags = ["manual"])
+    op_tests_f32(name = "cbrt_rank1_f32", instances = ["(8)", "(256)", "(450)"], test = "cbrt_rank1_f32.mlir")
+    op_tests_f32(name = "cbrt_rank2_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "cbrt_rank2_f32.mlir")
+    op_tests_f32(name = "cbrt_rank3_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "cbrt_rank3_f32.mlir")
+    op_tests_f32(name = "cbrt_rank4_f32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "cbrt_rank4_f32.mlir")
     op_tests_f32(name = "ceil_rank1_f32", instances = ["(8)", "(256)", "(450)"], test = "ceil_rank1_f32.mlir")
     op_tests_f32(name = "ceil_rank2_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "ceil_rank2_f32.mlir")
     op_tests_f32(name = "ceil_rank3_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "ceil_rank3_f32.mlir")
@@ -165,33 +158,19 @@ def stablehlo_op_tests_f32(name = "stablehlo_op_f32_tests"):
     op_tests_f32(name = "sqrt_rank3_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "sqrt_rank3_f32.mlir")
     op_tests_f32(name = "sqrt_rank4_f32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "sqrt_rank4_f32.mlir")
 
-    # Reason: VMVX lacks math.tan legalization
-    op_tests_f32(name = "tan_rank1_f32", instances = ["(8)", "(256)", "(450)"], test = "tan_rank1_f32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.tan legalization
-    op_tests_f32(name = "tan_rank2_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "tan_rank2_f32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.tan legalization
-    op_tests_f32(name = "tan_rank3_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "tan_rank3_f32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.tan legalization
-    op_tests_f32(name = "tan_rank4_f32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "tan_rank4_f32.mlir", tags = ["manual"])
+    op_tests_f32(name = "tan_rank1_f32", instances = ["(8)", "(256)", "(450)"], test = "tan_rank1_f32.mlir")
+    op_tests_f32(name = "tan_rank2_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "tan_rank2_f32.mlir")
+    op_tests_f32(name = "tan_rank3_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "tan_rank3_f32.mlir")
+    op_tests_f32(name = "tan_rank4_f32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "tan_rank4_f32.mlir")
     op_tests_f32(name = "tanh_rank1_f32", instances = ["(8)", "(256)", "(450)"], test = "tanh_rank1_f32.mlir")
     op_tests_f32(name = "tanh_rank2_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "tanh_rank2_f32.mlir")
     op_tests_f32(name = "tanh_rank3_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "tanh_rank3_f32.mlir")
     op_tests_f32(name = "tanh_rank4_f32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "tanh_rank4_f32.mlir")
 
-    # Reason: VMVX lacks math.copysign legalization for f32
-    op_tests_f32(name = "sign_rank1_f32", instances = ["(8)", "(256)", "(450)"], test = "sign_rank1_f32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.copysign legalization for f32
-    op_tests_f32(name = "sign_rank2_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "sign_rank2_f32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.copysign legalization for f32
-    op_tests_f32(name = "sign_rank3_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "sign_rank3_f32.mlir", tags = ["manual"])
-
-    # Reason: VMVX lacks math.copysign legalization for f32
-    op_tests_f32(name = "sign_rank4_f32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "sign_rank4_f32.mlir", tags = ["manual"])
+    op_tests_f32(name = "sign_rank1_f32", instances = ["(8)", "(256)", "(450)"], test = "sign_rank1_f32.mlir")
+    op_tests_f32(name = "sign_rank2_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "sign_rank2_f32.mlir")
+    op_tests_f32(name = "sign_rank3_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "sign_rank3_f32.mlir")
+    op_tests_f32(name = "sign_rank4_f32", instances = ["(2,2,3,2)", "(2,3,4,50)", "(1,1,5,400)"], test = "sign_rank4_f32.mlir")
 
     op_tests_f32(name = "atan2_rank1_f32", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "atan2_rank1_f32.mlir")
     op_tests_f32(name = "atan2_rank2_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "atan2_rank2_f32.mlir")

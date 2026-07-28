@@ -732,8 +732,6 @@ op_tests(
     "(8)"
     "(256)"
     "(450)"
-  LABELS
-    "manual"
 )
 
 op_tests(
@@ -743,8 +741,6 @@ op_tests(
     "(4,8)"
     "(120,256)"
     "(300,450)"
-  LABELS
-    "manual"
 )
 
 op_tests(
@@ -754,8 +750,6 @@ op_tests(
     "(2,3,4)"
     "(10,20,30)"
     "(5,100,2)"
-  LABELS
-    "manual"
 )
 
 op_tests(
@@ -765,8 +759,6 @@ op_tests(
     "(2,2,3,2)"
     "(2,3,4,50)"
     "(1,1,5,400)"
-  LABELS
-    "manual"
 )
 
 op_tests(

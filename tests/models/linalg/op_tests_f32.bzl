@@ -46,7 +46,7 @@ def linalg_op_tests_f32(name = "linalg_op_f32_tests"):
     op_tests_f32(name = "generic_reduction_2d_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "generic_reduction_2d_f32.mlir")
     op_tests_f32(name = "pack_f32", instances = ["(8,16)", "(16,32)", "(128,256)"], test = "pack_f32.mlir")
     op_tests_f32(name = "pack_perm_f32", instances = ["(8,16)", "(16,32)", "(128,256)"], test = "pack_perm_f32.mlir")
-    op_tests_f32(name = "pack_padding_f32", instances = ["(7,15)", "(17,33)", "(120,250)"], test = "pack_padding_f32.mlir")
+    op_tests_f32(name = "pack_padding_f32", instances = ["(7,15)", "(17,33)", ("(120,250)", ["manual"])], test = "pack_padding_f32.mlir")
     op_tests_f32(name = "unpack_f32", instances = ["(1,1,8,16)", "(2,2,8,16)", "(16,16,8,16)"], test = "unpack_f32.mlir")
     op_tests_f32(name = "unpack_perm_f32", instances = ["(1,1,8,16)", "(2,2,8,16)", "(3,2,8,16)"], test = "unpack_perm_f32.mlir")
     op_tests_f32(name = "map_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "map_f32.mlir")

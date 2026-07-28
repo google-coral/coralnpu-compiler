@@ -21,7 +21,8 @@ iree_bytecode_module(
   SRC
     "sequential.mlir"
   FLAGS
-    "--iree-hal-target-backends=vmvx"
+    "--iree-hal-target-backends=llvm-cpu"
+    "--iree-llvmcpu-target-cpu=host"
   PUBLIC
 )
 
@@ -31,7 +32,8 @@ iree_bytecode_module(
   SRC
     "positive_sequential.mlir"
   FLAGS
-    "--iree-hal-target-backends=vmvx"
+    "--iree-hal-target-backends=llvm-cpu"
+    "--iree-llvmcpu-target-cpu=host"
   PUBLIC
 )
 
@@ -41,7 +43,8 @@ iree_bytecode_module(
   SRC
     "fill.mlir"
   FLAGS
-    "--iree-hal-target-backends=vmvx"
+    "--iree-hal-target-backends=llvm-cpu"
+    "--iree-llvmcpu-target-cpu=host"
   PUBLIC
 )
 

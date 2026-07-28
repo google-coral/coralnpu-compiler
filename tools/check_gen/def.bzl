@@ -38,8 +38,11 @@ def _check_gen_impl(ctx):
         out_file = ctx.actions.declare_file(test_file_base + "_" + suffix + "_check.mlir")
         outputs.append(out_file)
 
-    # Run check_gen tool
+    # Run check_gen tool with llvm-cpu backend for reference evaluation
     args = ctx.actions.args()
+    args.add("--iree-hal-target-backends=llvm-cpu")
+    args.add("--iree-llvmcpu-target-cpu=host")
+    args.add("--iree-llvmcpu-embedded-linker-path=" + ctx.executable.linker_tool.path)
     args.add("-o", outputs[0].dirname)
 
     # Add default generators if present
@@ -66,6 +69,7 @@ def _check_gen_impl(ctx):
     ctx.actions.run(
         outputs = outputs,
         inputs = inputs,
+        tools = [ctx.executable.linker_tool],
         executable = check_gen_bin,
         arguments = [args],
         mnemonic = "CheckGen",
@@ -81,6 +85,11 @@ _check_gen = rule(
     attrs = {
         "check_gen_tool": attr.label(
             default = Label("//tools/check_gen:check_gen"),
+            executable = True,
+            cfg = "exec",
+        ),
+        "linker_tool": attr.label(
+            default = Label("@llvm-project//lld:lld"),
             executable = True,
             cfg = "exec",
         ),

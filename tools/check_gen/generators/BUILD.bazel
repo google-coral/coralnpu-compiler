@@ -12,7 +12,8 @@ exports_files(glob(["*.mlir"]))
         src = f,
         compile_tool = "//compiler/tools:coralnpu-compile",
         flags = [
-            "--iree-hal-target-backends=vmvx",
+            "--iree-hal-target-backends=llvm-cpu",
+            "--iree-llvmcpu-target-cpu=host",
         ],
     )
     for f in glob(["*.mlir"])

@@ -49,8 +49,10 @@ function(check_gen_tests)
     list(APPEND OUTPUT_FILES "${CMAKE_CURRENT_BINARY_DIR}/${TEST_FILE_BASE}_${SUFFIX}_check.mlir")
   endforeach()
 
-  # Construct check_gen command
+  # Construct check_gen command with llvm-cpu backend for reference evaluation
   set(CHECK_GEN_ARGS)
+  list(APPEND CHECK_GEN_ARGS "--iree-hal-target-backends=llvm-cpu")
+  list(APPEND CHECK_GEN_ARGS "--iree-llvmcpu-target-cpu=host")
   list(APPEND CHECK_GEN_ARGS "-o" "${CMAKE_CURRENT_BINARY_DIR}")
 
   if(_RULE_DEFAULT_GEN)
