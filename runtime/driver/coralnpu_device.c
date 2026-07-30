@@ -73,16 +73,6 @@ void iree_hal_coralnpu_device_params_initialize(
     iree_hal_coralnpu_device_params_t *out_params) {
   memset(out_params, 0, sizeof(*out_params));
   out_params->arena_block_size = 32 * 1024;
-
-  uint32_t itcm_size = 8 * 1024;  // Default to 8KB
-  const char *itcm_size_env = getenv("CORALNPU_ITCM_SIZE_KB");
-  if (itcm_size_env) {
-    int kb = atoi(itcm_size_env);
-    if (kb > 0) {
-      itcm_size = kb * 1024;
-    }
-  }
-  out_params->itcm_size = itcm_size;
 }
 
 static iree_status_t iree_hal_coralnpu_device_check_params(
@@ -138,7 +128,6 @@ iree_status_t iree_hal_coralnpu_device_create(
     iree_hal_coralnpu_semaphore_state_initialize(&device->semaphore_state);
   }
 
-  coralnpu_itcm_size = params->itcm_size;
   simulator_create();
 
   if (iree_status_is_ok(status)) {

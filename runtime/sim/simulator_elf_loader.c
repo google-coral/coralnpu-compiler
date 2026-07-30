@@ -22,11 +22,11 @@
 
 #include "runtime/sim/simulator_api.h"
 
-// Global ITCM size used by the simulator ELF loader to validate segments.
-// This is needed because the simulator is a global singleton and does not
-// have access to the HAL device parameters during dispatch execution.
-// 0 is not a valid value! coralnpu_driver.c assigns the real value.
-uint32_t coralnpu_itcm_size = 0;
+// Global ITCM and DTCM sizes/start used by the simulator ELF loader to validate
+// segments.
+uint32_t coralnpu_itcm_size = 8 * 1024;  // 8 KB default
+uint32_t coralnpu_dtcm_start = 0x00010000u;
+uint32_t coralnpu_dtcm_size = 32 * 1024;  // 32 KB default
 
 static bool iree_hal_coralnpu_simulator_is_elf32(
     iree_const_byte_span_t elf_image) {
@@ -228,6 +228,20 @@ iree_status_t iree_hal_coralnpu_simulator_load_elf_with_layout(
   if (program_table_end > elf_image.data_length) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "ELF program header table is out of bounds");
+  }
+
+  uint32_t sym_val = 0;
+  if (iree_status_is_ok(iree_hal_coralnpu_find_symbol(elf_image, "__dtcm_start",
+                                                      &sym_val, NULL))) {
+    coralnpu_dtcm_start = sym_val;
+  }
+  if (iree_status_is_ok(iree_hal_coralnpu_find_symbol(elf_image, "__dtcm_size",
+                                                      &sym_val, NULL))) {
+    coralnpu_dtcm_size = sym_val;
+  }
+  if (iree_status_is_ok(iree_hal_coralnpu_find_symbol(elf_image, "__itcm_size",
+                                                      &sym_val, NULL))) {
+    coralnpu_itcm_size = sym_val;
   }
 
   bool entry_is_executable = false;

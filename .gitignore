@@ -1,9 +1,7 @@
 # Bazel artifacts
-/bazel-bin
-/bazel-coralnpu-compiler
-/bazel-out
-/bazel-testlogs
+/bazel-*
 
 /output
 
 MODULE.bazel.lock
+

@@ -12,6 +12,7 @@ def coralnpu_check_test(
         tags = [],
         timeout = None,
         deps = [],
+        env = {},
         **kwargs):
     bytecode_module_name = name + "_bytecode_module"
 
@@ -34,6 +35,7 @@ def coralnpu_check_test(
         src = "@iree_core//tools:iree-check-module",  # Use absolute label to be safe
         tags = tags + ["driver=coralnpu", "target=coralnpu"],
         timeout = timeout,
+        env = env,
         **kwargs
     )
 

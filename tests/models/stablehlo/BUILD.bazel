@@ -1,6 +1,24 @@
+load("//tests:defs.bzl", "coralnpu_check_test")
 load("//tests/models/stablehlo:op_tests.bzl", "stablehlo_op_tests")
 
 stablehlo_op_tests()
+
+coralnpu_check_test(
+    name = "matmul_highmem_test",
+    src = "matmul_highmem.mlir",
+    compiler_flags = [
+        "--iree-hal-target-device=coralnpu",
+        "--coralnpu-dtcm-size-kb=1024",
+        "--coralnpu-linker-script-path=$(location //crt:coralnpu_tcm_highmem.ld)",
+    ],
+    runner_args = [
+        "--device=coralnpu",
+    ],
+    tags = ["ci"],
+    deps = [
+        "//crt:coralnpu_tcm_highmem.ld",
+    ],
+)
 
 test_suite(
     name = "ci",

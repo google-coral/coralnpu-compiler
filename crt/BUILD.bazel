@@ -23,6 +23,23 @@ TOOLCHAIN_DIR = "$$(dirname $$(dirname $(location @rv32_toolchain//:bin/riscv32-
 
 CLANG_FLAGS = "--gcc-toolchain=" + TOOLCHAIN_DIR
 
+# Prepare base linker script template with memory symbols appended
+genrule(
+    name = "coralnpu_tcm_ld_tpl",
+    srcs = ["@coralnpu_hw//toolchain:coralnpu_tcm.ld.tpl"],
+    outs = ["coralnpu_tcm.ld.tpl"],
+    cmd = """
+        cat $< > $@
+        cat << 'EOF' >> $@
+
+__itcm_start = ORIGIN(ITCM);
+__itcm_size = LENGTH(ITCM);
+__dtcm_start = ORIGIN(DTCM);
+__dtcm_size = LENGTH(DTCM);
+EOF
+    """,
+)
+
 # Generate linker script from template
 expand_template(
     name = "coralnpu_tcm_ld",
@@ -36,7 +53,23 @@ expand_template(
         "@@HEAP_SIZE_SPEC@@": ". = ORIGIN(DTCM) + LENGTH(DTCM) - STACK_SIZE;",
         "@@STACK_START_SPEC@@": "",
     },
-    template = "@coralnpu_hw//toolchain:coralnpu_tcm.ld.tpl",
+    template = ":coralnpu_tcm_ld_tpl",
+)
+
+# Generate highmem linker script from template (1024K ITCM, 1024K DTCM at 0x00100000)
+expand_template(
+    name = "coralnpu_tcm_highmem_ld",
+    out = "coralnpu_tcm_highmem.ld",
+    substitutions = {
+        "@@ITCM_LENGTH@@": "1024",
+        "@@DTCM_ORIGIN@@": "0x00100000",
+        "@@DTCM_LENGTH@@": "1024",
+        "@@STACK_SIZE@@": "4096",
+        "@@HEAP_LOCATION@@": "DTCM",
+        "@@HEAP_SIZE_SPEC@@": ". = ORIGIN(DTCM) + LENGTH(DTCM) - STACK_SIZE;",
+        "@@STACK_START_SPEC@@": "",
+    },
+    template = ":coralnpu_tcm_ld_tpl",
 )
 
 # Compile and archive coralnpu_crt using the local RV32 toolchain
@@ -103,6 +136,7 @@ filegroup(
     name = "crt_files",
     srcs = [
         ":coralnpu_tcm.ld",
+        ":coralnpu_tcm_highmem.ld",
         ":libcoralnpu_crt.a",
         ":libcoralnpu_iree.a",
     ],

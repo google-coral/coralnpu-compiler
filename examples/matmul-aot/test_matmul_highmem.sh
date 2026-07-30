@@ -28,6 +28,7 @@ main() {
 
   echo
   echo "=== Phase 2: Compiling to VMFB ==="
+  bazel build --config=dev //crt:coralnpu_tcm_highmem_ld
 
   bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     --iree-hal-target-device=local \
@@ -37,8 +38,10 @@ main() {
     --coralnpu-target-abi=ilp32 \
     --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
     --coralnpu-dump-affinity-profile-format=pretty \
+    --coralnpu-dtcm-size-kb=1024 \
+    --coralnpu-linker-script-path="${ROOT_DIR}/bazel-bin/crt/coralnpu_tcm_highmem.ld" \
     "${TMP_DIR}/matmul.mlir" \
-    -o "${TMP_DIR}/matmul.vmfb"
+    -o "${TMP_DIR}/matmul_highmem.vmfb"
 
   echo
   echo "=== Phase 3: Build run_matmul ==="
@@ -48,7 +51,7 @@ main() {
   echo "=== Phase 4: Running matmul ==="
   (
     export LD_LIBRARY_PATH="${ROOT_DIR}/runtime/sim"
-    "${ROOT_DIR}/bazel-bin/examples/matmul-aot/run_matmul" --vmfb="${TMP_DIR}/matmul.vmfb"
+    "${ROOT_DIR}/bazel-bin/examples/matmul-aot/run_matmul" --vmfb="${TMP_DIR}/matmul_highmem.vmfb"
   )
 
   echo

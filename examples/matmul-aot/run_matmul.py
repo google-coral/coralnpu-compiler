@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import os
 import sys
 import time
@@ -77,11 +78,15 @@ def init_iree_func(vmfb_path):
 
 
 def main():
-  vmfb_path = "./matmul.vmfb"
+  parser = argparse.ArgumentParser(description="Run matmul VMFB on CoralNPU")
+  parser.add_argument("--vmfb", default=None, help="Path to VMFB file")
+  args, _ = parser.parse_known_args()
+
+  vmfb_path = args.vmfb if args.vmfb else "./matmul.vmfb"
   # If running via Bazel, we might need to find it relative to script
   if not os.path.exists(vmfb_path):
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    vmfb_path = os.path.join(script_dir, "matmul.vmfb")
+    vmfb_path = os.path.join(script_dir, os.path.basename(vmfb_path))
 
   if not os.path.exists(vmfb_path):
     print(f"Error: VMFB file {vmfb_path} not found. Please compile it first.")
