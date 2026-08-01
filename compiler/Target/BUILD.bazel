@@ -31,7 +31,6 @@ cc_library(
         "RegisterUsageTrackerPass.cpp",
     ],
     hdrs = [
-        "CoralNPUDiagnosticHandler.h",
         "CoralNPULinkerTool.h",
         "CoralNPUTargetBackend.h",
         "RegisterAllocationReportCollector.h",

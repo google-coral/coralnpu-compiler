@@ -153,6 +153,7 @@ def check_gen_test_generator(name, test, arg_gens = [], instances = [], default_
         arg_gens_mapping = mapping,
         default_gen = default_gen,
         instances = instances,
+        visibility = kwargs.get("visibility", ["//visibility:public"]),
         **kwargs
     )
 
@@ -171,7 +172,7 @@ def check_gen_test_generator(name, test, arg_gens = [], instances = [], default_
             name = name + "_" + suffix,
             srcs = [":" + name],
             filename = gen_file_name,
-            visibility = kwargs.get("visibility"),
+            visibility = kwargs.get("visibility", ["//visibility:public"]),
             tags = kwargs.get("tags"),
             testonly = kwargs.get("testonly"),
         )
@@ -188,6 +189,7 @@ def check_gen_tests(
         timeout = None,
         deps = [],
         bytecode_tags = [],
+        generated_targets = None,
         **kwargs):
     """Defines a test generator and test targets for templated tests.
 
@@ -203,6 +205,7 @@ def check_gen_tests(
         timeout: Timeout for the test targets.
         deps: Dependencies for the test targets.
         bytecode_tags: Tags for the bytecode compilation targets.
+        generated_targets: Optional list to append generated check MLIR target labels.
         **kwargs: Passed to check_gen_test_generator.
     """
 
@@ -274,6 +277,31 @@ def check_gen_tests(
             tags = combined_tags,
             timeout = timeout,
         )
+
+    non_manual_select_targets = []
+    for inst_entry in instances:
+        inst = ""
+        extra_tags = []
+        if type(inst_entry) == "string":
+            inst = inst_entry
+            extra_tags = []
+        elif type(inst_entry) == "tuple" or type(inst_entry) == "list":
+            inst = inst_entry[0]
+            extra_tags = inst_entry[1]
+
+        suffix = parse_instance_to_suffix(inst)
+        combined_tags = tags + extra_tags
+        if "manual" not in combined_tags:
+            non_manual_select_targets.append(":" + "generate_" + name + "_" + suffix)
+
+    native.filegroup(
+        name = name + "_check_mlir_files",
+        srcs = non_manual_select_targets,
+        visibility = ["//visibility:public"],
+    )
+
+    if generated_targets != None:
+        generated_targets.extend(non_manual_select_targets)
 
 def _select_file_impl(ctx):
     for f in ctx.files.srcs:

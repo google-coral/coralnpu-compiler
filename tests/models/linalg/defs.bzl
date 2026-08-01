@@ -23,6 +23,7 @@ def op_tests(
         timeout = "short",
         compiler_flags = None,
         runner_args = None,
+        generated_targets = None,
         **kwargs):
     """Registers templated CoralNPU tests.
 
@@ -35,6 +36,7 @@ def op_tests(
       timeout: The test timeout.
       compiler_flags: Overrides for compiler flags.
       runner_args: Overrides for runner args.
+      generated_targets: Optional list to collect generated target labels.
       **kwargs: Extra arguments.
     """
     if compiler_flags == None:
@@ -50,6 +52,7 @@ def op_tests(
         compiler_flags = compiler_flags,
         runner_args = runner_args,
         timeout = timeout,
+        generated_targets = generated_targets,
         **kwargs
     )
 

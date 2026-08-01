@@ -2,26 +2,27 @@
 
 load("//tests/models/linalg:defs.bzl", "op_tests")
 
-def op_tests_i16(name, **kwargs):
-    """Registers i16 op tests.
-
-    Args:
-      name: The name of the test.
-      **kwargs: Additional arguments.
-    """
-    tags = list(kwargs.pop("tags", []))
-    if "i16" not in tags:
-        tags.append("i16")
-    if "ci" not in tags:
-        tags.append("ci")
-    op_tests(name = name, tags = tags, **kwargs)
-
-def linalg_op_tests_i16(name = "linalg_op_i16_tests"):
+def linalg_op_tests_i16(name = "linalg_op_i16_tests", generated_targets = None):
     """Registers Linalg i16 op tests.
 
     Args:
       name: The name of the test suite.
+      generated_targets: Optional list to collect generated target labels.
     """
+
+    def op_tests_i16(name, **kwargs):
+        tags = list(kwargs.pop("tags", []))
+        if "i16" not in tags:
+            tags.append("i16")
+        if "ci" not in tags:
+            tags.append("ci")
+        op_tests(
+            name = name,
+            tags = tags,
+            generated_targets = generated_targets,
+            **kwargs
+        )
+
     op_tests_i16(name = "fill_rank1_i16", instances = ["(8)", "(256)", "(450)"], test = "fill_rank1_i16.mlir")
     op_tests_i16(name = "fill_rank2_i16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "fill_rank2_i16.mlir")
     op_tests_i16(name = "fill_rank3_i16", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "fill_rank3_i16.mlir")

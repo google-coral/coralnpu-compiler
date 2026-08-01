@@ -19,24 +19,24 @@
 // CHECK-PRETTY: Register Allocation Report:
 // CHECK-PRETTY: ========================================================================
 // CHECK-PRETTY: Dispatch: main_dispatch_0_matmul_128x128x128_i32
-// CHECK-PRETTY:   Total Spills: 20, Total Reloads: 20, Total Copies: 9
+// CHECK-PRETTY:   Vec Spills: 0, Vec Reloads: 0, Has Scalar Spills: Yes
 // CHECK-PRETTY:   Function-level (non-loop):
 // CHECK-PRETTY:     Location: {{.*}}
 // CHECK-PRETTY:     Vector Registers Used: 16 [V10M2, V12M2, V14M2, V16M2, V18M2, V20M2, V22M2, V8M2]
 // CHECK-PRETTY:   Loop (depth 1) at %bb.1 ({{.*}}):
 // CHECK-PRETTY:     Vector Registers Used: 16 [V10M2, V12M2, V14M2, V16M2, V18M2, V20M2, V22M2, V8M2]
-// CHECK-PRETTY:     Spills: 5, Reloads: 20, Copies: 7
+// CHECK-PRETTY:     Vec Spills: 0, Vec Reloads: 0, Has Scalar Spills: Yes
 // CHECK-PRETTY:   Loop (depth 2) at %bb.2 ({{.*}}):
 // CHECK-PRETTY:     Vector Registers Used: 14 [V10M2, V12M2, V14M2, V16M2, V18M2, V20M2, V22M2]
-// CHECK-PRETTY:     Spills: 0, Reloads: 7, Copies: 6
+// CHECK-PRETTY:     Vec Spills: 0, Vec Reloads: 0, Has Scalar Spills: Yes
 
 // CHECK-JSON: {
 // CHECK-JSON:   "dispatches": [
 // CHECK-JSON:     {
 // CHECK-JSON:       "name": "main_dispatch_0_matmul_128x128x128_i32",
-// CHECK-JSON:       "spills": 20,
-// CHECK-JSON:       "reloads": 20,
-// CHECK-JSON:       "copies": 9,
+// CHECK-JSON:       "vec_spills": 0,
+// CHECK-JSON:       "vec_reloads": 0,
+// CHECK-JSON:       "has_scalar_spills": true,
 // CHECK-JSON:       "global_location": "{{.*}}",
 // CHECK-JSON:       "global_vector_registers_count": 16,
 // CHECK-JSON:       "global_vector_registers": [
@@ -65,9 +65,9 @@
 // CHECK-JSON:             "V22M2",
 // CHECK-JSON:             "V8M2"
 // CHECK-JSON:           ],
-// CHECK-JSON:           "spills": 5,
-// CHECK-JSON:           "reloads": 20,
-// CHECK-JSON:           "copies": 7
+// CHECK-JSON:           "vec_spills": 0,
+// CHECK-JSON:           "vec_reloads": 0,
+// CHECK-JSON:           "has_scalar_spills": true
 // CHECK-JSON:         },
 // CHECK-JSON:         {
 // CHECK-JSON:           "header": "%bb.2",
@@ -83,9 +83,9 @@
 // CHECK-JSON:             "V20M2",
 // CHECK-JSON:             "V22M2"
 // CHECK-JSON:           ],
-// CHECK-JSON:           "spills": 0,
-// CHECK-JSON:           "reloads": 7,
-// CHECK-JSON:           "copies": 6
+// CHECK-JSON:           "vec_spills": 0,
+// CHECK-JSON:           "vec_reloads": 0,
+// CHECK-JSON:           "has_scalar_spills": true
 // CHECK-JSON:         }
 
 func.func @main(

@@ -31,7 +31,6 @@ iree_cc_library(
   NAME
     CoralNPUTarget
   HDRS
-    "CoralNPUDiagnosticHandler.h"
     "CoralNPULinkerTool.h"
     "CoralNPUTargetBackend.h"
     "RegisterAllocationReportCollector.h"

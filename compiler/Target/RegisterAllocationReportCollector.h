@@ -38,17 +38,17 @@ struct LoopAllocStats {
   std::set<std::string> vectorRegs;
 
   // Spills
-  int spills = 0;
-  int reloads = 0;
-  int copies = 0;
+  int vecSpills = 0;
+  int vecReloads = 0;
+  bool hasScalarSpills = false;
 };
 
 // Statistics for a function, aggregating loop stats and global stats.
 struct FunctionAllocStats {
   std::string name;
-  int spills = 0;  // Function total
-  int reloads = 0;
-  int copies = 0;
+  int vecSpills = 0;
+  int vecReloads = 0;
+  bool hasScalarSpills = false;
 
   // Function-level (non-loop) vector stats
   std::set<std::string> globalVectorRegs;
@@ -59,21 +59,21 @@ struct FunctionAllocStats {
 };
 
 // Collects and formats register allocation statistics (spills, reloads,
-// copies, and register usage) at function and loop levels.
+// and register usage) at function and loop levels.
 class RegisterAllocationReportCollector {
  public:
   RegisterAllocationReportCollector() = default;
-
-  void addSpills(const std::string &funcName, int spills, int reloads,
-                 int copies);
 
   void addGlobalRegs(const std::string &funcName,
                      const std::set<std::string> &regs,
                      const std::string &location);
 
-  void addLoopSpills(const std::string &funcName,
-                     const llvm::MachineBasicBlock *headerBB, int spills,
-                     int reloads, int copies);
+  void recordFunctionStats(const std::string &funcName, int vecSpills,
+                           int vecReloads, bool hasScalarSpills);
+
+  void recordLoopStats(const std::string &funcName,
+                       const llvm::MachineBasicBlock *headerBB, int vecSpills,
+                       int vecReloads, bool hasScalarSpills);
 
   void addLoopRegs(const std::string &funcName,
                    const llvm::MachineBasicBlock *headerBB,

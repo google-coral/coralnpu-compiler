@@ -2,26 +2,27 @@
 
 load("//tests/models/linalg:defs.bzl", "op_tests")
 
-def op_tests_f32(name, **kwargs):
-    """Registers f32 op tests.
-
-    Args:
-      name: The name of the test.
-      **kwargs: Additional arguments.
-    """
-    tags = list(kwargs.pop("tags", []))
-    if "f32" not in tags:
-        tags.append("f32")
-    if "ci" not in tags:
-        tags.append("ci")
-    op_tests(name = name, tags = tags, **kwargs)
-
-def linalg_op_tests_f32(name = "linalg_op_f32_tests"):
+def linalg_op_tests_f32(name = "linalg_op_f32_tests", generated_targets = None):
     """Registers Linalg f32 op tests.
 
     Args:
       name: The name of the test suite.
+      generated_targets: Optional list to collect generated target labels.
     """
+
+    def op_tests_f32(name, **kwargs):
+        tags = list(kwargs.pop("tags", []))
+        if "f32" not in tags:
+            tags.append("f32")
+        if "ci" not in tags:
+            tags.append("ci")
+        op_tests(
+            name = name,
+            tags = tags,
+            generated_targets = generated_targets,
+            **kwargs
+        )
+
     op_tests_f32(name = "fill_rank1_f32", instances = ["(8)", "(256)", "(450)"], test = "fill_rank1_f32.mlir")
     op_tests_f32(name = "fill_rank2_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "fill_rank2_f32.mlir")
     op_tests_f32(name = "fill_rank3_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "fill_rank3_f32.mlir")

@@ -14,7 +14,6 @@
 
 #include "compiler/Target/CoralNPUTargetBackend.h"
 
-#include "compiler/Target/CoralNPUDiagnosticHandler.h"
 #include "compiler/Target/CoralNPULinkerTool.h"
 #include "compiler/Target/RegisterAllocationReportCollector.h"
 #include "compiler/Target/RegisterUsageTrackerPass.h"
@@ -412,12 +411,6 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
   bool registerAllocationReportEnabled =
       options_.registerAllocationReportFormat != "none";
   RegisterAllocationReportCollector collector;
-  std::unique_ptr<CoralNPUDiagnosticHandler> diagHandler;
-
-  if (registerAllocationReportEnabled) {
-    diagHandler = std::make_unique<CoralNPUDiagnosticHandler>(&collector);
-    context.setDiagnosticHandler(std::move(diagHandler));
-  }
 
   auto maybeTarget = getVariantTarget(variantOp);
   if (!maybeTarget) return failure();
@@ -804,6 +797,7 @@ void CoralNPUTargetBackend::dumpRegisterAllocationReport(
     } else {
       collector.dumpPretty(os, filter);
     }
+    os.flush();
     return;
   }
 

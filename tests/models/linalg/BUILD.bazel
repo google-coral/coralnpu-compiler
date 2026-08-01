@@ -1,6 +1,16 @@
 load("//tests/models/linalg:op_tests.bzl", "linalg_op_tests")
 
-linalg_op_tests()
+package(default_visibility = ["//visibility:public"])
+
+check_mlir_files = []
+
+linalg_op_tests(generated_targets = check_mlir_files)
+
+filegroup(
+    name = "check_mlir_files",
+    srcs = check_mlir_files,
+    visibility = ["//visibility:public"],
+)
 
 test_suite(
     name = "ci",

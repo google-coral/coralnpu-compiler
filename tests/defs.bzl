@@ -52,6 +52,7 @@ def coralnpu_check_gen_tests(
         tags = [],
         timeout = None,
         deps = [],
+        generated_targets = None,
         **kwargs):
     """Defines a test generator and test targets for templated tests.
 
@@ -66,6 +67,7 @@ def coralnpu_check_gen_tests(
         tags: Tags for the test targets.
         timeout: Timeout for the test targets.
         deps: Dependencies for the test targets.
+        generated_targets: Optional list to collect generated target labels.
         **kwargs: Passed to all targets.
     """
     if default_gen == None:
@@ -83,5 +85,6 @@ def coralnpu_check_gen_tests(
         bytecode_tags = ["target=coralnpu"],
         timeout = timeout,
         deps = deps,
+        generated_targets = generated_targets,
         **kwargs
     )

@@ -51,16 +51,6 @@ std::string getBlockName(const llvm::MachineBasicBlock *bb) {
 
 }  // namespace
 
-void RegisterAllocationReportCollector::addSpills(const std::string &funcName,
-                                                  int spills, int reloads,
-                                                  int copies) {
-  auto &fStats = stats[funcName];
-  fStats.name = funcName;
-  fStats.spills = spills;
-  fStats.reloads = reloads;
-  fStats.copies = copies;
-}
-
 void RegisterAllocationReportCollector::addGlobalRegs(
     const std::string &funcName, const std::set<std::string> &regs,
     const std::string &location) {
@@ -70,18 +60,28 @@ void RegisterAllocationReportCollector::addGlobalRegs(
   fStats.globalLocation = location;
 }
 
-void RegisterAllocationReportCollector::addLoopSpills(
+void RegisterAllocationReportCollector::recordFunctionStats(
+    const std::string &funcName, int vecSpills, int vecReloads,
+    bool hasScalarSpills) {
+  auto &fStats = stats[funcName];
+  fStats.name = funcName;
+  fStats.vecSpills = vecSpills;
+  fStats.vecReloads = vecReloads;
+  fStats.hasScalarSpills = fStats.hasScalarSpills || hasScalarSpills;
+}
+
+void RegisterAllocationReportCollector::recordLoopStats(
     const std::string &funcName, const llvm::MachineBasicBlock *headerBB,
-    int spills, int reloads, int copies) {
+    int vecSpills, int vecReloads, bool hasScalarSpills) {
   auto &fStats = stats[funcName];
   fStats.name = funcName;
   std::string headerName = getBlockName(headerBB);
   auto &lStats = fStats.loops[headerName];
   lStats.headerName = headerName;
   lStats.headerNum = headerBB->getNumber();
-  lStats.spills = spills;
-  lStats.reloads = reloads;
-  lStats.copies = copies;
+  lStats.vecSpills = vecSpills;
+  lStats.vecReloads = vecReloads;
+  lStats.hasScalarSpills = lStats.hasScalarSpills || hasScalarSpills;
 }
 
 void RegisterAllocationReportCollector::addLoopRegs(
@@ -121,15 +121,16 @@ void RegisterAllocationReportCollector::dumpJson(
         if (hasFilter && !filterRegex.match(fStats.name)) {
           continue;
         }
-        if (fStats.spills == 0 && fStats.reloads == 0 && fStats.copies == 0 &&
-            fStats.loops.empty() && fStats.globalVectorRegs.empty()) {
+        if (fStats.vecSpills == 0 && fStats.vecReloads == 0 &&
+            !fStats.hasScalarSpills && fStats.loops.empty() &&
+            fStats.globalVectorRegs.empty()) {
           continue;
         }
         J.object([&] {
           J.attribute("name", fStats.name);
-          J.attribute("spills", fStats.spills);
-          J.attribute("reloads", fStats.reloads);
-          J.attribute("copies", fStats.copies);
+          J.attribute("vec_spills", fStats.vecSpills);
+          J.attribute("vec_reloads", fStats.vecReloads);
+          J.attribute("has_scalar_spills", fStats.hasScalarSpills);
           if (!fStats.globalVectorRegs.empty()) {
             J.attribute("global_location", fStats.globalLocation);
             int globalPhysRegs = 0;
@@ -168,9 +169,9 @@ void RegisterAllocationReportCollector::dumpJson(
                     J.value(reg);
                   }
                 });
-                J.attribute("spills", lStats.spills);
-                J.attribute("reloads", lStats.reloads);
-                J.attribute("copies", lStats.copies);
+                J.attribute("vec_spills", lStats.vecSpills);
+                J.attribute("vec_reloads", lStats.vecReloads);
+                J.attribute("has_scalar_spills", lStats.hasScalarSpills);
               });
             }
           });
@@ -205,14 +206,16 @@ void RegisterAllocationReportCollector::dumpPretty(
     if (hasFilter && !filterRegex.match(fStats.name)) {
       continue;
     }
-    if (fStats.spills == 0 && fStats.reloads == 0 && fStats.copies == 0 &&
-        fStats.loops.empty() && fStats.globalVectorRegs.empty()) {
+    if (fStats.vecSpills == 0 && fStats.vecReloads == 0 &&
+        !fStats.hasScalarSpills && fStats.loops.empty() &&
+        fStats.globalVectorRegs.empty()) {
       continue;
     }
     os << "Dispatch: " << fStats.name << "\n";
-    os << "  Total Spills: " << fStats.spills
-       << ", Total Reloads: " << fStats.reloads
-       << ", Total Copies: " << fStats.copies << "\n";
+    os << "  Vec Spills: " << fStats.vecSpills
+       << ", Vec Reloads: " << fStats.vecReloads
+       << ", Has Scalar Spills: " << (fStats.hasScalarSpills ? "Yes" : "No")
+       << "\n";
 
     if (!fStats.globalVectorRegs.empty()) {
       os << "  Function-level (non-loop):\n";
@@ -262,8 +265,10 @@ void RegisterAllocationReportCollector::dumpPretty(
       }
       os << "]\n";
 
-      os << "    Spills: " << lStats.spills << ", Reloads: " << lStats.reloads
-         << ", Copies: " << lStats.copies << "\n";
+      os << "    Vec Spills: " << lStats.vecSpills
+         << ", Vec Reloads: " << lStats.vecReloads
+         << ", Has Scalar Spills: " << (lStats.hasScalarSpills ? "Yes" : "No")
+         << "\n";
     }
     os << "--------------------------------------------------------------------"
           "----\n";

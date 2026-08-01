@@ -20,6 +20,7 @@
 #include <set>
 #include <vector>
 
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
@@ -36,6 +37,23 @@ namespace {
 bool isVectorRegister(StringRef regName) {
   return regName.starts_with_insensitive("v") && regName.size() > 1 &&
          std::isdigit(regName[1]);
+}
+
+bool isVectorSpillSlot(const MachineInstr &instr, int fi,
+                       const MachineFrameInfo &mfi,
+                       const TargetRegisterInfo *regInfo) {
+  if (mfi.getObjectSize(fi) >= 16) {
+    return true;
+  }
+  for (const MachineOperand &mo : instr.operands()) {
+    if (mo.isReg() && mo.getReg().isPhysical()) {
+      StringRef rName = regInfo->getName(mo.getReg());
+      if (isVectorRegister(rName)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 void gatherVectorRegisters(const MachineBasicBlock &block,
@@ -117,11 +135,49 @@ class RegisterUsageTracker : public MachineFunctionPass {
       }
     }
 
+    const TargetInstrInfo *tii = function.getSubtarget().getInstrInfo();
+    const MachineFrameInfo &mfi = function.getFrameInfo();
+
+    // The nullptr entry in the following maps represents the function level
+    // values.
+    std::map<MachineLoop *, int> loopVecSpills, loopVecReloads;
+    std::map<MachineLoop *, bool> loopHasScalarSpills;
+
+    for (const MachineBasicBlock &block : function) {
+      MachineLoop *loop = loopInfo->getLoopFor(&block);
+      // When loop is nullptr we record information in the function level.
+      for (const MachineInstr &instr : block) {
+        int fi = 0;
+        if (tii->isStoreToStackSlot(instr, fi) &&
+            mfi.isSpillSlotObjectIndex(fi)) {
+          if (isVectorSpillSlot(instr, fi, mfi, regInfo)) {
+            loopVecSpills[loop]++;
+          } else {
+            loopHasScalarSpills[loop] = true;
+          }
+        } else if (tii->isLoadFromStackSlot(instr, fi) &&
+                   mfi.isSpillSlotObjectIndex(fi)) {
+          if (isVectorSpillSlot(instr, fi, mfi, regInfo)) {
+            loopVecReloads[loop]++;
+          } else {
+            loopHasScalarSpills[loop] = true;
+          }
+        }
+      }
+    }
+
+    collector_->recordFunctionStats(funcName, loopVecSpills[nullptr],
+                                    loopVecReloads[nullptr],
+                                    loopHasScalarSpills[nullptr]);
+
     for (const auto &[loop, regs] : loopRegs) {
       const MachineBasicBlock *header = loop->getHeader();
       std::string location = loopLocs[loop];
       collector_->addLoopRegs(funcName, header, regs, location,
                               loop->getLoopDepth());
+      collector_->recordLoopStats(funcName, header, loopVecSpills[loop],
+                                  loopVecReloads[loop],
+                                  loopHasScalarSpills[loop]);
     }
 
     return false;

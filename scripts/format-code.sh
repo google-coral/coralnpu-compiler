@@ -11,6 +11,7 @@ main() {
   local -a dirs=()
   dirs+=(build_tools)
   dirs+=(compiler)
+  dirs+=(compiler-tuning)
   dirs+=(examples)
   dirs+=(pjrt_plugin)
   dirs+=(runtime)
