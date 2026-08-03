@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//tests:defs.bzl", "copy_generated_check_tests_suite")
+
 package(
     default_visibility = ["//visibility:public"],
     licenses = ["notice"],  # Apache 2.0
@@ -25,5 +27,14 @@ test_suite(
         "//tests/models/stablehlo:ci",
         "//tests/python-bindings:ci",
         "//tests/transforms:ci",
+    ],
+)
+
+copy_generated_check_tests_suite(
+    name = "copy_generated",
+    tags = ["manual"],
+    deps = [
+        "//tests/models/linalg:copy_generated",
+        "//tests/models/stablehlo:copy_generated",
     ],
 )

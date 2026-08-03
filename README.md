@@ -462,6 +462,35 @@ We also have Linalg op tests. To run just those:
 bazel test --config=dev //tests/models/linalg/...
 ```
 
+You can filter compiler tests by data-type tag (e.g., `i8`, `i16`, `i32`, `f32`):
+
+```shell
+# Run only f32 Linalg check tests
+bazel test --config=dev //tests/models/linalg/... --test_tag_filters=f32
+
+# Run only i8 StableHLO check tests
+bazel test --config=dev //tests/models/stablehlo/... --test_tag_filters=i8
+```
+
+> [!NOTE]
+> Running `bazel test` against `//tests/models/linalg/...` or `//tests/models/stablehlo/...` executes tests against static `.mlir` files checked into the repository under `generated_<type>/` directories. **Running tests will never trigger test regeneration.**
+
+### Generating and Regenerating Check Tests with Bazel
+
+The Linalg and StableHLO compiler check tests are generated from dynamic-shape templates using the `check_gen` tool and checked into the repository under `generated_<type>/` directories (e.g., `tests/models/linalg/generated_i8/`).
+
+To generate or regenerate check test `.mlir` files and copy them into the source tree:
+
+#### Regenerate all check tests across the repository:
+
+```shell
+bazel run --config=dev //tests:copy_generated
+# or just linalg:
+# bazel run --config=dev //tests/models/linalg:copy_generated
+# or just stablehlo:
+# bazel run --config=dev //tests/models/stablehlo:copy_generated
+```
+
 ### Running Tests with CMake/CTest
 
 To run the tests with CMake, you need to configure CMake with testing enabled (`-DIREE_BUILD_TESTS=ON`):
@@ -492,6 +521,19 @@ ctest --test-dir "${BUILD_DIR}" -R "tests/models/stablehlo/.*" -L "ci" -j $(npro
 # Run only Linalg CI tests
 ctest --test-dir "${BUILD_DIR}" -R "tests/models/linalg/.*" -L "ci" -j $(nproc)
 ```
+
+You can also filter compiler check tests by data-type label (`f32`, `i16`, `i32`, `i8`):
+
+```shell
+# Run only f32 Linalg CI tests
+ctest --test-dir "${BUILD_DIR}" -R "tests/models/linalg/.*" -L "f32" -LE "manual" -j $(nproc)
+
+# Run only i8 StableHLO CI tests
+ctest --test-dir "${BUILD_DIR}" -R "tests/models/stablehlo/.*" -L "i8" -LE "manual" -j $(nproc)
+```
+
+> [!NOTE]
+> Like Bazel, running CMake check tests in `tests/models/linalg/` or `tests/models/stablehlo/` executes tests against static `.mlir` files checked into the repository under `generated_<type>/` directories. **Running tests with CMake will never trigger test regeneration.** To regenerate check tests, use the Bazel `copy_generated` targets described above.
 
 ---
 

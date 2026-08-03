@@ -19,9 +19,10 @@ def coralnpu_bytecode_module(
         src,
         flags,
         module_name = None,
-        compile_tool = "@iree_core//tools:iree-compile",
+        compile_tool = "//compiler/tools:coralnpu-compile",
         coralnpu_linker_tool = "@rv32_toolchain//:bin/riscv32-unknown-elf-ld",
         deps = [],
+        tags = [],
         **kwargs):
     """Builds an IREE bytecode module with CoralNPU sandbox setup.
 
@@ -38,6 +39,7 @@ def coralnpu_bytecode_module(
       compile_tool: The compiler tool target.
       coralnpu_linker_tool: The linker tool target.
       deps: Additional source files needed for compilation.
+      tags: Tags to apply to the generated target.
       **kwargs: Extra arguments to pass to the genrule.
     """
 
@@ -52,6 +54,8 @@ def coralnpu_bytecode_module(
         # Disabling conv generalization prevents decomposition into generic ops,
         # allowing convolutions to be vectorized directly for CoralNPU.
         "--iree-global-opt-experimental-disable-conv-generalization",
+        # Disable threading; bazel assumes jobs are single threaded.
+        "--mlir-disable-threading",
     ]
 
     cmd = " && ".join([
@@ -69,6 +73,10 @@ def coralnpu_bytecode_module(
         ]),
     ])
 
+    all_tags = list(tags)
+    if "target=coralnpu" not in all_tags:
+        all_tags.append("target=coralnpu")
+
     native.genrule(
         name = name,
         srcs = [
@@ -82,6 +90,7 @@ def coralnpu_bytecode_module(
         outs = out_files,
         cmd = cmd,
         tools = [compile_tool, coralnpu_linker_tool],
+        tags = all_tags,
         message = "Compiling IREE module %s..." % (name),
         output_to_bindir = 1,
         **kwargs

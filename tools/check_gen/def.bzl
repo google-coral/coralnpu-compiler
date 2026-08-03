@@ -40,6 +40,7 @@ def _check_gen_impl(ctx):
 
     # Run check_gen tool with llvm-cpu backend for reference evaluation
     args = ctx.actions.args()
+    args.add("--mlir-disable-threading")
     args.add("--iree-hal-target-backends=llvm-cpu")
     args.add("--iree-llvmcpu-target-cpu=host")
     args.add("--iree-llvmcpu-embedded-linker-path=" + ctx.executable.linker_tool.path)
@@ -125,6 +126,10 @@ def check_gen_test_generator(name, test, arg_gens = [], instances = [], default_
         **kwargs: Other arguments passed to the underlying rule.
     """
 
+    tags = list(kwargs.pop("tags", []))
+    if "manual" not in tags:
+        tags.append("manual")
+
     # Deduplicate arg_gens (skip "default" placeholder)
     unique_arg_gens = []
     for g in arg_gens:
@@ -154,6 +159,7 @@ def check_gen_test_generator(name, test, arg_gens = [], instances = [], default_
         default_gen = default_gen,
         instances = instances,
         visibility = kwargs.get("visibility", ["//visibility:public"]),
+        tags = tags,
         **kwargs
     )
 
@@ -173,9 +179,16 @@ def check_gen_test_generator(name, test, arg_gens = [], instances = [], default_
             srcs = [":" + name],
             filename = gen_file_name,
             visibility = kwargs.get("visibility", ["//visibility:public"]),
-            tags = kwargs.get("tags"),
+            tags = tags,
             testonly = kwargs.get("testonly"),
         )
+
+    native.filegroup(
+        name = name + "_mlir_files",
+        srcs = [":" + name + "_" + parse_instance_to_suffix(inst) for inst in instances],
+        visibility = kwargs.get("visibility", ["//visibility:public"]),
+        tags = tags,
+    )
 
 def check_gen_tests(
         name,
@@ -258,7 +271,6 @@ def check_gen_tests(
         coralnpu_bytecode_module(
             name = bytecode_module_name,
             src = ":" + select_file_target_name,  # Refer to the auto-generated target
-            compile_tool = "//compiler/tools:coralnpu-compile",
             flags = list(compiler_flags),
             # if the test is taged manual, we have to pass the tag so we don't try to generate the test (which fails)
             tags = bytecode_tags + (["manual"] if "manual" in combined_tags else []),

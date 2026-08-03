@@ -1,10 +1,83 @@
-load("//tests/models/linalg:op_tests.bzl", "linalg_op_tests")
+load("//tests:defs.bzl", "copy_generated_check_tests", "copy_generated_check_tests_suite")
+load("//tests/models/linalg:op_tests_f32.bzl", "linalg_op_tests_f32")
+load("//tests/models/linalg:op_tests_i16.bzl", "linalg_op_tests_i16")
+load("//tests/models/linalg:op_tests_i32.bzl", "linalg_op_tests_i32")
+load("//tests/models/linalg:op_tests_i8.bzl", "linalg_op_tests_i8")
 
 package(default_visibility = ["//visibility:public"])
 
 check_mlir_files = []
 
-linalg_op_tests(generated_targets = check_mlir_files)
+f32_gen_targets = []
+
+i16_gen_targets = []
+
+i32_gen_targets = []
+
+i8_gen_targets = []
+
+linalg_op_tests_f32(
+    check_mlir_files = check_mlir_files,
+    generation_targets = f32_gen_targets,
+    target_dir = "generated_f32",
+)
+
+linalg_op_tests_i16(
+    check_mlir_files = check_mlir_files,
+    generation_targets = i16_gen_targets,
+    target_dir = "generated_i16",
+)
+
+linalg_op_tests_i32(
+    check_mlir_files = check_mlir_files,
+    generation_targets = i32_gen_targets,
+    target_dir = "generated_i32",
+)
+
+linalg_op_tests_i8(
+    check_mlir_files = check_mlir_files,
+    generation_targets = i8_gen_targets,
+    target_dir = "generated_i8",
+)
+
+copy_generated_check_tests(
+    name = "copy_generated_f32",
+    filegroups = f32_gen_targets,
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_f32",
+)
+
+copy_generated_check_tests(
+    name = "copy_generated_i16",
+    filegroups = i16_gen_targets,
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_i16",
+)
+
+copy_generated_check_tests(
+    name = "copy_generated_i32",
+    filegroups = i32_gen_targets,
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_i32",
+)
+
+copy_generated_check_tests(
+    name = "copy_generated_i8",
+    filegroups = i8_gen_targets,
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_i8",
+)
+
+copy_generated_check_tests_suite(
+    name = "copy_generated",
+    tags = ["manual"],
+    deps = [
+        ":copy_generated_f32",
+        ":copy_generated_i16",
+        ":copy_generated_i32",
+        ":copy_generated_i8",
+    ],
+)
 
 filegroup(
     name = "check_mlir_files",

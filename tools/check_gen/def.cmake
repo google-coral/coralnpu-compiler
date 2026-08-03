@@ -51,6 +51,7 @@ function(check_gen_tests)
 
   # Construct check_gen command with llvm-cpu backend for reference evaluation
   set(CHECK_GEN_ARGS)
+  list(APPEND CHECK_GEN_ARGS "--mlir-disable-threading")
   list(APPEND CHECK_GEN_ARGS "--iree-hal-target-backends=llvm-cpu")
   list(APPEND CHECK_GEN_ARGS "--iree-llvmcpu-target-cpu=host")
   list(APPEND CHECK_GEN_ARGS "-o" "${CMAKE_CURRENT_BINARY_DIR}")
@@ -124,6 +125,7 @@ function(check_gen_tests)
       DRIVER
         "local-sync"
       COMPILER_FLAGS
+        "--mlir-disable-threading"
         ${_RULE_COMPILER_FLAGS}
       RUNNER_ARGS
         ${_RULE_RUNNER_ARGS}

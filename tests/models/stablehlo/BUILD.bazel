@@ -1,7 +1,89 @@
-load("//tests:defs.bzl", "coralnpu_check_test")
-load("//tests/models/stablehlo:op_tests.bzl", "stablehlo_op_tests")
+load("//tests:defs.bzl", "copy_generated_check_tests", "copy_generated_check_tests_suite", "coralnpu_check_test")
+load("//tests/models/stablehlo:op_tests_f32.bzl", "stablehlo_op_tests_f32")
+load("//tests/models/stablehlo:op_tests_i16.bzl", "stablehlo_op_tests_i16")
+load("//tests/models/stablehlo:op_tests_i32.bzl", "stablehlo_op_tests_i32")
+load("//tests/models/stablehlo:op_tests_i8.bzl", "stablehlo_op_tests_i8")
 
-stablehlo_op_tests()
+package(default_visibility = ["//visibility:public"])
+
+check_mlir_files = []
+
+f32_gen_targets = []
+
+i16_gen_targets = []
+
+i32_gen_targets = []
+
+i8_gen_targets = []
+
+stablehlo_op_tests_f32(
+    check_mlir_files = check_mlir_files,
+    generation_targets = f32_gen_targets,
+    target_dir = "generated_f32",
+)
+
+stablehlo_op_tests_i16(
+    check_mlir_files = check_mlir_files,
+    generation_targets = i16_gen_targets,
+    target_dir = "generated_i16",
+)
+
+stablehlo_op_tests_i32(
+    check_mlir_files = check_mlir_files,
+    generation_targets = i32_gen_targets,
+    target_dir = "generated_i32",
+)
+
+stablehlo_op_tests_i8(
+    check_mlir_files = check_mlir_files,
+    generation_targets = i8_gen_targets,
+    target_dir = "generated_i8",
+)
+
+copy_generated_check_tests(
+    name = "copy_generated_f32",
+    filegroups = f32_gen_targets,
+    tags = ["manual"],
+    target_dir = "tests/models/stablehlo/generated_f32",
+)
+
+copy_generated_check_tests(
+    name = "copy_generated_i16",
+    filegroups = i16_gen_targets,
+    tags = ["manual"],
+    target_dir = "tests/models/stablehlo/generated_i16",
+)
+
+copy_generated_check_tests(
+    name = "copy_generated_i32",
+    filegroups = i32_gen_targets,
+    tags = ["manual"],
+    target_dir = "tests/models/stablehlo/generated_i32",
+)
+
+copy_generated_check_tests(
+    name = "copy_generated_i8",
+    filegroups = i8_gen_targets,
+    tags = ["manual"],
+    target_dir = "tests/models/stablehlo/generated_i8",
+)
+
+copy_generated_check_tests_suite(
+    name = "copy_generated",
+    tags = ["manual"],
+    deps = [
+        ":copy_generated_f32",
+        ":copy_generated_i16",
+        ":copy_generated_i32",
+        ":copy_generated_i8",
+    ],
+)
+
+filegroup(
+    name = "check_mlir_files",
+    srcs = check_mlir_files,
+    visibility = ["//visibility:public"],
+)
 
 coralnpu_check_test(
     name = "matmul_highmem_test",

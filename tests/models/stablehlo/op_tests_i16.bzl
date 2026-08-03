@@ -2,26 +2,31 @@
 
 load("//tests/models/stablehlo:defs.bzl", "op_tests")
 
-def op_tests_i16(name, **kwargs):
-    """Wrapper macro for op_tests with 'i16' and 'ci' tags.
-
-    Args:
-      name: The name of the test target.
-      **kwargs: Additional arguments passed to op_tests.
-    """
-    tags = list(kwargs.pop("tags", []))
-    if "i16" not in tags:
-        tags.append("i16")
-    if "ci" not in tags:
-        tags.append("ci")
-    op_tests(name = name, tags = tags, **kwargs)
-
-def stablehlo_op_tests_i16(name = "stablehlo_op_i16_tests"):
+def stablehlo_op_tests_i16(name = "stablehlo_op_i16_tests", check_mlir_files = None, generation_targets = None, target_dir = "generated_i16"):
     """Registers StableHLO i16 op tests.
 
     Args:
       name: The name of the macro.
+      check_mlir_files: Optional list to collect check MLIR file paths.
+      generation_targets: Optional list to collect check_gen filegroup labels.
+      target_dir: Subdirectory where static check test files are stored.
     """
+
+    def op_tests_i16(name, **kwargs):
+        tags = list(kwargs.pop("tags", []))
+        if "i16" not in tags:
+            tags.append("i16")
+        if "ci" not in tags:
+            tags.append("ci")
+        op_tests(
+            name = name,
+            tags = tags,
+            check_mlir_files = check_mlir_files,
+            generation_targets = generation_targets,
+            target_dir = target_dir,
+            **kwargs
+        )
+
     op_tests_i16(name = "abs_rank1_i16", instances = ["(8)", "(256)", "(450)"], test = "abs_rank1_i16.mlir")
     op_tests_i16(name = "abs_rank2_i16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "abs_rank2_i16.mlir")
     op_tests_i16(name = "abs_rank3_i16", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "abs_rank3_i16.mlir")

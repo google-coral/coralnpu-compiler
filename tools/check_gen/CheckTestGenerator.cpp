@@ -92,6 +92,10 @@ TypedAttr getVmfbArgAttr(OpBuilder &builder, int64_t val, char cc) {
       return builder.getI32IntegerAttr(static_cast<int32_t>(val));
     case 'I':
       return builder.getI64IntegerAttr(val);
+    case 'f':
+      return builder.getF32FloatAttr(static_cast<float>(val));
+    case 'F':
+      return builder.getF64FloatAttr(static_cast<double>(val));
     default:
       return builder.getIndexAttr(val);
   }

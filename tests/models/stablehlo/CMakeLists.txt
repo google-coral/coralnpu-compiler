@@ -13,4 +13,10 @@
 # the License.
 
 include(defs.cmake)
-include(op_tests.cmake)
+foreach(TYPE f32 i16 i32 i8)
+  coralnpu_add_static_check_tests(
+    TYPE ${TYPE}
+    COMPILER_FLAGS ${_COMMON_COMPILER_FLAGS}
+    RUNNER_ARGS ${_COMMON_RUNNER_ARGS}
+  )
+endforeach()

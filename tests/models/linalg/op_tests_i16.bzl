@@ -2,12 +2,14 @@
 
 load("//tests/models/linalg:defs.bzl", "op_tests")
 
-def linalg_op_tests_i16(name = "linalg_op_i16_tests", generated_targets = None):
+def linalg_op_tests_i16(name = "linalg_op_i16_tests", check_mlir_files = None, generation_targets = None, target_dir = "generated_i16"):
     """Registers Linalg i16 op tests.
 
     Args:
       name: The name of the test suite.
-      generated_targets: Optional list to collect generated target labels.
+      check_mlir_files: Optional list to collect check MLIR file paths.
+      generation_targets: Optional list to collect check_gen filegroup labels.
+      target_dir: Subdirectory where static check test files are stored.
     """
 
     def op_tests_i16(name, **kwargs):
@@ -19,7 +21,9 @@ def linalg_op_tests_i16(name = "linalg_op_i16_tests", generated_targets = None):
         op_tests(
             name = name,
             tags = tags,
-            generated_targets = generated_targets,
+            check_mlir_files = check_mlir_files,
+            generation_targets = generation_targets,
+            target_dir = target_dir,
             **kwargs
         )
 

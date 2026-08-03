@@ -2,12 +2,14 @@
 
 load("//tests/models/linalg:defs.bzl", "op_tests")
 
-def linalg_op_tests_f32(name = "linalg_op_f32_tests", generated_targets = None):
+def linalg_op_tests_f32(name = "linalg_op_f32_tests", check_mlir_files = None, generation_targets = None, target_dir = "generated_f32"):
     """Registers Linalg f32 op tests.
 
     Args:
       name: The name of the test suite.
-      generated_targets: Optional list to collect generated target labels.
+      check_mlir_files: Optional list to collect check MLIR file paths.
+      generation_targets: Optional list to collect check_gen filegroup labels.
+      target_dir: Subdirectory where static check test files are stored.
     """
 
     def op_tests_f32(name, **kwargs):
@@ -19,7 +21,9 @@ def linalg_op_tests_f32(name = "linalg_op_f32_tests", generated_targets = None):
         op_tests(
             name = name,
             tags = tags,
-            generated_targets = generated_targets,
+            check_mlir_files = check_mlir_files,
+            generation_targets = generation_targets,
+            target_dir = target_dir,
             **kwargs
         )
 
@@ -133,7 +137,7 @@ def linalg_op_tests_f32(name = "linalg_op_f32_tests", generated_targets = None):
     # 'vector.store' op write affecting operations on global resources are restricted
     # to workgroup distributed contexts.
     # Tagging as manual to skip for now.
-    op_tests(
+    op_tests_f32(
         name = "softmax_f32",
         instances = ["(4,8)", "(120,256)", "(300,450)"],
         test = "softmax_f32.mlir",

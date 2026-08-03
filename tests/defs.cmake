@@ -15,104 +15,56 @@
 include(CMakeParseArguments)
 include(${CMAKE_CURRENT_LIST_DIR}/../tools/check_gen/def.cmake)
 
-# Standard default generators matching tests/defs.bzl
-set(CORALNPU_STANDARD_DEFAULT_GEN "tools_check_gen_generators_sequential_vmfb")
-
-# coralnpu_check_gen_tests()
-function(coralnpu_check_gen_tests)
+# coralnpu_add_static_check_tests()
+function(coralnpu_add_static_check_tests)
   cmake_parse_arguments(
     _RULE
     ""
-    "NAME;TEST;TIMEOUT;DEFAULT_GEN"
-    "INSTANCES;ARG_GENS;COMPILER_FLAGS;RUNNER_ARGS;LABELS"
+    "TYPE"
+    "COMPILER_FLAGS;RUNNER_ARGS;MANUAL_PATTERNS"
     ${ARGN}
   )
 
-  if("manual" IN_LIST _RULE_LABELS)
-    message(STATUS "Skipping manual check gen test: ${_RULE_NAME}")
-    return()
-  endif()
+  file(GLOB_RECURSE CHECK_FILES "${CMAKE_CURRENT_SOURCE_DIR}/generated_${_RULE_TYPE}/*_check.mlir")
+  list(SORT CHECK_FILES)
 
+  foreach(CHECK_FILE IN LISTS CHECK_FILES)
+    get_filename_component(FILE_NAME "${CHECK_FILE}" NAME_WE)
+    string(REGEX REPLACE "_check$" "" TEST_NAME "${FILE_NAME}")
 
-  # 1. Resolve DEFAULT_GEN to path and target
-  if(NOT DEFINED _RULE_DEFAULT_GEN)
-    set(_RULE_DEFAULT_GEN ${CORALNPU_STANDARD_DEFAULT_GEN})
-  endif()
-  if(_RULE_DEFAULT_GEN MATCHES "^//")
-    string(REGEX REPLACE "^//" "" _RULE_DEFAULT_GEN "${_RULE_DEFAULT_GEN}")
-    string(REPLACE "/" "_" _RULE_DEFAULT_GEN "${_RULE_DEFAULT_GEN}")
-    string(REPLACE ":" "_" _RULE_DEFAULT_GEN "${_RULE_DEFAULT_GEN}")
-  endif()
-
-  set(DEFAULT_GEN_FILE)
-  set(DEFAULT_GEN_TARGET)
-  if(_RULE_DEFAULT_GEN)
-    if(TARGET ${_RULE_DEFAULT_GEN})
-      set(DEFAULT_GEN_TARGET ${_RULE_DEFAULT_GEN})
-      if(${_RULE_DEFAULT_GEN} MATCHES "^tools_check_gen_generators_")
-        string(REPLACE "tools_check_gen_generators_" "" GEN_NAME "${_RULE_DEFAULT_GEN}")
-        set(DEFAULT_GEN_FILE "${CMAKE_BINARY_DIR}/tools/check_gen/generators/${GEN_NAME}.vmfb")
-      else()
-        message(FATAL_ERROR "Target ${_RULE_DEFAULT_GEN} is not a supported generator target. Pass file path instead.")
+    set(TEST_LABELS "driver=coralnpu" "target=coralnpu" "${_RULE_TYPE}")
+    set(IS_MANUAL FALSE)
+    foreach(PATTERN IN LISTS _RULE_MANUAL_PATTERNS)
+      if(TEST_NAME MATCHES "${PATTERN}")
+        set(IS_MANUAL TRUE)
+        break()
       endif()
+    endforeach()
+
+    if(IS_MANUAL)
+      list(APPEND TEST_LABELS "manual")
     else()
-      get_filename_component(DEFAULT_GEN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/${_RULE_DEFAULT_GEN}" REALPATH)
+      list(APPEND TEST_LABELS "ci")
     endif()
-  endif()
 
-  # 2. Resolve ARG_GENS to paths and targets
-  set(GEN_FILES)
-  set(GEN_TARGETS)
-  foreach(GEN IN LISTS _RULE_ARG_GENS)
-    if(GEN STREQUAL "default")
-      list(APPEND GEN_FILES "default")
-    else()
-      if(GEN MATCHES "^//")
-        string(REGEX REPLACE "^//" "" GEN "${GEN}")
-        string(REPLACE "/" "_" GEN "${GEN}")
-        string(REPLACE ":" "_" GEN "${GEN}")
-      endif()
-      if(TARGET ${GEN})
-        list(APPEND GEN_TARGETS ${GEN})
-        if(GEN MATCHES "^tools_check_gen_generators_")
-          string(REPLACE "tools_check_gen_generators_" "" GEN_NAME "${GEN}")
-          list(APPEND GEN_FILES "${CMAKE_BINARY_DIR}/tools/check_gen/generators/${GEN_NAME}.vmfb")
-        else()
-          message(FATAL_ERROR "Target ${GEN} is not a supported generator target. Pass file path instead.")
-        endif()
-      else()
-        get_filename_component(GEN_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${GEN}" REALPATH)
-        list(APPEND GEN_FILES "${GEN_PATH}")
-      endif()
-    endif()
+    iree_check_test(
+      NAME
+        "${TEST_NAME}"
+      SRC
+        "${CHECK_FILE}"
+      TARGET_BACKEND
+        "llvm-cpu"
+      DRIVER
+        "local-sync"
+      COMPILER_FLAGS
+        "--mlir-disable-threading"
+        ${_RULE_COMPILER_FLAGS}
+      RUNNER_ARGS
+        ${_RULE_RUNNER_ARGS}
+      LABELS
+        ${TEST_LABELS}
+      TIMEOUT
+        "short"
+    )
   endforeach()
-
-
-  # 4. Call generic check_gen_tests
-  check_gen_tests(
-    NAME
-      ${_RULE_NAME}
-    TEST
-      ${_RULE_TEST}
-    DEFAULT_GEN
-      ${DEFAULT_GEN_FILE}
-    DEFAULT_GEN_TARGET
-      ${DEFAULT_GEN_TARGET}
-    ARG_GENS
-      ${GEN_FILES}
-    ARG_GEN_TARGETS
-      ${GEN_TARGETS}
-    INSTANCES
-      ${_RULE_INSTANCES}
-    COMPILER_FLAGS
-      ${_RULE_COMPILER_FLAGS}
-    RUNNER_ARGS
-      ${_RULE_RUNNER_ARGS}
-    LABELS
-      "driver=coralnpu"
-      "target=coralnpu"
-      ${_RULE_LABELS}
-    TIMEOUT
-      ${_RULE_TIMEOUT}
-  )
 endfunction()

@@ -13,4 +13,23 @@
 # the License.
 
 include(defs.cmake)
-include(op_tests.cmake)
+
+set(LINALG_MANUAL_PATTERNS
+    "softmax_"
+    "select_"
+    "generic_multi_output_"
+    "1_6_6_4-3_3_4"
+    "pack_padding_.*_7_15"
+    "pack_padding_.*_17_33"
+    "pooling_nchw_.*_1_8_120_256-5_7"
+    "1_4_6_6-4_4_3_3"
+)
+
+foreach(TYPE f32 i16 i32 i8)
+  coralnpu_add_static_check_tests(
+    TYPE ${TYPE}
+    COMPILER_FLAGS ${_COMMON_COMPILER_FLAGS}
+    RUNNER_ARGS ${_COMMON_RUNNER_ARGS}
+    MANUAL_PATTERNS ${LINALG_MANUAL_PATTERNS}
+  )
+endforeach()
