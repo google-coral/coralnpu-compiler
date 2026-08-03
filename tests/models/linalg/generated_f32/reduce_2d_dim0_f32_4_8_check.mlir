@@ -1,0 +1,18 @@
+module {
+  func.func @reduce_2d_dim0_f32_4_8() {
+    %cst = arith.constant dense<[4.800000e+01, 5.200000e+01, 5.600000e+01, 6.000000e+01, 6.400000e+01, 6.800000e+01, 7.200000e+01, 7.600000e+01]> : tensor<8xf32>
+    %cst_0 = arith.constant 0.000000e+00 : f32
+    %cst_1 = arith.constant dense<[[0.000000e+00, 1.000000e+00, 2.000000e+00, 3.000000e+00, 4.000000e+00, 5.000000e+00, 6.000000e+00, 7.000000e+00], [8.000000e+00, 9.000000e+00, 1.000000e+01, 1.100000e+01, 1.200000e+01, 1.300000e+01, 1.400000e+01, 1.500000e+01], [1.600000e+01, 1.700000e+01, 1.800000e+01, 1.900000e+01, 2.000000e+01, 2.100000e+01, 2.200000e+01, 2.300000e+01], [2.400000e+01, 2.500000e+01, 2.600000e+01, 2.700000e+01, 2.800000e+01, 2.900000e+01, 3.000000e+01, 3.100000e+01]]> : tensor<4x8xf32>
+    %0 = util.optimization_barrier %cst_1 : tensor<4x8xf32>
+    %1 = tensor.empty() : tensor<8xf32>
+    %2 = linalg.fill ins(%cst_0 : f32) outs(%1 : tensor<8xf32>) -> tensor<8xf32>
+    %reduced = linalg.reduce ins(%0 : tensor<4x8xf32>) outs(%2 : tensor<8xf32>) dimensions = [0] 
+      (%in: f32, %init: f32) {
+        %4 = arith.addf %in, %init : f32
+        linalg.yield %4 : f32
+      }
+    %3 = util.optimization_barrier %cst : tensor<8xf32>
+    "check.expect_almost_eq"(%reduced, %3) {rtol = 9.99999997E-7 : f32} : (tensor<8xf32>, tensor<8xf32>) -> ()
+    return
+  }
+}

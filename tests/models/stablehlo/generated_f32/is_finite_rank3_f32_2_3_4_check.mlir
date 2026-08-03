@@ -1,0 +1,11 @@
+module {
+  func.func @is_finite_rank3_f32_2_3_4() {
+    %cst = arith.constant dense<true> : tensor<2x3x4xi1>
+    %cst_0 = arith.constant dense<[[[0.000000e+00, 1.000000e+00, 2.000000e+00, 3.000000e+00], [4.000000e+00, 5.000000e+00, 6.000000e+00, 7.000000e+00], [8.000000e+00, 9.000000e+00, 1.000000e+01, 1.100000e+01]], [[1.200000e+01, 1.300000e+01, 1.400000e+01, 1.500000e+01], [1.600000e+01, 1.700000e+01, 1.800000e+01, 1.900000e+01], [2.000000e+01, 2.100000e+01, 2.200000e+01, 2.300000e+01]]]> : tensor<2x3x4xf32>
+    %0 = util.optimization_barrier %cst_0 : tensor<2x3x4xf32>
+    %1 = stablehlo.is_finite %0 : (tensor<2x3x4xf32>) -> tensor<2x3x4xi1>
+    %2 = util.optimization_barrier %cst : tensor<2x3x4xi1>
+    "check.expect_eq"(%1, %2) : (tensor<2x3x4xi1>, tensor<2x3x4xi1>) -> ()
+    return
+  }
+}

@@ -1,0 +1,18 @@
+module {
+  func.func @"conv_2d_nhwc_fhwc_q_i8_1_6_6_4-4_3_3_4"() {
+    %cst = arith.constant dense<[[[[21516, 44196, 66876, -59948], [24756, 52620, 80484, -57540], [27996, 61044, 94092, -55132], [31236, 69468, 107700, -52724]], [[40956, 94740, 148524, -45500], [44196, 103164, 162132, -43092], [47436, 111588, 175740, -40684], [50676, 120012, 189348, -38276]], [[60396, 145284, 230172, -31052], [63636, 153708, 243780, -28644], [66876, 162132, 257388, -26236], [70116, 170556, 270996, -23828]], [[40412, 119540, 198668, 95524], [8324, 55772, 103220, 214156], [-19668, -3900, 11868, 336884], [-16428, 4524, 25476, 339292]]]]> : tensor<1x4x4x4xi32>
+    %cst_0 = arith.constant dense<"0x000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F606162636465666768696A6B6C6D6E6F707172737475767778797A7B7C7D7E7F808182838485868788898A8B8C8D8E8F"> : tensor<4x3x3x4xi8>
+    %c0_i32 = arith.constant 0 : i32
+    %c-5_i32 = arith.constant -5 : i32
+    %c12_i32 = arith.constant 12 : i32
+    %cst_1 = arith.constant dense<"0x000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F606162636465666768696A6B6C6D6E6F707172737475767778797A7B7C7D7E7F808182838485868788898A8B8C8D8E8F"> : tensor<1x6x6x4xi8>
+    %0 = util.optimization_barrier %cst_1 : tensor<1x6x6x4xi8>
+    %1 = util.optimization_barrier %cst_0 : tensor<4x3x3x4xi8>
+    %2 = tensor.empty() : tensor<1x4x4x4xi32>
+    %3 = linalg.fill ins(%c0_i32 : i32) outs(%2 : tensor<1x4x4x4xi32>) -> tensor<1x4x4x4xi32>
+    %4 = linalg.conv_2d_nhwc_fhwc_q {dilations = dense<1> : vector<2xi64>, strides = dense<1> : vector<2xi64>} ins(%0, %1, %c12_i32, %c-5_i32 : tensor<1x6x6x4xi8>, tensor<4x3x3x4xi8>, i32, i32) outs(%3 : tensor<1x4x4x4xi32>) -> tensor<1x4x4x4xi32>
+    %5 = util.optimization_barrier %cst : tensor<1x4x4x4xi32>
+    "check.expect_eq"(%4, %5) : (tensor<1x4x4x4xi32>, tensor<1x4x4x4xi32>) -> ()
+    return
+  }
+}
