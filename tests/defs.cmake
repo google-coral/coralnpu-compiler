@@ -47,15 +47,11 @@ function(coralnpu_add_static_check_tests)
       list(APPEND TEST_LABELS "ci")
     endif()
 
-    iree_check_test(
+    coralnpu_check_test(
       NAME
         "${TEST_NAME}"
       SRC
         "${CHECK_FILE}"
-      TARGET_BACKEND
-        "llvm-cpu"
-      DRIVER
-        "local-sync"
       COMPILER_FLAGS
         "--mlir-disable-threading"
         ${_RULE_COMPILER_FLAGS}

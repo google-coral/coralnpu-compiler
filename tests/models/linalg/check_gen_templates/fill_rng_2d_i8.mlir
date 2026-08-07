@@ -1,6 +1,6 @@
 // RUN: %template_path
 
-func.func @main(%arg0: tensor<?x?xi8>) -> tensor<?x?xf32> attributes {check.atol = 1.0 : f32} {
+func.func @main(%arg0: tensor<?x?xi8>) -> tensor<?x?xf32> {
   %min = arith.constant 0.0 : f64
   %max = arith.constant 127.0 : f64
   %seed = arith.constant 12345 : i32

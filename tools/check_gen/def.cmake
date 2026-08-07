@@ -29,6 +29,69 @@ function(parse_instance_to_suffix INSTANCE_STR OUT_VAR)
   set(${OUT_VAR} "${TEMP}" PARENT_SCOPE)
 endfunction()
 
+# coralnpu_check_test()
+function(coralnpu_check_test)
+  if(NOT IREE_BUILD_TESTS)
+    return()
+  endif()
+
+  cmake_parse_arguments(
+    _RULE
+    ""
+    "NAME;SRC;TIMEOUT"
+    "COMPILER_FLAGS;RUNNER_ARGS;LABELS;DEPENDS"
+    ${ARGN}
+  )
+
+  if("manual" IN_LIST _RULE_LABELS)
+    message(STATUS "Skipping manual check test: ${_RULE_NAME}")
+    return()
+  endif()
+
+  set(_MODULE_NAME "${_RULE_NAME}_module")
+  set(_MODULE_FILE_NAME "${_MODULE_NAME}.vmfb")
+
+  iree_bytecode_module(
+    NAME
+      "${_MODULE_NAME}"
+    MODULE_FILE_NAME
+      "${_MODULE_FILE_NAME}"
+    SRC
+      "${_RULE_SRC}"
+    FLAGS
+      "--iree-hal-target-backends=coralnpu"
+      ${_RULE_COMPILER_FLAGS}
+    DEPENDS
+      coralnpu_crt_project
+      ${_RULE_DEPENDS}
+    COMPILE_TOOL
+      "coralnpu_compiler_tools_coralnpu-compile"
+  )
+
+  iree_package_name(_PACKAGE_NAME)
+  set(_NAME "${_PACKAGE_NAME}_${_RULE_NAME}")
+  add_custom_target("${_NAME}" ALL)
+  add_dependencies("${_NAME}" "${_NAME}_module" "iree-check-module")
+  add_dependencies(iree-test-deps "${_NAME}")
+
+  iree_native_test(
+    NAME
+      "${_RULE_NAME}"
+    SRC
+      "iree-check-module"
+    ARGS
+      "--module=${_MODULE_FILE_NAME}"
+      ${_RULE_RUNNER_ARGS}
+    LABELS
+      "driver=coralnpu"
+      "target=coralnpu"
+      "ci"
+      ${_RULE_LABELS}
+    TIMEOUT
+      "${_RULE_TIMEOUT}"
+  )
+endfunction()
+
 # check_gen_tests()
 function(check_gen_tests)
   cmake_parse_arguments(
@@ -115,15 +178,11 @@ function(check_gen_tests)
 
     set(TEST_NAME "${_RULE_NAME}_${SUFFIX}")
 
-    iree_check_test(
+    coralnpu_check_test(
       NAME
         "${TEST_NAME}"
       SRC
         "${OUT_FILE}"
-      TARGET_BACKEND
-        "llvm-cpu"
-      DRIVER
-        "local-sync"
       COMPILER_FLAGS
         "--mlir-disable-threading"
         ${_RULE_COMPILER_FLAGS}

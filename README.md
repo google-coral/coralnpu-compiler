@@ -386,7 +386,7 @@ To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime
            "--iree-hal-local-target-device-backends=llvm-cpu",
            "--iree-llvmcpu-target-cpu=host",
            "--iree-hal-target-device=coralnpu",
-           "--iree-global-opt-experimental-disable-conv-generalization"
+           "--iree-global-opt-experimental-disable-conv-generalization",
            "--coralnpu-target-abi=ilp32",
            "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f",
        ],

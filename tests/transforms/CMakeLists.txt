@@ -24,4 +24,6 @@ iree_lit_test_suite(
   TOOLS
     FileCheck
     coralnpu_compiler::tools::coralnpu-compile
+  LABELS
+    "ci"
 )
