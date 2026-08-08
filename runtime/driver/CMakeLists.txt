@@ -23,61 +23,48 @@ iree_register_external_hal_driver(
     iree_hal_coralnpu_driver_module_register
 )
 
-set(coralnpu_hdrs
-    coralnpu_command_buffer.h
-    coralnpu_device.h
-    coralnpu_driver.h
-    coralnpu_event.h
-    coralnpu_executable.h
-    coralnpu_executable_cache.h
-    coralnpu_semaphore.h
-)
-set(coralnpu_srcs
-    coralnpu_command_buffer.c
-    coralnpu_device.c
-    coralnpu_driver.c
-    coralnpu_event.c
-    coralnpu_executable.c
-    coralnpu_executable_cache.c
-    coralnpu_semaphore.c
-)
-
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
   set(CORALNPU_SIM_DEP "coralnpu_runtime::sim::simulation")
 endif()
 
-set(coralnpu_deps
+iree_cc_library(
+  NAME
+    coralnpu
+  HDRS
+    "coralnpu_command_buffer.h"
+    "coralnpu_device.h"
+    "coralnpu_driver.h"
+    "coralnpu_event.h"
+    "coralnpu_executable.h"
+    "coralnpu_executable_cache.h"
+    "coralnpu_semaphore.h"
+  SRCS
+    "coralnpu_command_buffer.c"
+    "coralnpu_device.c"
+    "coralnpu_driver.c"
+    "coralnpu_event.c"
+    "coralnpu_executable.c"
+    "coralnpu_executable_cache.c"
+    "coralnpu_semaphore.c"
+  DEPS
     iree::base
     iree::base::internal
     iree::base::internal::arena
     iree::base::internal::cpu
+    iree::base::internal::fpu_state
     iree::base::threading
     iree::hal
     iree::hal::local
     iree::hal::local::executable_environment
+    iree::hal::local::executable_library
+    iree::hal::local::executable_loader
     iree::hal::utils::deferred_command_buffer
     iree::hal::utils::file_transfer
     iree::hal::utils::files
     iree::hal::utils::queue_emulation
     iree::hal::utils::semaphore_base
     ${CORALNPU_SIM_DEP}
-)
-set(coralnpu_defs)
-
-iree_cc_library(
-  NAME
-    coralnpu
-  HDRS
-    ${coralnpu}
   INCLUDES
     "${PROJECT_SOURCE_DIR}"
-  SRCS
-    ${coralnpu_srcs}
-  DEPS
-    ${coralnpu_deps}
-  INCLUDES
-    "${CMAKE_SOURCE_DIR}"
-  DEFINES
-    ${coralnpu_defs}
   PUBLIC
 )

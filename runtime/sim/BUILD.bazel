@@ -55,7 +55,7 @@ config_setting(
 
 # Target: simulator (formerly mpact_simulator)
 cc_library(
-    name = "mpact_simulator",
+    name = "simulator",
     srcs = select({
         ":linux_x86_64": ["simulator.cpp"],
         "//conditions:default": [],
@@ -102,7 +102,7 @@ cc_library(
     }),
     deps = select({
         ":linux_x86_64": [
-            ":mpact_simulator",
+            ":simulator",
             "//crt:coralnpu_dispatch_hdrs",
             "@iree_core//runtime/src/iree/base",
             "@iree_core//runtime/src/iree/base/internal",

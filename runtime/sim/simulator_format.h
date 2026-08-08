@@ -25,4 +25,4 @@ static inline bool iree_hal_coralnpu_is_simulator_format(
                                 IREE_SV("embedded-elf-riscv_32"));
 }
 
-#endif  // RUNTIME_CORALNPU_SIM_SIMULATOR_FORMAT_H_
+#endif  // RUNTIME_SIM_SIMULATOR_FORMAT_H_

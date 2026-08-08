@@ -39,12 +39,12 @@ typedef struct iree_hal_coralnpu_semaphore_state_t {
   iree_notification_t notification;
 } iree_hal_coralnpu_semaphore_state_t;
 
-// Initializes state used to perform semaphore coralnpuhronization.
+// Initializes state used to perform semaphore synchronization.
 void iree_hal_coralnpu_semaphore_state_initialize(
     iree_hal_coralnpu_semaphore_state_t *out_shared_state);
 
-// Deinitializes state used to perform semaphore coralnpuhronization; no
-// semaphores must be live with references.
+// Deinitializes state used to perform semaphore synchronization; no semaphores
+// must be live with references.
 void iree_hal_coralnpu_semaphore_state_deinitialize(
     iree_hal_coralnpu_semaphore_state_t *shared_state);
 

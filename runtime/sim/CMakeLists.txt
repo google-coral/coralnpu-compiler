@@ -52,7 +52,7 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
 
   iree_cc_library(
     NAME
-      mpact_simulator
+      simulator
     HDRS
       "simulator_api.h"
     SRCS
@@ -82,7 +82,7 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
     INCLUDES
       "${CMAKE_SOURCE_DIR}"
     DEPS
-      coralnpu_runtime::sim::mpact_simulator
+      coralnpu_runtime::sim::simulator
       iree::base
       iree::base::internal
       iree::hal::local::executable_environment

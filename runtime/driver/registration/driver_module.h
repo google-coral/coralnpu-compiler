@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef IREE_HAL_DRIVER_CORALNPU_REGISTRATION_DRIVER_MODULE_H_
-#define IREE_HAL_DRIVER_CORALNPU_REGISTRATION_DRIVER_MODULE_H_
+#ifndef RUNTIME_DRIVER_REGISTRATION_DRIVER_MODULE_H_
+#define RUNTIME_DRIVER_REGISTRATION_DRIVER_MODULE_H_
 
 #include "iree/base/api.h"
 #include "iree/hal/api.h"
@@ -31,4 +31,4 @@ iree_hal_coralnpu_driver_module_register(iree_hal_driver_registry_t *registry);
 }  // extern "C"
 #endif  // __cplusplus
 
-#endif  // IREE_HAL_DRIVER_CORALNPU_REGISTRATION_DRIVER_MODULE_H_
+#endif  // RUNTIME_DRIVER_REGISTRATION_DRIVER_MODULE_H_

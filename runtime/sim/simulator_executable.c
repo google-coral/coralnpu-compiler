@@ -161,10 +161,12 @@ iree_status_t iree_hal_simulator_executable_create(
 
   const iree_host_size_t image_size =
       executable_params->executable_data.data_length;
-  const iree_host_size_t total_size =
-      sizeof(iree_hal_simulator_executable_t) + image_size;
-
   iree_hal_simulator_executable_t *executable = NULL;
+  iree_host_size_t total_size = 0;
+  iree_host_size_t image_offset = 0;
+  IREE_RETURN_IF_ERROR(IREE_STRUCT_LAYOUT(
+      sizeof(*executable), &total_size,
+      IREE_STRUCT_FIELD_ALIGNED(image_size, uint8_t, 1, &image_offset)));
   IREE_RETURN_IF_ERROR(
       iree_allocator_malloc(host_allocator, total_size, (void **)&executable));
   memset(executable, 0, total_size);
@@ -172,7 +174,7 @@ iree_status_t iree_hal_simulator_executable_create(
   iree_hal_coralnpu_executable_initialize(&iree_hal_simulator_executable_vtable,
                                           host_allocator, &executable->base);
 
-  uint8_t *image_storage = (uint8_t *)executable + sizeof(*executable);
+  uint8_t *image_storage = (uint8_t *)executable + image_offset;
   memcpy(image_storage, executable_params->executable_data.data, image_size);
 
   executable->dispatch_image =

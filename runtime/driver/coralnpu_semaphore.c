@@ -174,7 +174,7 @@ static iree_status_t iree_hal_coralnpu_semaphore_signal(
   iree_hal_semaphore_notify(&semaphore->base, new_value, IREE_STATUS_OK);
 
   // Post a global notification so that any waiter will wake.
-  // TODO: make notifications per-semaphore; would make multi-wait
+  // TODO(#4680): make notifications per-semaphore; would make multi-wait
   // impossible with iree_notification_t and we'd have to use wait handles.
   iree_notification_post(&semaphore->shared_state->notification,
                          IREE_ALL_WAITERS);
@@ -270,6 +270,11 @@ static bool iree_hal_coralnpu_semaphore_is_signaled(
   return is_signaled;
 }
 
+static bool iree_hal_coralnpu_semaphore_is_signaled_thunk(void *arg) {
+  return iree_hal_coralnpu_semaphore_is_signaled(
+      (iree_hal_coralnpu_semaphore_notify_state_t *)arg);
+}
+
 static iree_status_t iree_hal_coralnpu_semaphore_wait(
     iree_hal_semaphore_t *base_semaphore, uint64_t value,
     iree_timeout_t timeout, iree_hal_wait_flags_t flags) {
@@ -293,7 +298,7 @@ static iree_status_t iree_hal_coralnpu_semaphore_wait(
   }
   iree_slim_mutex_unlock(&semaphore->mutex);
 
-  // TODO: we should be checking for DEADLINE_EXCEEDED here. This is
+  // TODO(#4680): we should be checking for DEADLINE_EXCEEDED here. This is
   // easy when it's iree_timeout_is_infinite (we can just use the notification
   // as below) but if it's an actual deadline we'll need to probably switch to
   // iree_wait_handle_t.
@@ -304,10 +309,9 @@ static iree_status_t iree_hal_coralnpu_semaphore_wait(
       .semaphore = semaphore,
       .value = value,
   };
-  iree_notification_await(
-      &shared_state->notification,
-      (iree_condition_fn_t)iree_hal_coralnpu_semaphore_is_signaled,
-      (void *)&notify_state, timeout);
+  iree_notification_await(&shared_state->notification,
+                          iree_hal_coralnpu_semaphore_is_signaled_thunk,
+                          (void *)&notify_state, timeout);
 
   iree_status_t status = iree_ok_status();
   iree_slim_mutex_lock(&semaphore->mutex);
@@ -323,7 +327,6 @@ static iree_status_t iree_hal_coralnpu_semaphore_wait(
 }
 
 // Returns true if any semaphore in the list has signaled (or failed).
-// Used with with iree_condition_fn_t and must match that signature.
 static bool iree_hal_coralnpu_semaphore_any_signaled(
     const iree_hal_semaphore_list_t *semaphore_list) {
   for (iree_host_size_t i = 0; i < semaphore_list->count; ++i) {
@@ -339,8 +342,12 @@ static bool iree_hal_coralnpu_semaphore_any_signaled(
   return false;
 }
 
+static bool iree_hal_coralnpu_semaphore_any_signaled_thunk(void *arg) {
+  return iree_hal_coralnpu_semaphore_any_signaled(
+      (const iree_hal_semaphore_list_t *)arg);
+}
+
 // Returns true if all semaphores in the list has signaled (or any failed).
-// Used with iree_condition_fn_t and must match that signature.
 static bool iree_hal_coralnpu_semaphore_all_signaled(
     const iree_hal_semaphore_list_t *semaphore_list) {
   for (iree_host_size_t i = 0; i < semaphore_list->count; ++i) {
@@ -354,6 +361,11 @@ static bool iree_hal_coralnpu_semaphore_all_signaled(
     if (!is_signaled) return false;
   }
   return true;
+}
+
+static bool iree_hal_coralnpu_semaphore_all_signaled_thunk(void *arg) {
+  return iree_hal_coralnpu_semaphore_all_signaled(
+      (const iree_hal_semaphore_list_t *)arg);
 }
 
 // Returns a status derived from the |semaphore_list| at the current time:
@@ -427,12 +439,11 @@ iree_status_t iree_hal_coralnpu_semaphore_multi_wait(
   }
 
   // Perform wait on the global notification.
-  iree_notification_await(
-      &shared_state->notification,
-      wait_mode == IREE_HAL_WAIT_MODE_ALL
-          ? (iree_condition_fn_t)iree_hal_coralnpu_semaphore_all_signaled
-          : (iree_condition_fn_t)iree_hal_coralnpu_semaphore_any_signaled,
-      (void *)&semaphore_list, iree_infinite_timeout());
+  iree_notification_await(&shared_state->notification,
+                          wait_mode == IREE_HAL_WAIT_MODE_ALL
+                              ? iree_hal_coralnpu_semaphore_all_signaled_thunk
+                              : iree_hal_coralnpu_semaphore_any_signaled_thunk,
+                          (void *)&semaphore_list, iree_infinite_timeout());
 
   // We may have been successful - or may have a partial failure.
   iree_status_t status =

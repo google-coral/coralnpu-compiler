@@ -110,7 +110,7 @@ iree_status_t iree_hal_coralnpu_command_buffer_initialize(
       iree_hal_coralnpu_command_buffer_size(mode, binding_capacity)) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "storage must have at least the capacity as "
-                            "defined by iree_hal_inline_command_buffer_size");
+                            "defined by iree_hal_coralnpu_command_buffer_size");
   }
 
   IREE_TRACE_ZONE_BEGIN(z0);

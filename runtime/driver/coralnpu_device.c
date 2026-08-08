@@ -16,26 +16,23 @@
 
 #include "runtime/driver/coralnpu_device.h"
 
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "iree/base/internal/arena.h"
+#include "iree/base/internal/cpu.h"
+#include "iree/hal/local/executable_environment.h"
+#include "iree/hal/utils/deferred_command_buffer.h"
+#include "iree/hal/utils/file_registry.h"
+#include "iree/hal/utils/file_transfer.h"
+#include "iree/hal/utils/queue_emulation.h"
 #include "runtime/driver/coralnpu_command_buffer.h"
 #include "runtime/driver/coralnpu_event.h"
 #include "runtime/driver/coralnpu_executable_cache.h"
 #include "runtime/driver/coralnpu_semaphore.h"
 #include "runtime/sim/simulator_api.h"
 #include "runtime/sim/simulator_format.h"
-
-// IREE
-#include "iree/base/internal/arena.h"
-#include "iree/base/internal/cpu.h"
-#include "iree/hal/utils/deferred_command_buffer.h"
-#include "iree/hal/utils/file_registry.h"
-#include "iree/hal/utils/file_transfer.h"
-#include "iree/hal/utils/queue_emulation.h"
-
-// Standard headers
-#include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 typedef struct iree_hal_coralnpu_device_t {
   iree_hal_resource_t resource;
@@ -47,6 +44,8 @@ typedef struct iree_hal_coralnpu_device_t {
   // Optional provider used for creating/configuring collective channels.
   iree_hal_channel_provider_t *channel_provider;
 
+  iree_hal_device_topology_info_t topology_info;
+
   // Block pool used for command buffers with a larger block size (as command
   // buffers can contain inlined data uploads).
   iree_arena_block_pool_t large_block_pool;
@@ -56,7 +55,6 @@ typedef struct iree_hal_coralnpu_device_t {
   // synchronization ourselves.
   iree_hal_coralnpu_semaphore_state_t semaphore_state;
 
-  iree_hal_device_topology_info_t topology_info;
   iree_host_size_t loader_count;
   iree_hal_executable_loader_t *loaders[];
 } iree_hal_coralnpu_device_t;
@@ -101,42 +99,43 @@ iree_status_t iree_hal_coralnpu_device_create(
       z0, iree_hal_coralnpu_device_check_params(params));
 
   iree_hal_coralnpu_device_t *device = NULL;
-  iree_host_size_t struct_size =
-      sizeof(*device) + loader_count * sizeof(*device->loaders);
-  iree_host_size_t total_size = struct_size + identifier.size;
-  iree_status_t status = iree_allocator_malloc_aligned(
-      host_allocator, total_size, iree_alignof(iree_hal_coralnpu_device_t), 0,
-      (void **)&device);
-  if (iree_status_is_ok(status)) {
-    memset(device, 0, total_size);
-    iree_hal_resource_initialize(&iree_hal_coralnpu_device_vtable,
-                                 &device->resource);
-    iree_string_view_append_to_buffer(identifier, &device->identifier,
-                                      (char *)device + struct_size);
-    device->host_allocator = host_allocator;
-    device->device_allocator = device_allocator;
-    iree_hal_allocator_retain(device_allocator);
-    iree_arena_block_pool_initialize(params->arena_block_size, host_allocator,
-                                     &device->large_block_pool);
+  iree_host_size_t total_size = 0;
+  iree_host_size_t identifier_offset = 0;
+  IREE_RETURN_AND_END_ZONE_IF_ERROR(
+      z0, IREE_STRUCT_LAYOUT(
+              sizeof(*device), &total_size,
+              IREE_STRUCT_FIELD_ALIGNED(
+                  loader_count, iree_hal_executable_loader_t *, 1, NULL),
+              IREE_STRUCT_FIELD_ALIGNED(identifier.size, char, 1,
+                                        &identifier_offset)));
+  IREE_RETURN_AND_END_ZONE_IF_ERROR(
+      z0, iree_allocator_malloc_aligned(
+              host_allocator, total_size,
+              iree_alignof(iree_hal_coralnpu_device_t), 0, (void **)&device));
+  memset(device, 0, total_size);
+  iree_hal_resource_initialize(&iree_hal_coralnpu_device_vtable,
+                               &device->resource);
+  iree_string_view_append_to_buffer(identifier, &device->identifier,
+                                    (char *)device + identifier_offset);
+  device->host_allocator = host_allocator;
+  device->device_allocator = device_allocator;
+  iree_hal_allocator_retain(device_allocator);
+  iree_arena_block_pool_initialize(params->arena_block_size, host_allocator,
+                                   &device->large_block_pool);
 
-    device->loader_count = loader_count;
-    for (iree_host_size_t i = 0; i < device->loader_count; ++i) {
-      device->loaders[i] = loaders[i];
-      iree_hal_executable_loader_retain(device->loaders[i]);
-    }
-
-    iree_hal_coralnpu_semaphore_state_initialize(&device->semaphore_state);
+  device->loader_count = loader_count;
+  for (iree_host_size_t i = 0; i < device->loader_count; ++i) {
+    device->loaders[i] = loaders[i];
+    iree_hal_executable_loader_retain(device->loaders[i]);
   }
+
+  iree_hal_coralnpu_semaphore_state_initialize(&device->semaphore_state);
 
   simulator_create();
 
-  if (iree_status_is_ok(status)) {
-    *out_device = (iree_hal_device_t *)device;
-  } else {
-    iree_hal_device_release((iree_hal_device_t *)device);
-  }
+  *out_device = (iree_hal_device_t *)device;
   IREE_TRACE_ZONE_END(z0);
-  return status;
+  return iree_ok_status();
 }
 
 static void iree_hal_coralnpu_device_destroy(iree_hal_device_t *base_device) {
@@ -254,6 +253,35 @@ static iree_status_t iree_hal_coralnpu_device_query_i64(
       (int)category.size, category.data, (int)key.size, key.data);
 }
 
+static iree_status_t iree_hal_coralnpu_device_query_capabilities(
+    iree_hal_device_t *base_device,
+    iree_hal_device_capabilities_t *out_capabilities) {
+  memset(out_capabilities, 0, sizeof(*out_capabilities));
+  return iree_ok_status();
+}
+
+static const iree_hal_device_topology_info_t *
+iree_hal_coralnpu_device_topology_info(iree_hal_device_t *base_device) {
+  iree_hal_coralnpu_device_t *device =
+      iree_hal_coralnpu_device_cast(base_device);
+  return &device->topology_info;
+}
+
+static iree_status_t iree_hal_coralnpu_device_refine_topology_edge(
+    iree_hal_device_t *src_device, iree_hal_device_t *dst_device,
+    iree_hal_topology_edge_t *edge) {
+  return iree_ok_status();
+}
+
+static iree_status_t iree_hal_coralnpu_device_assign_topology_info(
+    iree_hal_device_t *base_device,
+    const iree_hal_device_topology_info_t *topology_info) {
+  iree_hal_coralnpu_device_t *device =
+      iree_hal_coralnpu_device_cast(base_device);
+  device->topology_info = *topology_info;
+  return iree_ok_status();
+}
+
 static iree_status_t iree_hal_coralnpu_device_create_channel(
     iree_hal_device_t *base_device, iree_hal_queue_affinity_t queue_affinity,
     iree_hal_channel_params_t params, iree_hal_channel_t **out_channel) {
@@ -320,22 +348,6 @@ static iree_status_t iree_hal_coralnpu_device_create_semaphore(
       out_semaphore);
 }
 
-static iree_status_t iree_hal_coralnpu_device_query_capabilities(
-    iree_hal_device_t *device,
-    iree_hal_device_capabilities_t *out_capabilities) {
-  memset(out_capabilities, 0, sizeof(*out_capabilities));
-  return iree_ok_status();
-}
-
-static iree_status_t iree_hal_coralnpu_device_assign_topology_info(
-    iree_hal_device_t *base_device,
-    const iree_hal_device_topology_info_t *topology_info) {
-  iree_hal_coralnpu_device_t *device =
-      iree_hal_coralnpu_device_cast(base_device);
-  device->topology_info = *topology_info;
-  return iree_ok_status();
-}
-
 static iree_hal_semaphore_compatibility_t
 iree_hal_coralnpu_device_query_semaphore_compatibility(
     iree_hal_device_t *base_device, iree_hal_semaphore_t *semaphore) {
@@ -350,7 +362,7 @@ static iree_status_t iree_hal_coralnpu_device_queue_alloca(
     iree_hal_allocator_pool_t pool, iree_hal_buffer_params_t params,
     iree_device_size_t allocation_size, iree_hal_alloca_flags_t flags,
     iree_hal_buffer_t **IREE_RESTRICT out_buffer) {
-  // TODO: queue-ordered allocations.
+  // TODO(benvanik): queue-ordered allocations.
   IREE_RETURN_IF_ERROR(
       iree_hal_semaphore_list_wait(wait_semaphore_list, iree_infinite_timeout(),
                                    IREE_HAL_WAIT_FLAG_DEFAULT));
@@ -366,7 +378,7 @@ static iree_status_t iree_hal_coralnpu_device_queue_dealloca(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t *buffer, iree_hal_dealloca_flags_t flags) {
-  // TODO: queue-ordered allocations.
+  // TODO(benvanik): queue-ordered allocations.
   IREE_RETURN_IF_ERROR(iree_hal_device_queue_barrier(
       base_device, queue_affinity, wait_semaphore_list, signal_semaphore_list,
       IREE_HAL_EXECUTE_FLAG_NONE));
@@ -527,7 +539,7 @@ static iree_status_t iree_hal_coralnpu_device_queue_execute(
   iree_hal_coralnpu_device_t *device =
       iree_hal_coralnpu_device_cast(base_device);
 
-  // TODO: there is some better error handling here needed; we should
+  // TODO(#4680): there is some better error handling here needed; we should
   // propagate failures to all signal semaphores. Today we aren't as there
   // shouldn't be any failures or if there are there's not much we'd be able to
   // do - chances are we already executed everything inline!
@@ -575,7 +587,7 @@ static iree_status_t iree_hal_coralnpu_device_profiling_begin(
   //   PERF_COUNT_HW_CPU_CYCLES / PERF_COUNT_HW_INSTRUCTIONS
   //   PERF_COUNT_HW_CACHE_REFERENCES / PERF_COUNT_HW_CACHE_MISSES
   //   etc
-  // TODO: shared iree/hal/local/profiling implementation of this.
+  // TODO(benvanik): shared iree/hal/local/profiling implementation of this.
   return iree_ok_status();
 }
 
@@ -600,6 +612,9 @@ static const iree_hal_device_vtable_t iree_hal_coralnpu_device_vtable = {
     .replace_channel_provider = iree_hal_coralnpu_replace_channel_provider,
     .trim = iree_hal_coralnpu_device_trim,
     .query_i64 = iree_hal_coralnpu_device_query_i64,
+    .query_capabilities = iree_hal_coralnpu_device_query_capabilities,
+    .topology_info = iree_hal_coralnpu_device_topology_info,
+    .refine_topology_edge = iree_hal_coralnpu_device_refine_topology_edge,
     .assign_topology_info = iree_hal_coralnpu_device_assign_topology_info,
     .create_channel = iree_hal_coralnpu_device_create_channel,
     .create_command_buffer = iree_hal_coralnpu_device_create_command_buffer,
@@ -607,7 +622,6 @@ static const iree_hal_device_vtable_t iree_hal_coralnpu_device_vtable = {
     .create_executable_cache = iree_hal_coralnpu_device_create_executable_cache,
     .import_file = iree_hal_coralnpu_device_import_file,
     .create_semaphore = iree_hal_coralnpu_device_create_semaphore,
-    .query_capabilities = iree_hal_coralnpu_device_query_capabilities,
     .query_semaphore_compatibility =
         iree_hal_coralnpu_device_query_semaphore_compatibility,
     .queue_alloca = iree_hal_coralnpu_device_queue_alloca,
