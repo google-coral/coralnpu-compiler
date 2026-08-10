@@ -80,18 +80,6 @@ def CoralNPUTileSizeSelectionRegister : InterfacePass<"coralnpu-tile-size-select
     Option<"vectorRegisterWidthBits", "vector-register-width-bits", "int",
            /*default=*/"0",
            "Vector register width in bits (0 for auto-detect from target).">,
-    Option<"vectorAlignment", "vector-alignment", "int",
-           /*default=*/"0",
-           "Alignment for vector parallel loops (0 for auto).">,
-    Option<"unrollAlignment", "unroll-alignment", "int",
-           /*default=*/"0",
-           "Alignment for unrolled parallel loops (0 for auto).">,
-    Option<"reductionAlignment", "reduction-alignment", "int",
-           /*default=*/"1",
-           "Alignment for reduction loops.">,
-    Option<"parallelAlignment", "parallel-alignment", "int",
-           /*default=*/"0",
-           "Alignment for generic parallel loops (0 for auto).">,
   ];
 }
 

@@ -22,14 +22,15 @@ analysis of stack spills, and suggests targeted compiler fixes.
 import argparse
 import json
 import math
+import os
 import re
 import sys
 from pathlib import Path
 
 # Register utilization classification statuses based on CoralNPU 32-reg budget.
-#  - <16 regs: Under-Utilized (potential for aggressive unrolling/tiling)
-#  - 16-23 regs: Moderate utilization
-#  - 24-32 regs: Optimal utilization
+#  - <8 regs: Under-Utilized (potential for aggressive unrolling/tiling)
+#  - 8-16 regs: Moderate utilization
+#  - 17-32 regs: Optimal utilization
 STATUS_FAILED_TO_COMPILE = "⚠ FAILED TO COMPILE"
 STATUS_NOT_VEC = "⦻ NOT-VECTORIZED"
 STATUS_VEC_SPILLING = "◙ VEC-REG-SPILL"
@@ -96,6 +97,15 @@ def parse_args():
   return parser.parse_args()
 
 
+def extract_test_name(report_file):
+  """Extracts test/model name from report file path by stripping suffixes."""
+  name = report_file.name
+  for suffix in (".regalloc.json", ".json", "_check.mlir", ".mlir"):
+    if name.endswith(suffix):
+      name = name[:-len(suffix)]
+  return name
+
+
 def discover_report_files(inputs):
   """Collects report JSON files from explicit command-line arguments."""
   report_files = []
@@ -119,12 +129,7 @@ def load_report_file(report_file):
     )
     report_json = {"dispatches": []}
 
-  mlir_name = report_file.name
-  for suffix in (".regalloc.json", ".json"):
-    if mlir_name.endswith(suffix):
-      mlir_name = mlir_name[:-len(suffix)]
-      break
-
+  mlir_name = extract_test_name(report_file)
   report_json["filename"] = mlir_name
   report_json["element_type"] = detect_element_type(mlir_name)
   report_json["op_kind"] = detect_op_kind(mlir_name)
@@ -143,9 +148,9 @@ def detect_element_type(filename):
 
 def detect_op_kind(filename):
   """Extracts Linalg operation kind from filename prefix."""
-  match = re.search(r"_[if][0-9]+|_[ncfmdghw]+_", filename)
+  match = re.search(r"_[if][0-9]+", filename)
   if match:
-    return filename[:match.start()]
+    return filename[:match.end()]
   return "other"
 
 
@@ -290,9 +295,9 @@ def analyze_results(results):
         has_not_vec = True
       elif has_vec_spills:
         status = STATUS_VEC_SPILLING
-      elif max_regs < 16:
+      elif max_regs < 8:
         status = STATUS_UNDER_UTILIZED
-      elif max_regs < 24:
+      elif max_regs < 17:
         status = STATUS_MODERATE
       else:
         status = STATUS_OPTIMAL
@@ -352,9 +357,9 @@ def generate_markdown_report(stats, args=None):
     status_descs = {
         STATUS_FAILED_TO_COMPILE: "Compilation failed",
         STATUS_VEC_SPILLING: "Vector register stack spills present",
-        STATUS_UNDER_UTILIZED: "< 16 vector registers used",
-        STATUS_MODERATE: "16-23 vector registers used",
-        STATUS_OPTIMAL: "24-32 vector registers used",
+        STATUS_UNDER_UTILIZED: "< 8 vector registers used",
+        STATUS_MODERATE: "8-16 vector registers used",
+        STATUS_OPTIMAL: "17-32 vector registers used",
         STATUS_NOT_VEC: "Not vectorized",
         STATUS_HOST_NOT_NPU: "Offloaded to Host",
     }

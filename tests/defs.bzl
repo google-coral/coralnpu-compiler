@@ -159,7 +159,7 @@ def coralnpu_check_gen_tests(
         elif type(inst_entry) == "tuple" or type(inst_entry) == "list":
             flat_instances.append(inst_entry[0])
 
-    # 1. Generation target (produces MLIR files in bazel-out/)
+    # Generation target (produces MLIR files in bazel-out/)
     gen_target_name = "gen_" + name
     check_gen_test_generator(
         name = gen_target_name,
@@ -173,7 +173,21 @@ def coralnpu_check_gen_tests(
     if generation_targets != None and "manual" not in tags:
         generation_targets.append(":" + gen_target_name + "_mlir_files")
 
-    # 2. Independent check test targets consuming static files in target_dir/
+    # Individual copy target for this template line
+    pkg = native.package_name()
+    if target_dir:
+        dest_dir = target_dir if target_dir.startswith(pkg) else (pkg + "/" + target_dir)
+    else:
+        dest_dir = pkg
+
+    copy_generated_check_tests(
+        name = "copy_" + name,
+        filegroups = [":" + gen_target_name + "_mlir_files"],
+        target_dir = dest_dir,
+        tags = tags + (["manual"] if "manual" not in tags else []),
+    )
+
+    # Independent check test targets consuming static files in target_dir/
     generated_check_files = []
     for inst_entry in instances:
         inst = ""

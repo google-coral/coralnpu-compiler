@@ -47,10 +47,6 @@ struct CoralNPUOptions {
   int dtcmSizeKb = 32;
   std::string linkerScriptPath = "";
   int numVectorRegisters = 32;
-  int tileParallelAlignment = 0;
-  int tileVectorAlignment = 0;
-  int tileUnrollAlignment = 0;
-  int tileReductionAlignment = 1;
   int maxLoopUnrolling = 32;
   std::string registerAllocationReportFormat = "none";
   std::string registerAllocationReportDir = "";
@@ -102,25 +98,7 @@ struct CoralNPUOptions {
     binder.opt<int>("coralnpu-num-vector-registers", numVectorRegisters,
                     llvm::cl::cat(category),
                     llvm::cl::desc("Number of vector registers (default: 32)"));
-    binder.opt<int>(
-        "coralnpu-tile-vector-alignment", tileVectorAlignment,
-        llvm::cl::cat(category),
-        llvm::cl::desc(
-            "Tile alignment for vector parallel loops (0 for auto)"));
-    binder.opt<int>(
-        "coralnpu-tile-unroll-alignment", tileUnrollAlignment,
-        llvm::cl::cat(category),
-        llvm::cl::desc(
-            "Tile alignment for unrolled parallel loops (0 for auto)"));
-    binder.opt<int>(
-        "coralnpu-tile-reduction-alignment", tileReductionAlignment,
-        llvm::cl::cat(category),
-        llvm::cl::desc("Tile alignment for reduction loops (default: 1)"));
-    binder.opt<int>(
-        "coralnpu-tile-parallel-alignment", tileParallelAlignment,
-        llvm::cl::cat(category),
-        llvm::cl::desc(
-            "Tile alignment for generic parallel loops (0 for auto)"));
+
     binder.opt<int>(
         "coralnpu-max-loop-unrolling", maxLoopUnrolling,
         llvm::cl::cat(category),

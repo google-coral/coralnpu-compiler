@@ -14,8 +14,16 @@
 
 """Bazel rule for compiling CoralNPU register allocation reports from MLIR files."""
 
+def _extract_test_name(filename):
+    name = filename
+    for suffix in [".regalloc.json", ".json", "_check.mlir", ".mlir"]:
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+    return name
+
 def _coralnpu_register_allocation_report_impl(ctx):
     compile_tool = ctx.executable.compile_tool
+    filter_pattern = ctx.attr.filter if ctx.attr.filter else ctx.var.get("filter", "")
     default_flags = [
         "--iree-hal-target-device=cpu=local",
         "--iree-hal-local-target-device-backends=llvm-cpu",
@@ -24,6 +32,7 @@ def _coralnpu_register_allocation_report_impl(ctx):
         "--coralnpu-target-abi=ilp32",
         "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f",
         "--iree-global-opt-experimental-disable-conv-generalization",
+        # "--coralnpu-affinity-io-min-threshold-bytes=512",
         "--coralnpu-dump-register-allocation-report-format=json",
         "--iree-llvmcpu-embedded-linker-path=" + ctx.executable.linker_tool.path,
         "--mlir-disable-threading",
@@ -32,6 +41,10 @@ def _coralnpu_register_allocation_report_impl(ctx):
 
     outputs = []
     for src in ctx.files.srcs:
+        test_name = _extract_test_name(src.basename)
+        if filter_pattern and filter_pattern not in test_name:
+            continue
+
         out_file = ctx.actions.declare_file(ctx.label.name + "/" + src.basename + ".regalloc.json")
         outputs.append(out_file)
 
@@ -79,6 +92,10 @@ coralnpu_register_allocation_report = rule(
             allow_files = [".mlir"],
             mandatory = True,
             doc = "MLIR input files to compile.",
+        ),
+        "filter": attr.string(
+            default = "",
+            doc = "Optional substring to filter which MLIR files to compile into reports.",
         ),
         "compile_tool": attr.label(
             default = Label("//compiler/tools:coralnpu-compile"),

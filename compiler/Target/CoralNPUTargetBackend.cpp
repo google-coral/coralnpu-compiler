@@ -237,26 +237,6 @@ LogicalResult CoralNPUOptions::validate(MLIRContext *context) const {
            << "coralnpu-num-vector-registers must be positive, got "
            << numVectorRegisters;
   }
-  if (tileVectorAlignment < 0) {
-    return emitError(loc)
-           << "coralnpu-tile-vector-alignment must be non-negative, got "
-           << tileVectorAlignment;
-  }
-  if (tileUnrollAlignment < 0) {
-    return emitError(loc)
-           << "coralnpu-tile-unroll-alignment must be non-negative, got "
-           << tileUnrollAlignment;
-  }
-  if (tileReductionAlignment <= 0) {
-    return emitError(loc)
-           << "coralnpu-tile-reduction-alignment must be positive, got "
-           << tileReductionAlignment;
-  }
-  if (tileParallelAlignment < 0) {
-    return emitError(loc)
-           << "coralnpu-tile-parallel-alignment must be non-negative, got "
-           << tileParallelAlignment;
-  }
   if (registerAllocationReportFormat != "none" &&
       registerAllocationReportFormat != "pretty" &&
       registerAllocationReportFormat != "json") {
@@ -360,10 +340,6 @@ void CoralNPUTargetBackend::buildConfigurationPassPipeline(
     IREE::HAL::ExecutableTargetAttr targetAttr, OpPassManager &passManager) {
   CoralNPUTileSizeSelectionRegisterOptions registerOptions;
   registerOptions.numVectorRegisters = options_.numVectorRegisters;
-  registerOptions.vectorAlignment = options_.tileVectorAlignment;
-  registerOptions.unrollAlignment = options_.tileUnrollAlignment;
-  registerOptions.reductionAlignment = options_.tileReductionAlignment;
-  registerOptions.parallelAlignment = options_.tileParallelAlignment;
 
   OpPassManager &funcPassManager =
       passManager.nest<ModuleOp>().nest<func::FuncOp>();
