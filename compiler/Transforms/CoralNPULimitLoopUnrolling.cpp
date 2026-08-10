@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <iterator>
 #include <optional>
 
 #include "compiler/Transforms/Passes.h"
@@ -243,6 +244,39 @@ bool isExplicitlyDisabled(scf::ForOp forOp) {
   return false;
 }
 
+// Recursively counts operations inside a block, factoring in unrolling for
+// nested loops. Sets `hasDisabledLoop` to true if any nested loop is
+// explicitly disabled from unrolling.
+int64_t countOpsInBlock(Block *block, bool &hasDisabledLoop) {
+  int64_t totalOps = 0;
+  for (Operation &op : block->without_terminator()) {
+    if (auto nestedFor = llvm::dyn_cast<scf::ForOp>(op)) {
+      int64_t bodyCount = countOpsInBlock(nestedFor.getBody(), hasDisabledLoop);
+      if (isExplicitlyDisabled(nestedFor)) {
+        hasDisabledLoop = true;
+        totalOps += bodyCount;
+        continue;
+      }
+      int64_t tripCount = getUpperBoundTripCount(nestedFor).value_or(1);
+      totalOps += tripCount * bodyCount;
+      continue;
+    }
+
+    totalOps += 1;
+
+    if (op.getNumRegions() > 0) {
+      int64_t regionOps = 0;
+      for (Region &region : op.getRegions()) {
+        for (Block &b : region) {
+          regionOps += countOpsInBlock(&b, hasDisabledLoop);
+        }
+      }
+      totalOps += regionOps;
+    }
+  }
+  return totalOps;
+}
+
 struct CoralNPULimitLoopUnrollingPass final
     : impl::CoralNPULimitLoopUnrollingBase<CoralNPULimitLoopUnrollingPass> {
   CoralNPULimitLoopUnrollingPass() = default;
@@ -260,20 +294,14 @@ struct CoralNPULimitLoopUnrollingPass final
         return WalkResult::advance();
       }
 
-      // If the loop body has too many operations, unrolling it will probably
-      // spill registers.
-      if (llvm::range_size(forOp.getBody()->without_terminator()) > 32) {
-        setLoopUnrollAttr(forOp, /*fullUnroll=*/false);
-        return WalkResult::advance();
-      }
-
       // We don't want to unroll loops with operations that are lowered to many
       // instructions, as they will overflow ITCM (llvm is not good at
       // preventing this).
       bool hasExpensiveOps = llvm::any_of(
           forOp.getBody()->without_terminator(), [](Operation &op) -> bool {
+            // math operations are generally expensive
             if (op.getName().getDialectNamespace() == "math") return true;
-            if (llvm::isa<scf::ForOp>(op)) return true;
+
             return false;
           });
       if (hasExpensiveOps) {
@@ -281,7 +309,11 @@ struct CoralNPULimitLoopUnrollingPass final
         return WalkResult::advance();
       }
 
+      // If the loop body has too many operations, or if full unrolling would
+      // generate too many instructions in a single basic block (overflowing
+      // vector registers), disable full unrolling.
       auto tripCount = getUpperBoundTripCount(forOp);
+
       int64_t unrollFactor = tripCount.value_or(0);
       if (maxLoopUnrolling > 0) {
         unrollFactor =
@@ -293,7 +325,16 @@ struct CoralNPULimitLoopUnrollingPass final
         return WalkResult::advance();
       }
 
-      if (unrollFactor == *tripCount) {
+      bool hasDisabledLoop = false;
+      int64_t totalUnrolledOps =
+          unrollFactor * countOpsInBlock(forOp.getBody(), hasDisabledLoop);
+
+      if (hasDisabledLoop || totalUnrolledOps > 32) {
+        setLoopUnrollAttr(forOp, /*fullUnroll=*/false);
+        return WalkResult::advance();
+      }
+
+      if (unrollFactor >= *tripCount) {
         // We don't do anything (llvm will unroll the loop, as much as it thinks
         // is optimal).
         return WalkResult::advance();

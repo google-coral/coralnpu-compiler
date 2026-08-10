@@ -25,6 +25,8 @@ iree_cc_library(
   NAME
     Transforms
   HDRS
+    "CoralNPUTileSizeSelectionAnalysis.h"
+    "CoralNPUTileSizeSelectionUtils.h"
     "Passes.h"
   TEXTUAL_HDRS
     "compiler/Transforms/Passes.h.inc"
@@ -32,7 +34,11 @@ iree_cc_library(
     "CoralNPUAffinityAnnotation.cpp"
     "CoralNPUDumpAffinityExecutionProfile.cpp"
     "CoralNPULimitLoopUnrolling.cpp"
-    "CoralNPUTileSizeSelection.cpp"
+    "CoralNPUTileSizeSelectionAnalysis.cpp"
+    "CoralNPUTileSizeSelectionDTCM.cpp"
+    "CoralNPUTileSizeSelectionRegister.cpp"
+    "CoralNPUTileSizeSelectionUtils.cpp"
+    "CoralNPUTileSizeSelectionWorkgroup.cpp"
     "Passes.cpp"
   INCLUDES
     "${CMAKE_SOURCE_DIR}"

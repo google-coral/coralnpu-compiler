@@ -23,6 +23,7 @@
 // MLIR
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -44,11 +45,167 @@ namespace mlir::coralnpu_compiler {
 
 namespace {
 
-bool isSupportedComputeOp(Operation *op) {
-  if (isa<linalg::MatmulOp, linalg::BatchMatmulOp, linalg::Mmt4DOp>(op))
+bool canBeVectorized(Operation *op) {
+  // 2D Convolutions (no channels)
+  if (isa<linalg::Conv2DOp>(op)) {
     return true;
+  }
 
-  if (isa<linalg::Conv2DNhwcHwcfOp>(op)) return true;
+  // 2D Convolutions (NHWC)
+  if (isa<linalg::Conv2DNhwcHwcfOp, linalg::Conv2DNhwcHwcfQOp,
+          linalg::Conv2DNhwcFhwcOp, linalg::Conv2DNhwcFhwcQOp>(op)) {
+    return true;
+  }
+
+  // 2D Convolutions (NCHW)
+  if (isa<linalg::Conv2DNchwFchwOp, linalg::Conv2DNchwFchwQOp>(op)) {
+    return true;
+  }
+
+  // 2D Grouped Convolutions (NHWC)
+  if (isa<linalg::Conv2DNhwgcGfhwcOp, linalg::Conv2DNhwgcGfhwcQOp>(op)) {
+    return true;
+  }
+
+  // 2D Grouped Convolutions (NCHW)
+  if (isa<linalg::Conv2DNgchwGfchwOp, linalg::Conv2DNgchwGfchwQOp,
+          linalg::Conv2DNgchwFgchwOp>(op)) {
+    return true;
+  }
+
+  // 2D Depthwise Convolutions (NHWC)
+  if (isa<linalg::DepthwiseConv2DNhwcHwcOp, linalg::DepthwiseConv2DNhwcHwcQOp,
+          linalg::DepthwiseConv2DNhwcHwcmOp,
+          linalg::DepthwiseConv2DNhwcHwcmQOp>(op)) {
+    return true;
+  }
+
+  // 3D Convolutions (NDHWC & NCDHW)
+  if (isa<linalg::Conv3DOp, linalg::Conv3DNdhwcDhwcfOp,
+          linalg::Conv3DNdhwcDhwcfQOp, linalg::Conv3DNcdhwFcdhwOp>(op)) {
+    return true;
+  }
+
+  // 3D Depthwise Convolutions (NDHWC)
+  if (isa<linalg::DepthwiseConv3DNdhwcDhwcOp,
+          linalg::DepthwiseConv3DNdhwcDhwcmOp>(op)) {
+    return true;
+  }
+
+  // 2D Pooling (NHWC)
+  if (isa<linalg::PoolingNhwcSumOp, linalg::PoolingNhwcMaxOp,
+          linalg::PoolingNhwcMinOp, linalg::PoolingNhwcMaxUnsignedOp,
+          linalg::PoolingNhwcMinUnsignedOp>(op)) {
+    return true;
+  }
+
+  // 2D Pooling (NCHW)
+  if (isa<linalg::PoolingNchwSumOp, linalg::PoolingNchwMaxOp>(op)) {
+    return true;
+  }
+
+  // 3D Pooling (NDHWC)
+  if (isa<linalg::PoolingNdhwcSumOp, linalg::PoolingNdhwcMaxOp,
+          linalg::PoolingNdhwcMinOp>(op)) {
+    return true;
+  }
+
+  // 1D Convolutions
+  if (isa<linalg::Conv1DNwcWcfOp, linalg::Conv1DNcwFcwOp, linalg::Conv1DOp>(
+          op)) {
+    return true;
+  }
+
+  // 1D Depthwise Convolutions
+  if (isa<linalg::DepthwiseConv1DNwcWcOp, linalg::DepthwiseConv1DNcwCwOp,
+          linalg::DepthwiseConv1DNwcWcmOp>(op)) {
+    return true;
+  }
+
+  // 1D Pooling
+  if (isa<linalg::PoolingNwcSumOp, linalg::PoolingNwcMaxOp,
+          linalg::PoolingNwcMaxUnsignedOp, linalg::PoolingNwcMinOp,
+          linalg::PoolingNwcMinUnsignedOp, linalg::PoolingNcwSumOp,
+          linalg::PoolingNcwMaxOp>(op)) {
+    return true;
+  }
+
+  // Matmuls, Contractions, Matrix-Vector, and Dot
+  if (isa<linalg::MatmulOp, linalg::QuantizedMatmulOp, linalg::BatchMatmulOp,
+          linalg::QuantizedBatchMatmulOp, linalg::BatchReduceMatmulOp,
+          linalg::ContractOp, linalg::MatvecOp, linalg::BatchMatvecOp,
+          linalg::VecmatOp, linalg::BatchVecmatOp, linalg::DotOp,
+          linalg::Mmt4DOp, linalg::BatchMmt4DOp>(op)) {
+    return true;
+  }
+
+  // Elementwise Arithmetic Binary
+  if (isa<linalg::AddOp, linalg::SubOp, linalg::MulOp, linalg::MinOp,
+          linalg::MaxOp>(op)) {
+    return true;
+  }
+
+  // Elementwise Division Binary
+  if (isa<linalg::DivOp, linalg::DivUnsignedOp>(op)) {
+    return true;
+  }
+
+  // Elementwise Unary Arithmetic
+  if (isa<linalg::AbsOp, linalg::NegFOp, linalg::SquareOp, linalg::CopyOp>(
+          op)) {
+    return true;
+  }
+
+  // Elementwise Rounding & Truncation
+  if (isa<linalg::CeilOp, linalg::FloorOp, linalg::RoundOp>(op)) {
+    return true;
+  }
+
+  // Elementwise Roots & Reciprocals
+  if (isa<linalg::SqrtOp, linalg::RsqrtOp, linalg::ReciprocalOp>(op)) {
+    return true;
+  }
+
+  // Elementwise Transcendentals & Non-linear Math
+  if (isa<linalg::ExpOp, linalg::LogOp, linalg::TanhOp, linalg::ErfOp,
+          linalg::PowFOp>(op)) {
+    return true;
+  }
+
+  // Elementwise Map
+  if (isa<linalg::MapOp>(op)) {
+    return true;
+  }
+
+  if (auto elementwiseOp = dyn_cast<linalg::ElementwiseOp>(op)) {
+    auto kind = elementwiseOp.getKind();
+    // TODO(sflur): make sure we actually support these, and add others
+    return kind == linalg::ElementwiseKind::add ||
+           kind == linalg::ElementwiseKind::div ||
+           kind == linalg::ElementwiseKind::mul ||
+           kind == linalg::ElementwiseKind::sub;
+  }
+
+  // Transpose
+  if (isa<linalg::TransposeOp>(op)) {
+    return true;
+  }
+
+  // Broadcast
+  if (isa<linalg::BroadcastOp>(op)) {
+    return true;
+  }
+
+  // TODO(sflur): enable PackOp/UnPackOp
+  // // Pack and Unpack
+  // if (isa<linalg::PackOp, linalg::UnPackOp>(op)) {
+  //   return true;
+  // }
+
+  // Reductions
+  if (isa<linalg::ReduceOp>(op)) {
+    return true;
+  }
 
   return false;
 }
@@ -128,20 +285,6 @@ struct CoralNPUAffinityAnnotationPass
           CoralNPUAffinityAnnotationPass> {
   using CoralNPUAffinityAnnotationBase::CoralNPUAffinityAnnotationBase;
 
-  // Return true iff the NPU can handle the computation.
-  bool canExecuteOnCoralNPU(
-      Operation *op,
-      const IREE::HAL::TargetBackend::SupportedTypes &supportedTypes) {
-    return isSupportedComputeOp(op) &&
-           isSupportedOperandAndResultTypes(op, supportedTypes);
-  }
-
-  // Return true iff we think it will be beneficial for the NPU to do the
-  // computation.
-  bool shouldExecuteOnCoralNPU(Operation *op) {
-    return ioMinThresholdBytes < estimateIOBytes(op);
-  }
-
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
     MLIRContext *context = &getContext();
@@ -164,8 +307,8 @@ struct CoralNPUAffinityAnnotationPass
       // If op already has affinity, don't change it
       if (op->getAttr("stream.affinity")) return;
 
-      if (canExecuteOnCoralNPU(op, supportedTypes) &&
-          shouldExecuteOnCoralNPU(op)) {
+      if (isSupportedOperandAndResultTypes(op, supportedTypes) &&
+          estimateIOBytes(op) > ioMinThresholdBytes && canBeVectorized(op)) {
         op->setAttr("stream.affinity", coralnpuAffinityAttr);
       }
     });
