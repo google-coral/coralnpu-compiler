@@ -62,10 +62,7 @@ def linalg_op_tests_f32(name = "linalg_op_f32_tests", check_mlir_files = None, g
     op_tests_f32(name = "transpose_2d_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "transpose_2d_f32.mlir")
     op_tests_f32(name = "transpose_3d_f32", instances = ["(2,3,4)", "(10,20,30)", "(5,100,2)"], test = "transpose_3d_f32.mlir")
     op_tests_f32(name = "broadcast_f32", instances = ["(8)(4,8)", "(256)(120,256)", "(450)(300,450)"], test = "broadcast_f32.mlir")
-    op_tests_f32(name = "broadcast_dim1_f32", instances = ["(8)(8,4)", "(450)(450,300)"], test = "broadcast_dim1_f32.mlir")
-
-    # TODO: Fix compiler bug triggered by this instance.
-    op_tests_f32(name = "broadcast_dim1_f32_bug", instances = ["(256)(256,120)"], test = "broadcast_dim1_f32.mlir")
+    op_tests_f32(name = "broadcast_dim1_f32", instances = ["(8)(8,4)", "(256)(256,120)", "(450)(450,300)"], test = "broadcast_dim1_f32.mlir")
     op_tests_f32(name = "elementwise_add_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "elementwise_add_f32.mlir")
     op_tests_f32(name = "abs_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "abs_f32.mlir")
     op_tests_f32(name = "exp_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "exp_f32.mlir")

@@ -17,5 +17,6 @@ get_filename_component(IREE_PACKAGE_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSO
 include(defs.cmake)
 
 add_subdirectory(models)
+add_subdirectory(python-bindings)
 add_subdirectory(transforms)
 
