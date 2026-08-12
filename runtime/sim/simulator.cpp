@@ -16,58 +16,19 @@
 
 #include <cstdio>
 
-#include "runtime/sim/simulator_api.h"
-
-#ifdef USE_MPACT_PREBUILT
-
-struct CoralNPUMailbox {
-  uint32_t message[4] = {0, 0, 0, 0};
-};
-
-class CoralNPUSimulator {
- public:
-  static CoralNPUSimulator* Create();
-
-  virtual ~CoralNPUSimulator() = default;
-
-  // Functions for reading/writing memory and Mailbox.
-  virtual void ReadMem(uint32_t addr, size_t size, char* data) = 0;
-  virtual const CoralNPUMailbox& ReadMailbox() = 0;
-  virtual void WriteMem(uint32_t addr, size_t size, const char* data) = 0;
-  virtual void WriteMailbox(const CoralNPUMailbox& mailbox) = 0;
-
-  // Wait for interrupt
-  virtual bool WaitForTermination(int timeout) = 0;
-
-  // Begin executing starting with the PC set to the specified address. Returns
-  // when the core halts.
-  virtual void Run(uint32_t start_addr) = 0;
-};
-
-#else  // USE_VERILATOR
-
 #include "hw_sim/coralnpu_simulator.h"
-
-#endif
+#include "runtime/sim/simulator_api.h"
 
 static CoralNPUSimulator* sim = NULL;
 
 void simulator_create(void) { sim = CoralNPUSimulator::Create(); }
 
 void simulator_write_mem(uint32_t addr, const void* data, size_t size) {
-#ifdef USE_MPACT_PREBUILT
   sim->WriteMem(addr, size, static_cast<const char*>(data));
-#else
-  sim->WriteTCM(addr, size, static_cast<const char*>(data));
-#endif
 }
 
 void simulator_read_mem(uint32_t addr, void* data, size_t size) {
-#ifdef USE_MPACT_PREBUILT
   sim->ReadMem(addr, size, static_cast<char*>(data));
-#else
-  sim->ReadTCM(addr, size, static_cast<char*>(data));
-#endif
 }
 
 void simulator_run(uint32_t start_pc) {

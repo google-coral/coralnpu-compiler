@@ -64,17 +64,12 @@ cc_library(
         ":linux_x86_64": ["simulator_api.h"],
         "//conditions:default": [],
     }),
-    local_defines = select({
-        ":use_mpact": ["USE_MPACT_PREBUILT"],
-        ":use_verilator": ["USE_VERILATOR"],
-    }),
     visibility = ["//visibility:public"],
-    deps = select({
+    deps = [
+        "@coralnpu_hw//hw_sim:coralnpu_simulator_headers",
+    ] + select({
         ":use_mpact": [":simulator_lib_import"],
-        ":use_verilator": [
-            "@coralnpu_hw//hw_sim:coralnpu_simulator_headers",
-            "@coralnpu_hw//hw_sim:core_mini_axi_simulator_rvv",
-        ],
+        ":use_verilator": ["@coralnpu_hw//hw_sim:core_mini_axi_simulator_rvv"],
     }),
 )
 

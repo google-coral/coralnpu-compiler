@@ -41,13 +41,9 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
     set(VERILATOR_CMAKE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcoralnpu_simulator.so")
     configure_file("${CORALNPU_VERILATOR_SIMULATOR_LIB}" "${VERILATOR_CMAKE_LIB}" COPYONLY)
 
-    set(SIM_DEFINES "USE_VERILATOR")
     set(SIM_DEPS "${VERILATOR_CMAKE_LIB}")
-    set(SIM_INCLUDES "${CMAKE_SOURCE_DIR}" "${CMAKE_SOURCE_DIR}/third_party/coralnpu")
   else()
-    set(SIM_DEFINES "USE_MPACT_PREBUILT")
     set(SIM_DEPS "${SIMULATOR_LIB}")
-    set(SIM_INCLUDES "${CMAKE_SOURCE_DIR}")
   endif()
 
   iree_cc_library(
@@ -57,10 +53,9 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
       "simulator_api.h"
     SRCS
       "simulator.cpp"
-    DEFINES
-      ${SIM_DEFINES}
     INCLUDES
-      ${SIM_INCLUDES}
+      "${CMAKE_SOURCE_DIR}"
+      "${CMAKE_SOURCE_DIR}/third_party/coralnpu"
     DEPS
       ${SIM_DEPS}
     PUBLIC
