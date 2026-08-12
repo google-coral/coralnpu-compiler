@@ -88,7 +88,7 @@ main() {
   echo
   echo "=== Compiling MLIR to VMFB: add.mlir ==="
 
-  local input_mlir="tests/models/stablehlo/add.mlir"
+  local input_mlir="tests/models/stablehlo/check_gen_templates/add.mlir"
   output_vmfb="output/stablehlo/add.vmfb"
 
   mkdir -p "$(dirname "${output_vmfb}")"
@@ -123,7 +123,7 @@ main() {
   echo
   echo "=== Compiling MLIR to VMFB: matmul_add.mlir ==="
 
-  local input_mlir="tests/models/stablehlo/matmul_add.mlir"
+  local input_mlir="tests/models/stablehlo/check_gen_templates/matmul_add.mlir"
   output_vmfb="output/stablehlo/matmul_add.vmfb"
 
   mkdir -p "$(dirname "${output_vmfb}")"

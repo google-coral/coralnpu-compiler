@@ -47,7 +47,7 @@ main() {
   echo
   echo "=== Compiling MLIR to VMFB ==="
 
-  local input_mlir="tests/models/stablehlo/matmul_add.mlir"
+  local input_mlir="tests/models/stablehlo/check_gen_templates/matmul_add.mlir"
   output_vmfb="output/stablehlo/matmul_add.vmfb"
 
   mkdir -p "$(dirname "${output_vmfb}")"
