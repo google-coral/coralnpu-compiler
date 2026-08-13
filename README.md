@@ -475,21 +475,61 @@ bazel test --config=dev //tests/models/stablehlo/... --test_tag_filters=i8
 > [!NOTE]
 > Running `bazel test` against `//tests/models/linalg/...` or `//tests/models/stablehlo/...` executes tests against static `.mlir` files checked into the repository under `generated_<type>/` directories. **Running tests will never trigger test regeneration.**
 
-### Generating and Regenerating Check Tests with Bazel
+### Generating and Synchronizing Check Tests with Bazel
 
 The Linalg and StableHLO compiler check tests are generated from dynamic-shape templates using the `check_gen` tool and checked into the repository under `generated_<type>/` directories (e.g., `tests/models/linalg/generated_i8/`).
 
-To generate or regenerate check test `.mlir` files and copy them into the source tree:
-
-#### Regenerate all check tests across the repository:
+#### 1. Generate only missing tests (Fast / Incremental):
+When adding new test shapes or operations to `op_tests_*.bzl`, build and copy only the newly added tests:
 
 ```shell
-bazel run --config=dev //tests:copy_generated
-# or just linalg:
-# bazel run --config=dev //tests/models/linalg:copy_generated
-# or just stablehlo:
-# bazel run --config=dev //tests/models/stablehlo:copy_generated
+bazel run --config=dev //tests:copy_missing
+# or per-package:
+# bazel run --config=dev //tests/models/linalg:copy_missing
+# bazel run --config=dev //tests/models/stablehlo:copy_missing
 ```
+
+#### 2. Remove stale / unreferenced tests:
+When removing or renaming test templates or instances:
+
+```shell
+bazel run --config=dev //tests:clean_stale
+# or per-package:
+# bazel run --config=dev //tests/models/linalg:clean_stale
+# bazel run --config=dev //tests/models/stablehlo:clean_stale
+```
+
+#### 3. One-step synchronization (Clean stale + copy missing):
+
+```shell
+bazel run --config=dev //tests:sync_generated
+```
+
+#### 4. Verify test synchronization:
+Verify that all generated tests on disk match the declarations in `op_tests_*.bzl`:
+
+```shell
+bazel test --config=dev //tests:check_generated
+```
+
+#### 5. Force regenerate all check tests:
+Force reference evaluation and regenerate all tests across the repository. Delete all existing generated test files first to ensure no stale or obsolete tests remain:
+
+```shell
+rm -f tests/models/*/generated_*/*.mlir
+bazel run --config=dev //tests:copy_generated
+```
+
+### Manual Tests
+
+Tests can be marked as `manual` (either on the op macro via `tags = ["manual"]` or on individual instance shapes via `[("<shape>", ["manual"])]`) when an operation or shape instance is work-in-progress or known to fail on CoralNPU:
+
+- **Always Generated**: All declared tests in `op_tests_*.bzl` (including manual tests) are generated into `generated_<type>/` by `copy_missing` / `copy_generated`.
+- **Excluded from CI**: Tests tagged `manual` are automatically skipped by `//tests:ci` and wildcard test runs (`//tests/...`).
+- **Running a Manual Test**: You can execute any individual manual test directly by its target label:
+  ```shell
+  bazel test --config=dev //tests/models/linalg:<test_name>_<suffix>_check_test
+  ```
 
 ### Running Tests with CMake/CTest
 

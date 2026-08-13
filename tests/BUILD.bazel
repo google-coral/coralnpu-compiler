@@ -12,7 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//tests:defs.bzl", "copy_generated_check_tests_suite")
+load(
+    "//tests:defs.bzl",
+    "clean_stale_tests_suite",
+    "copy_generated_check_tests_suite",
+    "sync_generated_tests_suite",
+)
 
 package(
     default_visibility = ["//visibility:public"],
@@ -30,11 +35,47 @@ test_suite(
     ],
 )
 
+test_suite(
+    name = "check_generated",
+    tags = ["ci"],
+    tests = [
+        "//tests/models/linalg:check_generated",
+        "//tests/models/stablehlo:check_generated",
+    ],
+)
+
 copy_generated_check_tests_suite(
     name = "copy_generated",
     tags = ["manual"],
     deps = [
         "//tests/models/linalg:copy_generated",
         "//tests/models/stablehlo:copy_generated",
+    ],
+)
+
+copy_generated_check_tests_suite(
+    name = "copy_missing",
+    tags = ["manual"],
+    deps = [
+        "//tests/models/linalg:copy_missing",
+        "//tests/models/stablehlo:copy_missing",
+    ],
+)
+
+clean_stale_tests_suite(
+    name = "clean_stale",
+    tags = ["manual"],
+    deps = [
+        "//tests/models/linalg:clean_stale",
+        "//tests/models/stablehlo:clean_stale",
+    ],
+)
+
+sync_generated_tests_suite(
+    name = "sync_generated",
+    tags = ["manual"],
+    deps = [
+        ":clean_stale",
+        ":copy_missing",
     ],
 )

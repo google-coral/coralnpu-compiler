@@ -1,4 +1,14 @@
-load("//tests:defs.bzl", "copy_generated_check_tests", "copy_generated_check_tests_suite")
+load(
+    "//tests:defs.bzl",
+    "check_generated_sync_test",
+    "clean_stale_generated_tests",
+    "clean_stale_tests_suite",
+    "compute_missing_and_stale",
+    "compute_missing_gen_targets",
+    "copy_generated_check_tests",
+    "copy_generated_check_tests_suite",
+    "sync_generated_tests_suite",
+)
 load("//tests/models/linalg:op_tests_f32.bzl", "linalg_op_tests_f32")
 load("//tests/models/linalg:op_tests_i16.bzl", "linalg_op_tests_i16")
 load("//tests/models/linalg:op_tests_i32.bzl", "linalg_op_tests_i32")
@@ -6,7 +16,13 @@ load("//tests/models/linalg:op_tests_i8.bzl", "linalg_op_tests_i8")
 
 package(default_visibility = ["//visibility:public"])
 
-check_mlir_files = []
+f32_expected_files = []
+
+i16_expected_files = []
+
+i32_expected_files = []
+
+i8_expected_files = []
 
 f32_gen_targets = []
 
@@ -17,29 +33,46 @@ i32_gen_targets = []
 i8_gen_targets = []
 
 linalg_op_tests_f32(
-    check_mlir_files = check_mlir_files,
+    check_mlir_files = f32_expected_files,
     generation_targets = f32_gen_targets,
     target_dir = "generated_f32",
 )
 
 linalg_op_tests_i16(
-    check_mlir_files = check_mlir_files,
+    check_mlir_files = i16_expected_files,
     generation_targets = i16_gen_targets,
     target_dir = "generated_i16",
 )
 
 linalg_op_tests_i32(
-    check_mlir_files = check_mlir_files,
+    check_mlir_files = i32_expected_files,
     generation_targets = i32_gen_targets,
     target_dir = "generated_i32",
 )
 
 linalg_op_tests_i8(
-    check_mlir_files = check_mlir_files,
+    check_mlir_files = i8_expected_files,
     generation_targets = i8_gen_targets,
     target_dir = "generated_i8",
 )
 
+f32_existing = glob(["generated_f32/*_check.mlir"])
+
+i16_existing = glob(["generated_i16/*_check.mlir"])
+
+i32_existing = glob(["generated_i32/*_check.mlir"])
+
+i8_existing = glob(["generated_i8/*_check.mlir"])
+
+f32_missing, f32_stale = compute_missing_and_stale(f32_expected_files, f32_existing)
+
+i16_missing, i16_stale = compute_missing_and_stale(i16_expected_files, i16_existing)
+
+i32_missing, i32_stale = compute_missing_and_stale(i32_expected_files, i32_existing)
+
+i8_missing, i8_stale = compute_missing_and_stale(i8_expected_files, i8_existing)
+
+# 1. Copy all generated tests (unconditional full regeneration)
 copy_generated_check_tests(
     name = "copy_generated_f32",
     filegroups = f32_gen_targets,
@@ -79,9 +112,107 @@ copy_generated_check_tests_suite(
     ],
 )
 
+# 2. Copy only missing generated tests
+copy_generated_check_tests(
+    name = "copy_missing_f32",
+    filegroups = compute_missing_gen_targets(f32_missing, "generated_f32"),
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_f32",
+)
+
+copy_generated_check_tests(
+    name = "copy_missing_i16",
+    filegroups = compute_missing_gen_targets(i16_missing, "generated_i16"),
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_i16",
+)
+
+copy_generated_check_tests(
+    name = "copy_missing_i32",
+    filegroups = compute_missing_gen_targets(i32_missing, "generated_i32"),
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_i32",
+)
+
+copy_generated_check_tests(
+    name = "copy_missing_i8",
+    filegroups = compute_missing_gen_targets(i8_missing, "generated_i8"),
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_i8",
+)
+
+copy_generated_check_tests_suite(
+    name = "copy_missing",
+    tags = ["manual"],
+    deps = [
+        ":copy_missing_f32",
+        ":copy_missing_i16",
+        ":copy_missing_i32",
+        ":copy_missing_i8",
+    ],
+)
+
+# 3. Clean stale tests
+clean_stale_generated_tests(
+    name = "clean_stale_f32",
+    stale_files = f32_stale,
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_f32",
+)
+
+clean_stale_generated_tests(
+    name = "clean_stale_i16",
+    stale_files = i16_stale,
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_i16",
+)
+
+clean_stale_generated_tests(
+    name = "clean_stale_i32",
+    stale_files = i32_stale,
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_i32",
+)
+
+clean_stale_generated_tests(
+    name = "clean_stale_i8",
+    stale_files = i8_stale,
+    tags = ["manual"],
+    target_dir = "tests/models/linalg/generated_i8",
+)
+
+clean_stale_tests_suite(
+    name = "clean_stale",
+    tags = ["manual"],
+    deps = [
+        ":clean_stale_f32",
+        ":clean_stale_i16",
+        ":clean_stale_i32",
+        ":clean_stale_i8",
+    ],
+)
+
+# 4. Synchronize generated tests (clean stale then copy missing)
+sync_generated_tests_suite(
+    name = "sync_generated",
+    tags = ["manual"],
+    deps = [
+        ":clean_stale",
+        ":copy_missing",
+    ],
+)
+
+# 5. Check sync consistency (runs in CI)
+check_generated_sync_test(
+    name = "check_generated",
+    missing_files = f32_missing + i16_missing + i32_missing + i8_missing,
+    stale_files = f32_stale + i16_stale + i32_stale + i8_stale,
+    tags = ["ci"],
+)
+
 filegroup(
     name = "check_mlir_files",
-    srcs = check_mlir_files,
+    srcs = f32_existing + i16_existing + i32_existing + i8_existing,
     visibility = ["//visibility:public"],
 )
 

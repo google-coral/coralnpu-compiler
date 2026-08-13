@@ -45,13 +45,18 @@ def _copy_generated_check_tests_impl(ctx):
     lines = [
         "#!/bin/bash",
         "set -e",
-        'DEST="$BUILD_WORKSPACE_DIRECTORY/' + ctx.attr.target_dir + '"',
-        'mkdir -p "$DEST"',
-        'echo "Copying check test files to $DEST..."',
     ]
-    for f in ctx.files.filegroups:
-        lines.append('cp -f "%s" "$DEST/"' % f.short_path)
-    lines.append('echo "Successfully copied %d check test files to %s!"' % (len(ctx.files.filegroups), ctx.attr.target_dir))
+    if not ctx.files.filegroups:
+        lines.append('echo "No check test files to copy to %s."' % ctx.attr.target_dir)
+    else:
+        lines.extend([
+            'DEST="$BUILD_WORKSPACE_DIRECTORY/' + ctx.attr.target_dir + '"',
+            'mkdir -p "$DEST"',
+            'echo "Copying %d check test file(s) to $DEST..."' % len(ctx.files.filegroups),
+        ])
+        for f in ctx.files.filegroups:
+            lines.append('cp -f "%s" "$DEST/"' % f.short_path)
+        lines.append('echo "Successfully copied %d check test file(s) to %s!"' % (len(ctx.files.filegroups), ctx.attr.target_dir))
 
     ctx.actions.write(
         output = script_file,
@@ -107,6 +112,183 @@ copy_generated_check_tests_suite = rule(
     },
     executable = True,
 )
+
+def _clean_stale_generated_tests_impl(ctx):
+    script_file = ctx.actions.declare_file(ctx.label.name + ".sh")
+    lines = [
+        "#!/bin/bash",
+        "set -e",
+    ]
+    stale = ctx.attr.stale_files
+    if not stale:
+        lines.append('echo "No stale check test files to clean in %s."' % ctx.attr.target_dir)
+    else:
+        lines.append('DEST="$BUILD_WORKSPACE_DIRECTORY/' + ctx.attr.target_dir + '"')
+        lines.append('echo "Removing %d stale check test file(s) from $DEST..."' % len(stale))
+        for f in stale:
+            lines.append('rm -f "$BUILD_WORKSPACE_DIRECTORY/%s/%s"' % (ctx.label.package, f))
+        lines.append('echo "Successfully removed %d stale check test file(s) from %s!"' % (len(stale), ctx.attr.target_dir))
+
+    ctx.actions.write(
+        output = script_file,
+        content = "\n".join(lines) + "\n",
+        is_executable = True,
+    )
+    return [DefaultInfo(executable = script_file)]
+
+clean_stale_generated_tests = rule(
+    implementation = _clean_stale_generated_tests_impl,
+    attrs = {
+        "target_dir": attr.string(mandatory = True),
+        "stale_files": attr.string_list(mandatory = True),
+    },
+    executable = True,
+)
+
+def _clean_stale_tests_suite_impl(ctx):
+    script_file = ctx.actions.declare_file(ctx.label.name + ".sh")
+    lines = [
+        "#!/bin/bash",
+        "set -e",
+        'echo "Running clean stale test suite: %s..."' % ctx.label.name,
+    ]
+    for dep in ctx.attr.deps:
+        lines.append('"%s"' % dep[DefaultInfo].files_to_run.executable.short_path)
+    lines.append('echo "Successfully finished clean stale test suite: %s!"' % ctx.label.name)
+
+    ctx.actions.write(
+        output = script_file,
+        content = "\n".join(lines) + "\n",
+        is_executable = True,
+    )
+
+    runfiles = ctx.runfiles(
+        files = [dep[DefaultInfo].files_to_run.executable for dep in ctx.attr.deps],
+        transitive_files = depset(transitive = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.deps]),
+    )
+    return [DefaultInfo(
+        executable = script_file,
+        runfiles = runfiles,
+    )]
+
+clean_stale_tests_suite = rule(
+    implementation = _clean_stale_tests_suite_impl,
+    attrs = {
+        "deps": attr.label_list(mandatory = True, cfg = "exec"),
+    },
+    executable = True,
+)
+
+def _sync_generated_tests_suite_impl(ctx):
+    script_file = ctx.actions.declare_file(ctx.label.name + ".sh")
+    lines = [
+        "#!/bin/bash",
+        "set -e",
+        'echo "Synchronizing generated check tests: %s..."' % ctx.label.name,
+    ]
+    for dep in ctx.attr.deps:
+        lines.append('"%s"' % dep[DefaultInfo].files_to_run.executable.short_path)
+    lines.append('echo "Successfully synchronized generated check tests: %s!"' % ctx.label.name)
+
+    ctx.actions.write(
+        output = script_file,
+        content = "\n".join(lines) + "\n",
+        is_executable = True,
+    )
+
+    runfiles = ctx.runfiles(
+        files = [dep[DefaultInfo].files_to_run.executable for dep in ctx.attr.deps],
+        transitive_files = depset(transitive = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.deps]),
+    )
+    return [DefaultInfo(
+        executable = script_file,
+        runfiles = runfiles,
+    )]
+
+sync_generated_tests_suite = rule(
+    implementation = _sync_generated_tests_suite_impl,
+    attrs = {
+        "deps": attr.label_list(mandatory = True, cfg = "exec"),
+    },
+    executable = True,
+)
+
+def _check_generated_sync_test_impl(ctx):
+    script_file = ctx.actions.declare_file(ctx.label.name + ".sh")
+    missing = ctx.attr.missing_files
+    stale = ctx.attr.stale_files
+    lines = [
+        "#!/bin/bash",
+    ]
+    if not missing and not stale:
+        lines.append('echo "All generated check test files for %s are in sync."' % ctx.label.name)
+        lines.append("exit 0")
+    else:
+        lines.append('echo "ERROR: Generated check test files for %s are out of sync!" >&2' % ctx.label.name)
+        if missing:
+            lines.append('echo "" >&2')
+            lines.append('echo "Missing %d generated test file(s):" >&2' % len(missing))
+            for f in missing:
+                lines.append('echo "  - %s" >&2' % f)
+            lines.append("echo 'Run `bazel run //tests:copy_missing` (or `%s:copy_missing`) to generate them.' >&2" % ctx.label.package)
+        if stale:
+            lines.append('echo "" >&2')
+            lines.append('echo "Stale / unreferenced %d generated test file(s):" >&2' % len(stale))
+            for f in stale:
+                lines.append('echo "  - %s" >&2' % f)
+            lines.append("echo 'Run `bazel run //tests:clean_stale` (or `%s:clean_stale`) to remove them.' >&2" % ctx.label.package)
+        lines.append("exit 1")
+
+    ctx.actions.write(
+        output = script_file,
+        content = "\n".join(lines) + "\n",
+        is_executable = True,
+    )
+    return [DefaultInfo(executable = script_file)]
+
+check_generated_sync_test = rule(
+    implementation = _check_generated_sync_test_impl,
+    attrs = {
+        "missing_files": attr.string_list(),
+        "stale_files": attr.string_list(),
+    },
+    test = True,
+)
+
+def compute_missing_and_stale(expected_files, existing_files):
+    """Computes missing and stale file lists.
+
+    Args:
+      expected_files: List of expected check MLIR file paths.
+      existing_files: List of check MLIR file paths present on disk.
+
+    Returns:
+      A tuple (missing_files, stale_files).
+    """
+    expected_set = {f: True for f in expected_files}
+    existing_set = {f: True for f in existing_files}
+    missing = [f for f in expected_files if f not in existing_set]
+    stale = [f for f in existing_files if f not in expected_set]
+    return missing, stale
+
+def compute_missing_gen_targets(missing_files, target_dir = ""):
+    """Computes generator target labels corresponding to missing check test files.
+
+    Args:
+      missing_files: List of missing check MLIR file paths.
+      target_dir: Subdirectory where files are placed.
+
+    Returns:
+      List of target label strings (e.g. [":gen_foo_4_8-8_4"]).
+    """
+    targets = []
+    prefix = (target_dir + "/") if target_dir else ""
+    for f in missing_files:
+        rel = f[len(prefix):] if f.startswith(prefix) else f
+        if rel.endswith("_check.mlir"):
+            base_suffix = rel[:-len("_check.mlir")]
+            targets.append(":gen_" + base_suffix)
+    return targets
 
 def coralnpu_check_gen_tests(
         name,
@@ -170,7 +352,7 @@ def coralnpu_check_gen_tests(
         # Run only when explicitly called
         tags = tags + ["manual"],
     )
-    if generation_targets != None and "manual" not in tags:
+    if generation_targets != None:
         generation_targets.append(":" + gen_target_name + "_mlir_files")
 
     # Individual copy target for this template line
@@ -189,6 +371,7 @@ def coralnpu_check_gen_tests(
 
     # Independent check test targets consuming static files in target_dir/
     generated_check_files = []
+    all_expected_files = []
     for inst_entry in instances:
         inst = ""
         extra_tags = []
@@ -205,7 +388,9 @@ def coralnpu_check_gen_tests(
         check_mlir_file = (target_dir + "/" if target_dir != "" else "") + test_file_base + "_" + suffix + "_check.mlir"
         test_target_name = name + "_" + suffix + "_check_test"
 
-        if "manual" not in combined_tags:
+        all_expected_files.append(check_mlir_file)
+
+        if native.glob([check_mlir_file]):
             coralnpu_check_test(
                 name = test_target_name,
                 src = check_mlir_file,
@@ -216,7 +401,8 @@ def coralnpu_check_gen_tests(
                 deps = deps,
                 **kwargs
             )
-            generated_check_files.append(check_mlir_file)
+            if "manual" not in combined_tags:
+                generated_check_files.append(check_mlir_file)
 
     native.filegroup(
         name = name + "_check_mlir_files",
@@ -225,4 +411,4 @@ def coralnpu_check_gen_tests(
     )
 
     if check_mlir_files != None:
-        check_mlir_files.extend(generated_check_files)
+        check_mlir_files.extend(all_expected_files)
