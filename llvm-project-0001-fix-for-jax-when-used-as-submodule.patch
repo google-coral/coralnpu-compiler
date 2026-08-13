@@ -1,14 +1,12 @@
-From 35c4bdd70aa06118e77aceecb8074a7228ba0b89 Mon Sep 17 00:00:00 2001
+From 9ffeaacfce535be2d77a905db598bf537196b896 Mon Sep 17 00:00:00 2001
 From: Eryk Szpotanski <eszpotanski@antmicro.com>
 Date: Mon, 6 Jul 2026 19:18:44 +0200
-Subject: [PATCH 1/2] [IR] use signed 16-bit ints and add support for bit width
- of index
+Subject: [PATCH 1/3] use signed 16-bit ints
 
 Signed-off-by: Eryk Szpotanski <eszpotanski@antmicro.com>
 ---
  mlir/lib/IR/Builders.cpp | 3 ++-
- mlir/lib/IR/Types.cpp    | 6 +++++-
- 2 files changed, 7 insertions(+), 2 deletions(-)
+ 1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/mlir/lib/IR/Builders.cpp b/mlir/lib/IR/Builders.cpp
 index cf64954751d5..a08101b20e12 100644
@@ -24,30 +22,6 @@ index cf64954751d5..a08101b20e12 100644
  }
  
  IntegerAttr Builder::getI8IntegerAttr(int8_t value) {
-diff --git a/mlir/lib/IR/Types.cpp b/mlir/lib/IR/Types.cpp
-index ec10a5ce9e2e..263aac1e5a7e 100644
---- a/mlir/lib/IR/Types.cpp
-+++ b/mlir/lib/IR/Types.cpp
-@@ -8,6 +8,7 @@
- 
- #include "mlir/IR/BuiltinTypes.h"
- #include "mlir/IR/Dialect.h"
-+#include "llvm/Support/Casting.h"
- 
- using namespace mlir;
- using namespace mlir::detail;
-@@ -122,7 +123,10 @@ bool Type::isIntOrFloat() const {
- bool Type::isIntOrIndexOrFloat() const { return isIntOrFloat() || isIndex(); }
- 
- unsigned Type::getIntOrFloatBitWidth() const {
--  assert(isIntOrFloat() && "only integers and floats have a bitwidth");
-+  assert(isIntOrIndexOrFloat() &&
-+         "only integers, indexes and floats have a bitwidth");
-+  if (isIndex())
-+    return llvm::dyn_cast<IndexType>(*this).kInternalStorageBitWidth;
-   if (auto intType = llvm::dyn_cast<IntegerType>(*this))
-     return intType.getWidth();
-   return llvm::cast<FloatType>(*this).getWidth();
 -- 
-2.54.0
+2.55.0.691.gc56d675ccc-goog
 

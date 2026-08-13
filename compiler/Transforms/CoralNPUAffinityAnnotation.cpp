@@ -238,7 +238,12 @@ int64_t estimateBytesForType(Type type) {
     return llvm::divideCeil(shapedType.getNumElements() * elementBits, 8);
   }
 
-  unsigned bits = type.getIntOrFloatBitWidth();
+  unsigned bits = 0;
+  if (auto indexType = llvm::dyn_cast<IndexType>(type)) {
+    bits = indexType.kInternalStorageBitWidth;
+  } else {
+    bits = type.getIntOrFloatBitWidth();
+  }
   return llvm::divideCeil(bits, 8);
 }
 

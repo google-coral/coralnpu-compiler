@@ -86,7 +86,7 @@ CoralNPUTileSizeSelectionAnalysis::CoralNPUTileSizeSelectionAnalysis(
     if (auto type =
             dyn_cast<ShapedType>(rootTilingOp->getResult(0).getType())) {
       auto elemType = type.getElementType();
-      if (!elemType.isIntOrIndexOrFloat()) {
+      if (!elemType.isIntOrFloat()) {
         rootTilingOp->emitWarning("only integer and float types are supported");
         return;
       }

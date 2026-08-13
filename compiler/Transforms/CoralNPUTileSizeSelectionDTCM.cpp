@@ -94,10 +94,10 @@ int64_t estimateLinalgOperandFootprint(linalg::LinalgOp linalgOp,
 
   Type elementType = rankedTensorType.getElementType();
   unsigned elementBits;
-  if (elementType.isIntOrIndexOrFloat()) {
+  if (elementType.isIntOrFloat()) {
     elementBits = elementType.getIntOrFloatBitWidth();
   } else {
-    assert(false && "only int/index/float elements are supported");
+    assert(false && "only int/float elements are supported");
     elementBits = 32;
   }
 
@@ -260,10 +260,10 @@ int64_t estimatePackOperandFootprint(linalg::PackOp packOp, OpOperand *operand,
 
   Type elementType = rankedTensorType.getElementType();
   unsigned elementBits;
-  if (elementType.isIntOrIndexOrFloat()) {
+  if (elementType.isIntOrFloat()) {
     elementBits = elementType.getIntOrFloatBitWidth();
   } else {
-    assert(false && "only int/index/float elements are supported");
+    assert(false && "only int/float elements are supported");
     elementBits = 32;
   }
 
@@ -296,10 +296,10 @@ int64_t estimateUnpackOperandFootprint(linalg::UnPackOp unpackOp,
 
   Type elementType = rankedTensorType.getElementType();
   unsigned elementBits;
-  if (elementType.isIntOrIndexOrFloat()) {
+  if (elementType.isIntOrFloat()) {
     elementBits = elementType.getIntOrFloatBitWidth();
   } else {
-    assert(false && "only int/index/float elements are supported");
+    assert(false && "only int/float elements are supported");
     elementBits = 32;
   }
 
@@ -313,7 +313,7 @@ int64_t estimateOperandFootprint(TilingInterface tilingOp, OpOperand *operand,
 
   // Handle scalar operands
   Type type = value.getType();
-  if (type.isIntOrIndexOrFloat()) {
+  if (type.isIntOrFloat()) {
     return llvm::divideCeil(type.getIntOrFloatBitWidth(), 8);
   }
 
@@ -351,10 +351,10 @@ int64_t estimateOperandFootprint(TilingInterface tilingOp, OpOperand *operand,
 
   Type elementType = rankedTensorType.getElementType();
   unsigned elementBits;
-  if (elementType.isIntOrIndexOrFloat()) {
+  if (elementType.isIntOrFloat()) {
     elementBits = elementType.getIntOrFloatBitWidth();
   } else {
-    assert(false && "only int/index/float elements are supported");
+    assert(false && "only int/float elements are supported");
     elementBits = 32;
   }
 
