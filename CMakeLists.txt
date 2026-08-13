@@ -84,7 +84,9 @@ set(RISCV_TOOLCHAIN_ROOT "${CMAKE_BINARY_DIR}/toolchain_rv32" CACHE PATH
 
 download_rv32_toolchain("${RISCV_TOOLCHAIN_ROOT}")
 
-set(LLVM_EXTERNAL_LIT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/llvm-project/llvm/utils/lit/lit.py" CACHE FILEPATH "Path to llvm-lit" FORCE)
+set(IREE_BUNDLED_LLVM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/llvm-project" CACHE PATH
+    "Path to bundled LLVM source" FORCE)
+set(LLVM_EXTERNAL_LIT "${IREE_BUNDLED_LLVM_DIR}/llvm/utils/lit/lit.py" CACHE FILEPATH "Path to llvm-lit" FORCE)
 
 add_subdirectory(third_party/iree)
 

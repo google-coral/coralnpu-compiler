@@ -1,0 +1,109 @@
+From b1cf9c926ef569689db887d2c0e5b78db932b8c6 Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Thu, 13 Aug 2026 16:07:26 +0200
+Subject: [PATCH] CMake: allow custom bundled llvm-project path
+
+---
+ build_tools/cmake/iree_llvm.cmake       | 31 +++++++++++++++++++------
+ compiler/bindings/python/CMakeLists.txt |  6 ++++-
+ 2 files changed, 29 insertions(+), 8 deletions(-)
+
+diff --git a/build_tools/cmake/iree_llvm.cmake b/build_tools/cmake/iree_llvm.cmake
+index 4d9377ad5f..17b123f75e 100644
+--- a/build_tools/cmake/iree_llvm.cmake
++++ b/build_tools/cmake/iree_llvm.cmake
+@@ -34,9 +34,13 @@ macro(iree_llvm_configure_bundled)
+   set(LLVM_LIBRARY_OUTPUT_INTDIR "${CMAKE_CURRENT_BINARY_DIR}/llvm-project/lib")
+   set(LLVM_RUNTIME_OUTPUT_INTDIR "${CMAKE_CURRENT_BINARY_DIR}/llvm-project/bin")
+ 
+-  message(STATUS "Configuring third_party/llvm-project")
++  if(NOT DEFINED IREE_BUNDLED_LLVM_DIR)
++    set(IREE_BUNDLED_LLVM_DIR "${IREE_SOURCE_DIR}/third_party/llvm-project")
++  endif()
++
++  message(STATUS "Configuring llvm-project from ${IREE_BUNDLED_LLVM_DIR}")
+   list(APPEND CMAKE_MESSAGE_INDENT "  ")
+-  set(_BUNDLED_LLVM_CMAKE_SOURCE_SUBDIR "third_party/llvm-project/llvm")
++  set(_BUNDLED_LLVM_CMAKE_SOURCE_SUBDIR "${IREE_BUNDLED_LLVM_DIR}/llvm")
+   add_subdirectory("${_BUNDLED_LLVM_CMAKE_SOURCE_SUBDIR}" "llvm-project" EXCLUDE_FROM_ALL)
+   get_directory_property(LLVM_VERSION_MAJOR DIRECTORY "${_BUNDLED_LLVM_CMAKE_SOURCE_SUBDIR}" LLVM_VERSION_MAJOR)
+   if (NOT LLVM_VERSION_MAJOR)
+@@ -64,21 +68,21 @@ macro(iree_llvm_configure_bundled)
+   list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
+ 
+   set(LLVM_INCLUDE_DIRS
+-    ${IREE_SOURCE_DIR}/${_BUNDLED_LLVM_CMAKE_SOURCE_SUBDIR}/include
++    ${_BUNDLED_LLVM_CMAKE_SOURCE_SUBDIR}/include
+     ${IREE_BINARY_DIR}/llvm-project/include
+   )
+   set(MLIR_INCLUDE_DIRS
+-    ${IREE_SOURCE_DIR}/third_party/llvm-project/mlir/include
++    ${IREE_BUNDLED_LLVM_DIR}/mlir/include
+     ${IREE_BINARY_DIR}/llvm-project/tools/mlir/include
+   )
+   set(LLD_INCLUDE_DIRS
+-    ${IREE_SOURCE_DIR}/third_party/llvm-project/lld/include
++    ${IREE_BUNDLED_LLVM_DIR}/lld/include
+     ${IREE_BINARY_DIR}/llvm-project/tools/lld/include
+   )
+ 
+   set(LLVM_BINARY_DIR "${IREE_BINARY_DIR}/llvm-project")
+   set(LLVM_TOOLS_BINARY_DIR "${LLVM_BINARY_DIR}/bin")
+-  set(LLVM_EXTERNAL_LIT "${IREE_SOURCE_DIR}/${_BUNDLED_LLVM_CMAKE_SOURCE_SUBDIR}/utils/lit/lit.py")
++  set(LLVM_EXTERNAL_LIT "${_BUNDLED_LLVM_CMAKE_SOURCE_SUBDIR}/utils/lit/lit.py")
+ 
+   set(IREE_LLVM_LINK_BINARY "$<TARGET_FILE:${IREE_LLVM_LINK_TARGET}>")
+   set(IREE_LLD_BINARY "$<TARGET_FILE:${IREE_LLD_TARGET}>")
+@@ -115,7 +119,10 @@ macro(iree_llvm_configure_installed)
+   # Note that LLVM style lit test helpers use LLVM_EXTERNAL_LIT, if provided,
+   # so this is consistent between the projects.
+   if(NOT LLVM_EXTERNAL_LIT)
+-    set(LLVM_EXTERNAL_LIT "${IREE_SOURCE_DIR}/third_party/llvm-project/llvm/utils/lit/lit.py")
++    if(NOT DEFINED IREE_BUNDLED_LLVM_DIR)
++      set(IREE_BUNDLED_LLVM_DIR "${IREE_SOURCE_DIR}/third_party/llvm-project")
++    endif()
++    set(LLVM_EXTERNAL_LIT "${IREE_BUNDLED_LLVM_DIR}/llvm/utils/lit/lit.py")
+   endif()
+ 
+   set(IREE_LLVM_LINK_BINARY "$<TARGET_FILE:llvm-link>")
+@@ -266,6 +273,16 @@ macro(iree_llvm_set_bundled_cmake_options)
+   list(REMOVE_DUPLICATES LLVM_ENABLE_PROJECTS)
+   list(REMOVE_DUPLICATES LLVM_TARGETS_TO_BUILD)
+ 
++  if(NOT DEFINED IREE_BUNDLED_LLVM_DIR)
++    set(IREE_BUNDLED_LLVM_DIR "${IREE_SOURCE_DIR}/third_party/llvm-project")
++  endif()
++
++  foreach(_proj IN LISTS LLVM_ENABLE_PROJECTS)
++    string(TOUPPER "${_proj}" _upper_proj)
++    string(REGEX REPLACE "-" "_" _upper_proj "${_upper_proj}")
++    set(LLVM_EXTERNAL_${_upper_proj}_SOURCE_DIR "${IREE_BUNDLED_LLVM_DIR}/${_proj}" CACHE PATH "" FORCE)
++  endforeach()
++
+   message(VERBOSE "Building LLVM Targets: ${LLVM_TARGETS_TO_BUILD}")
+   message(VERBOSE "Building LLVM Projects: ${LLVM_ENABLE_PROJECTS}")
+ endmacro()
+diff --git a/compiler/bindings/python/CMakeLists.txt b/compiler/bindings/python/CMakeLists.txt
+index 0b69f1967e..eb23e366b1 100644
+--- a/compiler/bindings/python/CMakeLists.txt
++++ b/compiler/bindings/python/CMakeLists.txt
+@@ -29,11 +29,15 @@ set(_PYTHON_INSTALL_PREFIX "python_packages/iree_compiler")
+ # accidentally closing over an errant include_directories from up-tree, so
+ # when built in-tree it is somehow working based on that. This will need
+ # to be fixed to capture the correct include directories in that macro.
++if(NOT DEFINED IREE_BUNDLED_LLVM_DIR)
++  set(IREE_BUNDLED_LLVM_DIR "${IREE_SOURCE_DIR}/third_party/llvm-project")
++endif()
++
+ include_directories(
+   "${IREE_SOURCE_DIR}/compiler/src"
+   "${IREE_SOURCE_DIR}/compiler/bindings/c"
+   "${IREE_SOURCE_DIR}/llvm-external-projects/iree-dialects/include"
+-  "${IREE_SOURCE_DIR}/third_party/llvm-project/mlir/include"
++  "${IREE_BUNDLED_LLVM_DIR}/mlir/include"
+   "${IREE_SOURCE_DIR}/third_party/stablehlo/include"
+   "${IREE_SOURCE_DIR}/third_party/stablehlo"
+ )
+-- 
+2.55.0.691.gc56d675ccc-goog
+
