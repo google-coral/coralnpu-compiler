@@ -144,7 +144,7 @@ def stablehlo_op_tests_i8(name = "stablehlo_op_i8_tests", check_mlir_files = Non
     op_tests_i8(name = "shift_right_logical_rank3_i8", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "shift_right_logical_rank3_i8.mlir")
     op_tests_i8(name = "shift_right_logical_rank4_i8", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "shift_right_logical_rank4_i8.mlir")
     op_tests_i8(name = "power_rank1_i8", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "power_rank1_i8.mlir")
-    op_tests_i8(name = "power_rank2_i8", instances = ["(4,8)(4,8)", "(120,256)(120,256)", ("(300,450)(300,450)", ["manual"])], test = "power_rank2_i8.mlir")
+    op_tests_i8(name = "power_rank2_i8", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "power_rank2_i8.mlir")
     op_tests_i8(name = "power_rank3_i8", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "power_rank3_i8.mlir")
     op_tests_i8(name = "power_rank4_i8", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "power_rank4_i8.mlir")
     op_tests_i8(name = "remainder_rank1_i8", instances = ["(8)(8)", "(256)(256)", "(450)(450)"], test = "remainder_rank1_i8.mlir")

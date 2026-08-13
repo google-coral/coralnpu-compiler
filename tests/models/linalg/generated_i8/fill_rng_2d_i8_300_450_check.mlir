@@ -16,7 +16,7 @@ module {
     %4 = arith.sitofp %cast : tensor<?x?xi8> to tensor<?x?xf32>
     %cast_5 = tensor.cast %4 : tensor<?x?xf32> to tensor<300x450xf32>
     %5 = util.optimization_barrier %cst : tensor<300x450xf32>
-    check.expect_almost_eq(%cast_5, %5, atol 1.000000e+00, rtol 9.99999997E-7) : tensor<300x450xf32>
+    "check.expect_almost_eq"(%cast_5, %5) {rtol = 9.99999997E-7 : f32} : (tensor<300x450xf32>, tensor<300x450xf32>) -> ()
     return
   }
 }

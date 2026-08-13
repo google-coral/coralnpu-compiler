@@ -20,13 +20,8 @@ set(STABLEHLO_MANUAL_PATTERNS
     "concatenate_rank[234]_"
     "is_finite_"
     "pad_rank2_"
-    "power_rank2_i(8|16|32)_300_450-300_450"
-    "remainder_rank1_f32_(256|450)-(256|450)"
-    "remainder_rank2_f32_(120_256|300_450)-(120_256|300_450)"
-    "remainder_rank3_f32_(10_20_30|5_100_2)-(10_20_30|5_100_2)"
-    "remainder_rank4_f32_(2_3_4_50|1_1_5_400)-(2_3_4_50|1_1_5_400)"
     "reverse_rank2_i32_(120_256|300_450)"
-    "scatter_rank1_f32_10-3-3"
+    "scatter_"
     "slice_rank[234]_"
 )
 

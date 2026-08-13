@@ -5,7 +5,7 @@ module {
     %0 = util.optimization_barrier %cst_0 : tensor<1x1x5x400xf32>
     %1 = stablehlo.cosine %0 : tensor<1x1x5x400xf32>
     %2 = util.optimization_barrier %cst : tensor<1x1x5x400xf32>
-    check.expect_almost_eq(%1, %2, atol 5.000000e-03, rtol 9.99999997E-7) : tensor<1x1x5x400xf32>
+    "check.expect_almost_eq"(%1, %2) {rtol = 9.99999997E-7 : f32} : (tensor<1x1x5x400xf32>, tensor<1x1x5x400xf32>) -> ()
     return
   }
 }
