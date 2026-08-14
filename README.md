@@ -584,9 +584,9 @@ ctest --test-dir "${BUILD_DIR}" -R "tests/models/stablehlo/.*" -L "i8" -LE "manu
 
 ## Examples:
 
-### MobileNet V2 - ahead-of-time compilation
+### MobileNet V2 (JAX) - ahead-of-time compilation
 
-The compiler can be used to compile an mlir model to a vmfb binary, that can be loaded by the IREE runtime python bindings.
+The compiler can be used to compile a JAX/StableHLO MLIR model to a vmfb binary that can be loaded by the IREE runtime Python bindings.
 
 ```shell
 ./examples/mobilenetv2-jax-aot/test_classify.sh
@@ -596,6 +596,21 @@ The script first exports the model to mlir, using the StableHLO dialect. It then
 compiles the model to a vmfb, targeting the local host + CoralNPU. And finally
 runs an inference using the compiled model (the CoralNPU payload runs in
 simulation).
+
+### MobileNet V2 (TFLite / TOSA) - ahead-of-time compilation
+
+The toolchain supports compiling TFLite models via TOSA MLIR targeting CoralNPU:
+
+```shell
+./examples/mobilenetv2-tflite-aot/test_classify.sh
+```
+
+The script:
+1. Downloads the official MobileNetV2 TFLite model.
+2. Legalizes the TFLite FlatBuffer to TOSA MLIR via `tosa-converter-for-tflite`.
+3. Compiles the TOSA model to a `.vmfb` module targeting CoralNPU.
+4. Executes image classification inference against the CoralNPU simulator.
+
 
 ### The `pjrt_plugin`:
 

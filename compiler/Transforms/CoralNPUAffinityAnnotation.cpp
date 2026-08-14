@@ -187,9 +187,10 @@ bool canBeVectorized(Operation *op) {
   }
 
   // Transpose
-  if (isa<linalg::TransposeOp>(op)) {
-    return true;
-  }
+  // TODO: enable TransposeOp
+  // if (isa<linalg::TransposeOp>(op)) {
+  //   return true;
+  // }
 
   // Broadcast
   if (isa<linalg::BroadcastOp>(op)) {

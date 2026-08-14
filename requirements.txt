@@ -5,4 +5,5 @@ keras
 ml_dtypes
 numpy
 pillow
+tosa-converter-for-tflite
 yapf
