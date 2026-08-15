@@ -46,3 +46,10 @@ void simulator_run(uint32_t start_pc) {
   sim->Run(start_pc);
   sim->WaitForTermination(1000000);
 }
+
+uint64_t simulator_get_cycle_count(void) {
+  if (sim) {
+    return sim->GetCycleCount();
+  }
+  return 0;
+}

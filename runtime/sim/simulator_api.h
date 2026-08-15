@@ -34,6 +34,7 @@ void simulator_reset(void);
 void simulator_write_mem(uint32_t addr, const void *data, size_t size);
 void simulator_read_mem(uint32_t addr, void *data, size_t size);
 void simulator_run(uint32_t start_pc);
+uint64_t simulator_get_cycle_count(void);
 
 #ifdef __cplusplus
 }  // extern "C"

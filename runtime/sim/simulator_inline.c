@@ -131,15 +131,6 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
   coralnpu_dispatch_request_t request;
   memset(&request, 0, sizeof(request));
 
-#ifdef IREE_CORALNPU_SIMULATOR_DEBUG
-  fprintf(stderr,
-          "[CoralNPU simulator] request size: ELF=%" PRIu32
-          " runtime=%zu, address=0x%08" PRIx32 "\n",
-          elf_layout.dispatch_request_size, sizeof(request),
-          elf_layout.dispatch_request_addr);
-  fflush(stderr);
-#endif
-
   if (elf_layout.dispatch_request_size != sizeof(request)) {
     return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
                             "CoralNPU dispatch ABI size mismatch: ELF=%" PRIu32
@@ -238,18 +229,18 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
                       sizeof(request));
 
 #ifdef IREE_CORALNPU_SIMULATOR_DEBUG
-  fprintf(stderr,
-          "[CoralNPU simulator] running: "
-          "entry_pc=0x%08" PRIx32 ", ordinal=%zu, bindings=%u\n",
-          elf_layout.start_pc, (size_t)ordinal,
-          (unsigned)dispatch_state->binding_count);
-  fflush(stderr);
+  uint64_t cycle_start = simulator_get_cycle_count();
 #endif
 
   simulator_run(elf_layout.start_pc);
 
 #ifdef IREE_CORALNPU_SIMULATOR_DEBUG
-  fprintf(stderr, "[CoralNPU simulator] execution returned\n");
+  uint64_t cycle_end = simulator_get_cycle_count();
+  uint64_t dispatch_cycles = cycle_end - cycle_start;
+  fprintf(stderr,
+          "[CoralNPU simulator] execution returned: %" PRIu64
+          " cycles (total=%" PRIu64 ")\n",
+          dispatch_cycles, cycle_end);
   fflush(stderr);
 #endif
 
