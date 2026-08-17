@@ -21,7 +21,7 @@ set(CMAKE_CXX_COMPILER "/usr/bin/clang++-19" CACHE PATH "C++ compiler" FORCE)
 set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build type" FORCE)
 
 # Enable ccache if available
-find_program(CCACHE_PROGRAM ccache)
+find_program(CCACHE_PROGRAM NAMES sccache ccache)
 if(CCACHE_PROGRAM)
   set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE PATH "C compiler launcher" FORCE)
   set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE PATH "C++ compiler launcher" FORCE)
