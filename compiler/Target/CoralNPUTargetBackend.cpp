@@ -54,6 +54,7 @@
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Transforms/Passes.h"
 
 // LLVM headers
 #include "llvm/ADT/SmallString.h"
@@ -369,7 +370,21 @@ void CoralNPUTargetBackend::buildTranslationPassPipeline(
 
 void CoralNPUTargetBackend::buildLinkingPassPipeline(
     OpPassManager &passManager) {
-  buildLLVMCPULinkingPassPipeline(passManager, "coralnpu");
+  if (options_.linkExecutables) {
+    buildLLVMCPULinkingPassPipeline(passManager, "coralnpu");
+  } else {
+    // Cleanup IR duplication.
+    passManager.addNestedPass<IREE::HAL::ExecutableOp>(
+        mlir::createCanonicalizerPass());
+
+    // Assign final executable constant and import ordinals.
+    auto &variantPassManager = passManager.nest<IREE::HAL::ExecutableOp>()
+                                   .nest<IREE::HAL::ExecutableVariantOp>();
+    variantPassManager.addPass(
+        iree_compiler::createLLVMCPUAssignConstantOrdinalsPass());
+    variantPassManager.addPass(
+        iree_compiler::createLLVMCPUAssignImportOrdinalsPass());
+  }
 }
 
 std::optional<IREE::HAL::LLVMTarget> CoralNPUTargetBackend::getVariantTarget(

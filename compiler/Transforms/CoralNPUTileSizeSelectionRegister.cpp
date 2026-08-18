@@ -113,7 +113,7 @@ void setDepthwiseConv2DNhwcHwcVectorSizes(
 
   const auto &loops = analysis.parallelLoops;
 
-  int64_t cTile = 8 * vectorWidth;
+  int64_t cTile = 4 * vectorWidth;
   int64_t owTile =
       analysis.staticLoopRanges[loops[0]] % vectorWidth == 0 ? 4 : 1;
 
@@ -1640,7 +1640,6 @@ struct CoralNPUTileSizeSelectionRegisterPass
 
     auto &analysis = getAnalysis<CoralNPUTileSizeSelectionAnalysis>();
     if (failed(analysis.status)) {
-      signalPassFailure();
       return;
     }
 

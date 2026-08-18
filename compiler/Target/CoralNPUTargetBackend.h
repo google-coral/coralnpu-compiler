@@ -51,6 +51,7 @@ struct CoralNPUOptions {
   std::string registerAllocationReportFormat = "none";
   std::string registerAllocationReportDir = "";
   std::string registerAllocationReportFilter = ".*dispatch.*|main";
+  bool linkExecutables = false;
 
   // LLVMCPU options:
   std::string targetABI = "ilp32";
@@ -74,6 +75,11 @@ struct CoralNPUOptions {
     binder.opt<bool>(
         "coralnpu-link-embedded", linkEmbedded, llvm::cl::cat(category),
         llvm::cl::desc("Links binaries into a platform-agnostic ELF"));
+
+    binder.opt<bool>(
+        "coralnpu-link-executables", linkExecutables, llvm::cl::cat(category),
+        llvm::cl::desc("Link all executables into a single library (default: "
+                       "false, to fit within ITCM)"));
 
     binder.opt<std::string>(
         "coralnpu-embedded-linker-path", embeddedLinkerPath,

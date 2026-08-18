@@ -549,7 +549,6 @@ struct CoralNPUTileSizeSelectionDTCMPass
 
     auto &analysis = getAnalysis<CoralNPUTileSizeSelectionAnalysis>();
     if (failed(analysis.status)) {
-      signalPassFailure();
       return;
     }
 

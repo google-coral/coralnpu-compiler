@@ -82,6 +82,7 @@ iree_cc_library(
     MLIRPass
     MLIRTargetLLVMIRExport
     MLIRTransformDialect
+    MLIRTransforms
   PUBLIC
 )
 

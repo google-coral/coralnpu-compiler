@@ -83,6 +83,7 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:ToLLVMIRTranslation",
         "@llvm-project//mlir:TransformDialect",
+        "@llvm-project//mlir:Transforms",
     ],
 )
 

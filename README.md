@@ -225,13 +225,18 @@ CoralNPU compiler specific options are prefixed with `--coralnpu`.
 `--coralnpu-dump-affinity-profile-format={pretty|csv|json}` dumps statistics about the compilation (such as the number of dispatches, estimated data size, and estimated work) grouped by the device affinity (e.g., host vs CoralNPU).
 
 
-**Register allocation report**
+**Register allocation report:**
 
 `--coralnpu-dump-register-allocation-report-format={pretty|json}`
 `--coralnpu-dump-register-allocation-report-dir=<directory>`
 `--coralnpu-dump-register-allocation-report-filter=<pattern>`
 
 Dumps a report containing vector register utilization (unique registers used, vector configuration) and register allocator remarks (spills, reloads, copies) for each loop and at the function level. If the directory is `-`, the report is written to stdout; if empty or omitted, it is written to stderr. The filter option accepts a regex pattern to only report functions matching the name (default: `.*dispatch.*|main`).
+
+
+**Executable linking:**
+
+`--coralnpu-link-executables={true|false}` controls whether all executable dispatches are linked into a single library or emitted as individual self-contained executables (default: `false`). Emitting separate executables per dispatch avoids overflowing tightly constrained ITCM memory (e.g., 8 KB) on multi-dispatch models.
 
 ---
 
