@@ -56,7 +56,10 @@ patch_submodule() {
 
   [[ "${#patches[@]}" -gt 0 ]] || return 0
 
-  [[ "${cl_restore_first}" != 'true' ]] || git -C "${submodule_dir}" restore --source=HEAD --worktree -- .
+  if [[ "${cl_restore_first}" == 'true' ]]; then
+    git -C "${submodule_dir}" restore --source=HEAD --worktree -- .
+    git -C "${submodule_dir}" clean -fd
+  fi
 
   for patch_file in "${patches[@]}"; do
     apply_patch "${submodule_dir}" "${patch_file}"
