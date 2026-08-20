@@ -48,3 +48,6 @@ coralnpu_check_test(
   LABELS
     "ci"
 )
+
+coralnpu_check_generated_sync_test()
+

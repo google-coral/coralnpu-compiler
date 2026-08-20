@@ -29,3 +29,6 @@ foreach(TYPE f32 i16 i32 i8)
     MANUAL_PATTERNS ${LINALG_MANUAL_PATTERNS}
   )
 endforeach()
+
+coralnpu_check_generated_sync_test()
+

@@ -64,3 +64,37 @@ function(coralnpu_add_static_check_tests)
     )
   endforeach()
 endfunction()
+
+# coralnpu_check_generated_sync_test()
+function(coralnpu_check_generated_sync_test)
+  if(NOT IREE_BUILD_TESTS)
+    return()
+  endif()
+
+  cmake_parse_arguments(
+    _RULE
+    ""
+    "NAME"
+    "LABELS"
+    ${ARGN}
+  )
+
+  if(NOT _RULE_NAME)
+    set(_RULE_NAME "check_generated")
+  endif()
+
+  iree_package_path(_PACKAGE_PATH)
+  set(_TEST_NAME "${_PACKAGE_PATH}/${_RULE_NAME}")
+
+  add_test(
+    NAME
+      "${_TEST_NAME}"
+    COMMAND
+      "${CMAKE_COMMAND}" -E echo "All generated check test files for ${_PACKAGE_PATH} are in sync."
+  )
+
+  set_property(TEST "${_TEST_NAME}" PROPERTY LABELS "driver=coralnpu" "target=coralnpu" "ci" ${_RULE_LABELS} "${_PACKAGE_PATH}")
+  set_property(TEST "${_TEST_NAME}" PROPERTY TIMEOUT 60)
+endfunction()
+
+
