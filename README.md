@@ -57,13 +57,13 @@ are prerequisites that are not handled by bazel/cmake:
 - clang 19
 - lld 19
 - cmake >= 3.21
-- Python 3.12
+- Python 3.13
 - shfmt, for bash scripts formatting (https://github.com/mvdan/sh)
 
 In a Debian based linux distro you can get all of the above like this:
 
 ```shell
-sudo apt install git bash bazel-8.6.0 clang-19 lld-19 cmake python3.12 python3.12-venv shfmt
+sudo apt install git bash bazel-8.6.0 clang-19 lld-19 cmake python3.13 python3.13-venv shfmt
 ```
 
 To install Bazel for other distributions, please refer to [the official Bazel documentation](https://bazel.build/install).
@@ -120,16 +120,16 @@ Python), everything is managed through bazel. For some editors, you might need
 to recreate a similar environment as bazel's. You can do that like this:
 
 ```shell
-python3.12 -m venv venv
+python3.13 -m venv venv
 . venv/bin/activate
 pip install -r requirements_lock.txt
 # if the above failes, try it with requirements.txt
 ```
 
-You can also sandbox your Python 3.12 installation through [conda/miniconda](https://www.anaconda.com/docs/getting-started/working-with-conda/environments):
+You can also sandbox your Python 3.13 installation through [conda/miniconda](https://www.anaconda.com/docs/getting-started/working-with-conda/environments):
 
 ```shell
-conda create --name venv python=3.12
+conda create --name venv python=3.13
 conda activate venv
 export PYTHONPATH=$CONDA_PREFIX
 pip install -r requirements_lock.txt
@@ -157,7 +157,7 @@ bazel run --config=dev //:refresh_compile_commands
 Create a Python virtural environment with the required dependencies (See the [Python](#python) section):
 
 ```shell
-python3.12 -m venv venv
+python3.13 -m venv venv
 . venv/bin/activate
 pip install -r requirements_lock.txt
 # if the above failes, try it with requirements.txt
@@ -330,10 +330,10 @@ To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime
 
 1. **Create and activate a virtual environment**:
    ```shell
-    python3.12 -m venv .venv
+    python3.13 -m venv .venv
     source .venv/bin/activate
    ```
-    The Python version has to be 3.12, if this is not available see the [Python section](#python).
+    The Python version has to be 3.13, if this is not available see the [Python section](#python).
 
 2. **Build and install the Python wheels**:
    ```shell
@@ -351,13 +351,13 @@ To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime
 3. **Test if you can import and use the Python wheels**:
    ```shell
     python -c "import coralnpu.compiler as cnpuc; print(cnpuc)"
-    <module 'coralnpu.compiler' from '/path/to/python3.12/site-packages/coralnpu/compiler/__init__.py'>
+    <module 'coralnpu.compiler' from '/path/to/python3.13/site-packages/coralnpu/compiler/__init__.py'>
    ```
     The runtime needs `runtime/sim/libcoralnpu_simulator_mpact.so` static lib.
 
    ```shell
     LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./runtime/sim python -c "import coralnpu.runtime as cnpurt; print(cnpurt)"
-    <module 'coralnpu.runtime' from '/path/to/python3.12/site-packages/coralnpu/runtime/__init__.py'>
+    <module 'coralnpu.runtime' from '/path/to/python3.13/site-packages/coralnpu/runtime/__init__.py'>
    ```
 
 3. **Run end-to-end Python compilation and inference**:

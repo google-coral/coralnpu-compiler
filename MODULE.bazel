@@ -124,13 +124,13 @@ use_repo(
 )
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
-python.defaults(python_version = "3.12")
-python.toolchain(python_version = "3.12")
+python.defaults(python_version = "3.13")
+python.toolchain(python_version = "3.13")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
     hub_name = "pip_deps",
-    python_version = "3.12",
+    python_version = "3.13",
     requirements_lock = "//:requirements_lock.txt",
     # Uncomment to bypass Airlock, or run `gpkg setup` before bazel
     # extra_pip_args = ["--index-url", "https://pypi.org/simple"],
