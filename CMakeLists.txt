@@ -18,7 +18,9 @@ cmake_minimum_required(VERSION 3.21)
 set(CMAKE_C_COMPILER "/usr/bin/clang-19" CACHE PATH "C compiler" FORCE)
 set(CMAKE_CXX_COMPILER "/usr/bin/clang++-19" CACHE PATH "C++ compiler" FORCE)
 
-set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build type" FORCE)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build type" FORCE)
+endif()
 
 # Enable ccache if available
 find_program(CCACHE_PROGRAM NAMES sccache ccache)
@@ -51,6 +53,23 @@ set(IREE_HAL_DRIVER_LOCAL_SYNC ON CACHE BOOL "Enable local-sync driver" FORCE)
 set(IREE_HAL_DRIVER_LOCAL_TASK OFF CACHE BOOL "Disable local-task driver" FORCE)
 # enable our hal driver in the runtime
 set(IREE_EXTERNAL_HAL_DRIVERS coralnpu)
+
+# Limit LLVM CPU targets to host architectures and RISC-V (matching MODULE.bazel)
+set(IREE_DEFAULT_CPU_LLVM_TARGETS "X86;AArch64;RISCV" CACHE STRING "LLVM CPU targets for CoralNPU" FORCE)
+set(LLVM_TARGETS_TO_BUILD "X86;AArch64;RISCV" CACHE STRING "LLVM targets to build" FORCE)
+
+# Disable unnecessary IREE features, input dialects, bindings, and shims
+set(IREE_INPUT_TORCH OFF CACHE BOOL "Disable Torch input dialect" FORCE)
+set(IREE_ENABLE_CPUINFO OFF CACHE BOOL "Disable cpuinfo" FORCE)
+set(IREE_BUILD_BINDINGS_TFLITE OFF CACHE BOOL "Disable TFLite C API shim" FORCE)
+set(IREE_BUILD_BINDINGS_TFLITE_JAVA OFF CACHE BOOL "Disable TFLite Java bindings" FORCE)
+set(IREE_BUILD_DOCS OFF CACHE BOOL "Disable documentation" FORCE)
+set(IREE_BUILD_TRACY OFF CACHE BOOL "Disable Tracy tooling" FORCE)
+set(LLVM_INCLUDE_BENCHMARKS OFF CACHE BOOL "Disable LLVM benchmarks" FORCE)
+set(LLVM_INCLUDE_EXAMPLES OFF CACHE BOOL "Disable LLVM examples" FORCE)
+set(LLVM_INCLUDE_TESTS OFF CACHE BOOL "Disable LLVM tests" FORCE)
+set(LLVM_INCLUDE_DOCS OFF CACHE BOOL "Disable LLVM docs" FORCE)
+
 if(NOT DEFINED IREE_BUILD_TESTS)
   set(IREE_BUILD_TESTS OFF)
 endif()
@@ -69,6 +88,11 @@ set(IREE_ENABLE_LLD ON)
 # Enable Split DWARF and Thin Archives for faster development builds
 set(IREE_ENABLE_SPLIT_DWARF ON)
 set(IREE_ENABLE_THIN_ARCHIVES ON)
+# Build optimized llvm-tblgen (-O3) to significantly accelerate TableGen steps
+set(LLVM_OPTIMIZED_TABLEGEN ON CACHE BOOL "Build optimized TableGen" FORCE)
+# Limit parallel link jobs to prevent system memory thrashing
+set(LLVM_PARALLEL_LINK_JOBS "4" CACHE STRING "Limit parallel link jobs" FORCE)
+
 
 set(IREE_COMPILER_PLUGINS
     "coralnpu"

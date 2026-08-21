@@ -4,10 +4,11 @@ Date: Wed, 18 Mar 2026 09:41:30 +0100
 Subject: [PATCH 02/10] [Bazel] add support for out-of-tree plugins
 
 ---
- MODULE.bazel                                  |  1 +
+ MODULE.bazel                                  | 11 +++--
  build_tools/bazel/extensions.bzl              | 63 +++++++++++++++++--
- .../compiler/PluginAPI/Config/BUILD.bazel     |  9 ++-
- 3 files changed, 65 insertions(+), 8 deletions(-)
+ compiler/src/iree/compiler/API/BUILD.bazel    |  3 +-
+ .../compiler/PluginAPI/Config/BUILD.bazel     | 25 +++--------
+ 4 files changed, 73 insertions(+), 29 deletions(-)
 
 diff --git a/MODULE.bazel b/MODULE.bazel
 index b4166d4767..f6be54e010 100644
@@ -117,7 +118,7 @@ diff --git a/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel b/compiler/
 index 92f83de0ea..e158b42e9a 100644
 --- a/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel
 +++ b/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel
-@@ -14,12 +14,13 @@ package(
+@@ -14,25 +14,21 @@ package(
  
  genrule(
      name = "StaticLinkedPlugins_inc__generate",
@@ -128,14 +129,19 @@ index 92f83de0ea..e158b42e9a 100644
      # For now, just enumerate all in-tree plugins.
      cmd = (
 -        "echo '" +
+-        "HANDLE_PLUGIN_ID(hal_target_cuda)\n" +
 +        "{ echo '" +
-         "HANDLE_PLUGIN_ID(hal_target_cuda)\n" +
          "HANDLE_PLUGIN_ID(hal_target_llvm_cpu)\n" +
          "HANDLE_PLUGIN_ID(hal_target_local)\n" +
-@@ -32,7 +33,10 @@ genrule(
-         # Samples
-         "HANDLE_PLUGIN_ID(example)\n" +
-         "HANDLE_PLUGIN_ID(simple_io_sample)\n" +
+-        "HANDLE_PLUGIN_ID(hal_target_metal_spirv)\n" +
+-        "HANDLE_PLUGIN_ID(hal_target_rocm)\n" +
+-        "HANDLE_PLUGIN_ID(hal_target_vmvx)\n" +
+-        "HANDLE_PLUGIN_ID(hal_target_vulkan_spirv)\n" +
+         "HANDLE_PLUGIN_ID(input_tosa)\n" +
+         "HANDLE_PLUGIN_ID(input_stablehlo)\n" +
+-        # Samples
+-        "HANDLE_PLUGIN_ID(example)\n" +
+-        "HANDLE_PLUGIN_ID(simple_io_sample)\n" +
 -        "' > $@"
 +        "' " +
 +        # Out-of-tree plugins
@@ -144,13 +150,47 @@ index 92f83de0ea..e158b42e9a 100644
      ),
  )
  
-@@ -58,5 +62,6 @@ iree_compiler_cc_library(
+@@ -44,19 +40,10 @@ iree_compiler_cc_library(
+     name = "StaticLinkedPlugins",
+     hdrs = ["StaticLinkedPlugins.inc"],
+     deps = [
+-        # TODO: Should depend on a generated target in @iree_plugins which
+-        # generates its deps from the environment.
+-        # For now, we just hard include all in-tree plugins.
+-        "//compiler/plugins/target/CUDA",
+         "//compiler/plugins/target/LLVMCPU",
+         "//compiler/plugins/target/Local",
+-        "//compiler/plugins/target/MetalSPIRV",
+-        "//compiler/plugins/target/ROCM",
+-        "//compiler/plugins/target/VMVX",
+-        "//compiler/plugins/target/VulkanSPIRV",
+         "//compiler/plugins/input/StableHLO:registration",
          "//compiler/plugins/input/TOSA:registration",
-         "//samples/compiler_plugins/example:registration",
-         "//samples/compiler_plugins/simple_io_sample:registration",
+-        "//samples/compiler_plugins/example:registration",
+-        "//samples/compiler_plugins/simple_io_sample:registration",
 +        "@iree_external_plugins//:ExternalPlugins",
      ],
  )
+diff --git a/compiler/src/iree/compiler/API/BUILD.bazel b/compiler/src/iree/compiler/API/BUILD.bazel
+index 9ca3ea7510..e8e68f3478 100644
+--- a/compiler/src/iree/compiler/API/BUILD.bazel
++++ b/compiler/src/iree/compiler/API/BUILD.bazel
+@@ -38,7 +38,6 @@ iree_compiler_cc_library(
+         "//compiler/src/iree/compiler/API/Internal:IREEReduceToolEntryPoint",
+         "//compiler/src/iree/compiler/API/Internal:LLDToolEntryPoint",
+         "//llvm-external-projects/iree-dialects:CAPI",
+-        "@llvm-project//mlir:CAPIAMDGPU",
+         "@llvm-project//mlir:CAPIDebug",
+         "@llvm-project//mlir:CAPIGPU",
+         "@llvm-project//mlir:CAPIIR",
+@@ -47,7 +46,6 @@ iree_compiler_cc_library(
+         "@llvm-project//mlir:CAPILinalg",
+         "@llvm-project//mlir:CAPIPDL",
+         "@llvm-project//mlir:CAPISMT",
+-        "@llvm-project//mlir:CAPITarget",
+         "@llvm-project//mlir:CAPITransformDialect",
+         "@llvm-project//mlir:CAPITransformDialectTransforms",
+         "@llvm-project//mlir:CAPITransforms",
 -- 
 2.55.0
 

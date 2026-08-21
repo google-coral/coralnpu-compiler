@@ -246,7 +246,7 @@ new file mode 100644
 index 0000000000..08e74aebe7
 --- /dev/null
 +++ b/compiler/bindings/python/BUILD.bazel
-@@ -0,0 +1,227 @@
+@@ -0,0 +1,228 @@
 +# Copyright 2026 The IREE Authors
 +#
 +# Licensed under the Apache License v2.0 with LLVM Exceptions.
@@ -381,6 +381,7 @@ index 0000000000..08e74aebe7
 +    deps = [
 +        "//compiler/src/iree/compiler/API:Impl",
 +        "@llvm-project//llvm:Support",
++        "@llvm-project//mlir:CAPITarget",
 +        "@llvm-project//mlir:MLIRBindingsPythonNanobindHeadersAndDeps",
 +    ],
 +)

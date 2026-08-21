@@ -1,12 +1,13 @@
 From 9ffeaacfce535be2d77a905db598bf537196b896 Mon Sep 17 00:00:00 2001
 From: Eryk Szpotanski <eszpotanski@antmicro.com>
 Date: Mon, 6 Jul 2026 19:18:44 +0200
-Subject: [PATCH 1/3] use signed 16-bit ints
+Subject: [PATCH 1/3] use signed 16-bit ints and fix bazel target overlay
 
 Signed-off-by: Eryk Szpotanski <eszpotanski@antmicro.com>
 ---
- mlir/lib/IR/Builders.cpp | 3 ++-
- 1 file changed, 2 insertions(+), 1 deletion(-)
+ mlir/lib/IR/Builders.cpp                          |  3 ++-
+ utils/bazel/llvm-project-overlay/mlir/BUILD.bazel | 45 +++++++++++++------
+ 2 files changed, 33 insertions(+), 11 deletions(-)
 
 diff --git a/mlir/lib/IR/Builders.cpp b/mlir/lib/IR/Builders.cpp
 index cf64954751d5..a08101b20e12 100644
@@ -22,6 +23,44 @@ index cf64954751d5..a08101b20e12 100644
  }
  
  IntegerAttr Builder::getI8IntegerAttr(int8_t value) {
+diff --git a/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel b/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel
+index 824804965a..36e2d47fdf 100644
+--- a/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel
+@@ -6334,10 +6334,11 @@ cc_library(
+         ":NVVMToLLVMIRTranslation",
+         ":TargetLLVM",
+         ":ToLLVMIRTranslation",
+-        "//llvm:NVPTXCodeGen",
+         "//llvm:Support",
+         "//llvm:config",
+-    ],
++    ] + ([
++        "//llvm:NVPTXCodeGen",
++    ] if "NVPTX" in llvm_targets else []),
+ )
+ 
+ td_library(
+@@ -6511,8 +6512,6 @@ cc_library(
+         ":Support",
+         ":TargetLLVM",
+         ":ToLLVMIRTranslation",
+-        "//llvm:AMDGPUAsmParser",
+-        "//llvm:AMDGPUCodeGen",
+         "//llvm:Core",
+         "//llvm:FrontendOffloading",
+         "//llvm:MC",
+@@ -6520,7 +6519,10 @@ cc_library(
+         "//llvm:Support",
+         "//llvm:TargetParser",
+         "//llvm:config",
+-    ],
++    ] + ([
++        "//llvm:AMDGPUAsmParser",
++        "//llvm:AMDGPUCodeGen",
++    ] if "AMDGPU" in llvm_targets else []),
+ )
+ 
+ td_library(
 -- 
 2.55.0.691.gc56d675ccc-goog
-
