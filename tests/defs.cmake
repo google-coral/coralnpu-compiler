@@ -71,30 +71,18 @@ function(coralnpu_check_generated_sync_test)
     return()
   endif()
 
-  cmake_parse_arguments(
-    _RULE
-    ""
-    "NAME"
-    "LABELS"
-    ${ARGN}
-  )
-
-  if(NOT _RULE_NAME)
-    set(_RULE_NAME "check_generated")
-  endif()
-
   iree_package_path(_PACKAGE_PATH)
-  set(_TEST_NAME "${_PACKAGE_PATH}/${_RULE_NAME}")
+  set(_TEST_NAME "${_PACKAGE_PATH}/check_generated")
+
+  find_program(BAZEL_EXECUTABLE bazel REQUIRED)
 
   add_test(
-    NAME
-      "${_TEST_NAME}"
-    COMMAND
-      "${CMAKE_COMMAND}" -E echo "All generated check test files for ${_PACKAGE_PATH} are in sync."
+    NAME "${_TEST_NAME}"
+    COMMAND "${BAZEL_EXECUTABLE}" test "//${_PACKAGE_PATH}:check_generated"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
   )
 
-  set_property(TEST "${_TEST_NAME}" PROPERTY LABELS "driver=coralnpu" "target=coralnpu" "ci" ${_RULE_LABELS} "${_PACKAGE_PATH}")
-  set_property(TEST "${_TEST_NAME}" PROPERTY TIMEOUT 60)
+  set_property(TEST "${_TEST_NAME}" PROPERTY LABELS "ci" "${_PACKAGE_PATH}")
 endfunction()
 
 
