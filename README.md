@@ -8,31 +8,28 @@ Currently, this uses host-side simulation instead of physical hardware.
 
 ## Cloning
 
-The project includes a few submodules which need to be cloned as well.
-To clone the project and its submodules (**very big**, read ahead):
+To clone the project and its required submodules:
 
 ```shell
-git clone --recurse-submodules sso://spacebeaker/coralnpu-compiler
+git clone sso://spacebeaker/coralnpu-compiler
 cd coralnpu-compiler
 ```
 
-If you already cloned without `--recurse-submodules` (**very big**, read ahead):
+Initialize the top-level submodules and `third_party/iree` submodules in parallel (`-j $(nproc)`) with shallow depth (`--depth=1`), excluding the redundant duplicate checkout of `llvm-project`:
 
 ```shell
-git submodule update --init --recursive
+git submodule update --init --depth=1 -j $(nproc) -- .
+git -C third_party/iree submodule update --init --depth=1 -j $(nproc) -- . ":(exclude)third_party/llvm-project"
 ```
 
-To reduce the size of submodules (especially `third_party/llvm-project`) you can
-add `--shallow-submodules` to `git clone`, or `--depth=1` to `git submodule update`.
-These will create a shallow clone of the submodules, with a history truncated to 1 revision.
-
+*Note: We exclude `third_party/llvm-project` inside `third_party/iree` to avoid downloading a redundant ~2.4 GB duplicate copy of LLVM.*
 
 ### Patching submodules
 
 *This is a temporary solution; we should have git forks of iree and llvm-project,
 that we can patch normally.*
 
-At the root of the project there are patches for `third_part/iree` and `third_part/llvm-project`.
+At the root of the project there are patches for `third_party/iree` and `third_party/llvm-project`.
 Those can be applied using the script `scripts/patch-third_party.sh`:
 
 ```shell
@@ -44,8 +41,9 @@ See the `--help` option for more details.
 *In any case, if you need to revert all the applied patches (uncommitted work will be lost):*
 
 ```shell
-git submodule foreach 'git clear -fd && git reset --hard HEAD'
-git submodule update --init --recursive --force
+git submodule foreach 'git clean -fd && git reset --hard HEAD'
+git submodule update --init --depth=1 -j $(nproc) --force -- .
+git -C third_party/iree submodule update --init --depth=1 -j $(nproc) --force -- . ":(exclude)third_party/llvm-project"
 ```
 
 ## Prerequisites
