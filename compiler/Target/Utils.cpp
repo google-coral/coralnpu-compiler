@@ -47,7 +47,7 @@ getCoralNPUSupportedTypes(MLIRContext *context) {
   // Element types:
 
   // s.addElementType(b.getF8E8M0Type());
-  // s.addElementType(b.getBF16Type());
+  s.addElementType(b.getBF16Type());
   // s.addElementType(b.getF16Type());
   // s.addElementType(b.getTF32Type());
   s.addElementType(b.getF32Type());

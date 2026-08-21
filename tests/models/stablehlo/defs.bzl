@@ -5,8 +5,6 @@ load("//tests:defs.bzl", "coralnpu_check_gen_tests")
 _COMMON_COMPILER_FLAGS = [
     # configure the coralnpu target
     "--iree-hal-target-device=coralnpu",
-    "--coralnpu-target-abi=ilp32",
-    "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f",
     "> /dev/null",
 ]
 

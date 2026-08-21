@@ -201,8 +201,6 @@ bazel run --config=dev //compiler/tools:coralnpu-compile -- \
     --iree-llvmcpu-target-cpu=host \
     --iree-hal-target-device=coralnpu \
     --iree-global-opt-experimental-disable-conv-generalization \
-    --coralnpu-target-abi=ilp32 \
-    --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
     model.mlir \
     -o model.vmfb
 ```
@@ -299,8 +297,6 @@ To verify that the installed compiler package and runtime binaries work end-to-e
        --iree-llvmcpu-target-cpu=host \
        --iree-hal-target-device=coralnpu \
        --iree-global-opt-experimental-disable-conv-generalization \
-       --coralnpu-target-abi=ilp32 \
-       --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
        $(pwd)/model.mlir \
        -o $(pwd)/model.vmfb
    ```
@@ -390,8 +386,6 @@ To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime
            "--iree-llvmcpu-target-cpu=host",
            "--iree-hal-target-device=coralnpu",
            "--iree-global-opt-experimental-disable-conv-generalization",
-           "--coralnpu-target-abi=ilp32",
-           "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f",
        ],
    )
 

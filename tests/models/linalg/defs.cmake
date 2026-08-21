@@ -16,8 +16,6 @@ include(CMakeParseArguments)
 
 set(_COMMON_COMPILER_FLAGS
     "--iree-hal-target-device=coralnpu"
-    "--coralnpu-target-abi=ilp32"
-    "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f"
 )
 
 set(_COMMON_RUNNER_ARGS

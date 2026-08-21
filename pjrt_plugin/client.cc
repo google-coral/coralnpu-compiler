@@ -269,9 +269,6 @@ bool CoralNPUClientInstance::SetCompilerFlags(
 
   auto set_coralnpu_flags = [&]() {
     return compiler_job->SetFlag("--iree-hal-target-device=coralnpu") &&
-           compiler_job->SetFlag("--coralnpu-target-abi=ilp32") &&
-           compiler_job->SetFlag(
-               "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f") &&
            compiler_job->SetFlag("--iree-execution-model=async-internal");
   };
 

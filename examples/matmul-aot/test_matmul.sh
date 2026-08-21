@@ -34,8 +34,6 @@ main() {
     --iree-hal-local-target-device-backends=llvm-cpu \
     --iree-llvmcpu-target-cpu-features=host \
     --iree-hal-target-device=coralnpu \
-    --coralnpu-target-abi=ilp32 \
-    --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f \
     --coralnpu-dump-affinity-profile-format=pretty \
     "${TMP_DIR}/matmul.mlir" \
     -o "${TMP_DIR}/matmul.vmfb"

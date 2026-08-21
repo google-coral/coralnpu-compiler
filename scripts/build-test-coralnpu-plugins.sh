@@ -102,8 +102,6 @@ main() {
 
   # Configure the CoralNPU device
   iree_compile_options+=(--iree-hal-target-device=coralnpu)
-  iree_compile_options+=(--coralnpu-target-abi=ilp32)
-  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32f")
 
   "${IREE_COMPILE[@]}" "${iree_compile_options[@]}"
 
@@ -142,8 +140,6 @@ main() {
 
   # Configure the CoralNPU device
   iree_compile_options+=(--iree-hal-target-device=coralnpu)
-  iree_compile_options+=(--coralnpu-target-abi=ilp32)
-  iree_compile_options+=(--coralnpu-target-cpu-features="+m,+f,+zvl128b,+zve32f")
 
   "${IREE_COMPILE[@]}" "${iree_compile_options[@]}"
 

@@ -29,8 +29,6 @@ def _coralnpu_register_allocation_report_impl(ctx):
         "--iree-hal-local-target-device-backends=llvm-cpu",
         "--iree-hal-default-device=cpu",
         "--iree-hal-target-device=npu=coralnpu",
-        "--coralnpu-target-abi=ilp32",
-        "--coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f",
         "--iree-global-opt-experimental-disable-conv-generalization",
         # "--coralnpu-affinity-io-min-threshold-bytes=512",
         "--coralnpu-dump-register-allocation-report-format=json",
