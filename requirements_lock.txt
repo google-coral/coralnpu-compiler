@@ -1385,9 +1385,9 @@ kauldron==1.4.4 \
     --hash=sha256:4abf92cb7714a3f023849864c78f8a14f321a0638d2aef366b8a3ac694728e5b \
     --hash=sha256:6d586b65de003369101c73bd55bbb64df38a396e511257be5a6e08658019fbc8
     # via gemma
-keras==3.14.1 \
-    --hash=sha256:ebd2c14d2af3c9de18083604d408483996407fc7d2f9ebd1d565961f96608c29 \
-    --hash=sha256:ef479173102ad29db89b53c232efdc3fb5ad57c28bc27ead59f3e78a1eecd05b
+keras==3.15.0 \
+    --hash=sha256:0123749ac2a704d63f691994b18e432e006cb8ae910cc0ea7035d777aed9c00d \
+    --hash=sha256:9bbd7df12b7b53500d00dc24d97b7e066c771260482cb7118de0b7687a7a2781
     # via
     #   -r requirements.txt
     #   tensorflow-cpu
