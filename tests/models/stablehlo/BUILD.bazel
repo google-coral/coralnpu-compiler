@@ -10,12 +10,15 @@ load(
     "coralnpu_check_test",
     "sync_generated_tests_suite",
 )
+load("//tests/models/stablehlo:op_tests_bf16.bzl", "stablehlo_op_tests_bf16")
 load("//tests/models/stablehlo:op_tests_f32.bzl", "stablehlo_op_tests_f32")
 load("//tests/models/stablehlo:op_tests_i16.bzl", "stablehlo_op_tests_i16")
 load("//tests/models/stablehlo:op_tests_i32.bzl", "stablehlo_op_tests_i32")
 load("//tests/models/stablehlo:op_tests_i8.bzl", "stablehlo_op_tests_i8")
 
 package(default_visibility = ["//visibility:public"])
+
+bf16_expected_files = []
 
 f32_expected_files = []
 
@@ -25,6 +28,8 @@ i32_expected_files = []
 
 i8_expected_files = []
 
+bf16_gen_targets = []
+
 f32_gen_targets = []
 
 i16_gen_targets = []
@@ -32,6 +37,12 @@ i16_gen_targets = []
 i32_gen_targets = []
 
 i8_gen_targets = []
+
+stablehlo_op_tests_bf16(
+    check_mlir_files = bf16_expected_files,
+    generation_targets = bf16_gen_targets,
+    target_dir = "generated_bf16",
+)
 
 stablehlo_op_tests_f32(
     check_mlir_files = f32_expected_files,
@@ -57,6 +68,8 @@ stablehlo_op_tests_i8(
     target_dir = "generated_i8",
 )
 
+bf16_existing = glob(["generated_bf16/*_check.mlir"])
+
 f32_existing = glob(["generated_f32/*_check.mlir"])
 
 i16_existing = glob(["generated_i16/*_check.mlir"])
@@ -64,6 +77,8 @@ i16_existing = glob(["generated_i16/*_check.mlir"])
 i32_existing = glob(["generated_i32/*_check.mlir"])
 
 i8_existing = glob(["generated_i8/*_check.mlir"])
+
+bf16_missing, bf16_stale = compute_missing_and_stale(bf16_expected_files, bf16_existing)
 
 f32_missing, f32_stale = compute_missing_and_stale(f32_expected_files, f32_existing)
 
@@ -74,6 +89,13 @@ i32_missing, i32_stale = compute_missing_and_stale(i32_expected_files, i32_exist
 i8_missing, i8_stale = compute_missing_and_stale(i8_expected_files, i8_existing)
 
 # 1. Copy all generated tests (unconditional full regeneration)
+copy_generated_check_tests(
+    name = "copy_generated_bf16",
+    filegroups = bf16_gen_targets,
+    tags = ["manual"],
+    target_dir = "tests/models/stablehlo/generated_bf16",
+)
+
 copy_generated_check_tests(
     name = "copy_generated_f32",
     filegroups = f32_gen_targets,
@@ -106,6 +128,7 @@ copy_generated_check_tests_suite(
     name = "copy_generated",
     tags = ["manual"],
     deps = [
+        ":copy_generated_bf16",
         ":copy_generated_f32",
         ":copy_generated_i16",
         ":copy_generated_i32",
@@ -114,6 +137,13 @@ copy_generated_check_tests_suite(
 )
 
 # 2. Copy only missing generated tests
+copy_generated_check_tests(
+    name = "copy_missing_bf16",
+    filegroups = compute_missing_gen_targets(bf16_missing, "generated_bf16"),
+    tags = ["manual"],
+    target_dir = "tests/models/stablehlo/generated_bf16",
+)
+
 copy_generated_check_tests(
     name = "copy_missing_f32",
     filegroups = compute_missing_gen_targets(f32_missing, "generated_f32"),
@@ -146,6 +176,7 @@ copy_generated_check_tests_suite(
     name = "copy_missing",
     tags = ["manual"],
     deps = [
+        ":copy_missing_bf16",
         ":copy_missing_f32",
         ":copy_missing_i16",
         ":copy_missing_i32",
@@ -154,6 +185,13 @@ copy_generated_check_tests_suite(
 )
 
 # 3. Clean stale tests
+clean_stale_generated_tests(
+    name = "clean_stale_bf16",
+    stale_files = bf16_stale,
+    tags = ["manual"],
+    target_dir = "tests/models/stablehlo/generated_bf16",
+)
+
 clean_stale_generated_tests(
     name = "clean_stale_f32",
     stale_files = f32_stale,
@@ -186,6 +224,7 @@ clean_stale_tests_suite(
     name = "clean_stale",
     tags = ["manual"],
     deps = [
+        ":clean_stale_bf16",
         ":clean_stale_f32",
         ":clean_stale_i16",
         ":clean_stale_i32",
@@ -206,14 +245,14 @@ sync_generated_tests_suite(
 # 5. Check sync consistency (runs in CI)
 check_generated_sync_test(
     name = "check_generated",
-    missing_files = f32_missing + i16_missing + i32_missing + i8_missing,
-    stale_files = f32_stale + i16_stale + i32_stale + i8_stale,
+    missing_files = f32_missing + bf16_missing + i16_missing + i32_missing + i8_missing,
+    stale_files = f32_stale + bf16_stale + i16_stale + i32_stale + i8_stale,
     tags = ["ci"],
 )
 
 filegroup(
     name = "check_mlir_files",
-    srcs = f32_existing + i16_existing + i32_existing + i8_existing,
+    srcs = f32_existing + bf16_existing + i16_existing + i32_existing + i8_existing,
     visibility = ["//visibility:public"],
 )
 

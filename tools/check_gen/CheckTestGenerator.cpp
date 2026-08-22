@@ -679,10 +679,13 @@ LogicalResult CheckTestGenerator::addAssertions(
     auto expectedCst = funcBuilder.create(expectedCstState);
 
     bool isFloat = false;
+    bool isBF16 = false;
     if (auto shapedType = dyn_cast<ShapedType>(resVal.getType())) {
       isFloat = isa<FloatType>(shapedType.getElementType());
+      isBF16 = isa<BFloat16Type>(shapedType.getElementType());
     } else {
       isFloat = isa<FloatType>(resVal.getType());
+      isBF16 = isa<BFloat16Type>(resVal.getType());
     }
     std::string checkOp =
         isFloat ? "check.expect_almost_eq" : "check.expect_eq";
@@ -690,14 +693,19 @@ LogicalResult CheckTestGenerator::addAssertions(
     checkState.addOperands({resVal, expectedCst->getResult(0)});
     if (isFloat) {
       if (atolAttr) {
-        checkState.addAttribute("atol", atolAttr);
+        checkState.addAttribute(
+            "atol", funcBuilder.getF32FloatAttr(atolAttr.getValueAsDouble()));
+      } else if (isBF16) {
+        checkState.addAttribute("atol", funcBuilder.getF32FloatAttr(0.01f));
       }
       if (rtolAttr) {
-        checkState.addAttribute("rtol", rtolAttr);
+        checkState.addAttribute(
+            "rtol", funcBuilder.getF32FloatAttr(rtolAttr.getValueAsDouble()));
       } else {
         // Add relative tolerance to support FMA vs non-FMA comparison for large
         // values.
-        checkState.addAttribute("rtol", funcBuilder.getF32FloatAttr(1e-6f));
+        checkState.addAttribute(
+            "rtol", funcBuilder.getF32FloatAttr(isBF16 ? 0.01f : 1e-6f));
       }
     }
     funcBuilder.create(checkState);

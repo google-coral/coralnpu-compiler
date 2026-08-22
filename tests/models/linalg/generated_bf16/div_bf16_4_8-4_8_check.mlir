@@ -1,0 +1,13 @@
+module {
+  func.func @"div_bf16_4_8-4_8"() {
+    %cst = arith.constant dense<1.000000e+00> : tensor<4x8xbf16>
+    %cst_0 = arith.constant dense<[[1.000000e+00, 2.000000e+00, 3.000000e+00, 4.000000e+00, 5.000000e+00, 1.000000e+00, 2.000000e+00, 3.000000e+00], [4.000000e+00, 5.000000e+00, 1.000000e+00, 2.000000e+00, 3.000000e+00, 4.000000e+00, 5.000000e+00, 1.000000e+00], [2.000000e+00, 3.000000e+00, 4.000000e+00, 5.000000e+00, 1.000000e+00, 2.000000e+00, 3.000000e+00, 4.000000e+00], [5.000000e+00, 1.000000e+00, 2.000000e+00, 3.000000e+00, 4.000000e+00, 5.000000e+00, 1.000000e+00, 2.000000e+00]]> : tensor<4x8xbf16>
+    %0 = util.optimization_barrier %cst_0 : tensor<4x8xbf16>
+    %1 = util.optimization_barrier %cst_0 : tensor<4x8xbf16>
+    %2 = tensor.empty() : tensor<4x8xbf16>
+    %3 = linalg.div ins(%0, %1 : tensor<4x8xbf16>, tensor<4x8xbf16>) outs(%2 : tensor<4x8xbf16>) -> tensor<4x8xbf16>
+    %4 = util.optimization_barrier %cst : tensor<4x8xbf16>
+    "check.expect_almost_eq"(%3, %4) {atol = 0.00999999977 : f32, rtol = 0.00999999977 : f32} : (tensor<4x8xbf16>, tensor<4x8xbf16>) -> ()
+    return
+  }
+}
