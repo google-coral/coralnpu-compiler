@@ -22,6 +22,22 @@ index b4166d4767..f6be54e010 100644
  )
  
  # Configure LLVM using the llvm-raw repo (creates llvm-project)
+@@ -96,9 +97,9 @@ llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_co
+ llvm_configure(
+     name = "llvm-project",
+     targets = [
+         "AArch64",
+-        "AMDGPU",
++        # "AMDGPU",
+         "ARM",
+-        "NVPTX",
++        # "NVPTX",
+         "RISCV",
+         "WebAssembly",
+         "X86",
+     ],
+ )
+
 diff --git a/build_tools/bazel/extensions.bzl b/build_tools/bazel/extensions.bzl
 index 23ff1eface..6c90cfabe8 100644
 --- a/build_tools/bazel/extensions.bzl
