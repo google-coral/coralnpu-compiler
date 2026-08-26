@@ -20,7 +20,7 @@ genrule(
     srcs = [
         "@iree_core//runtime/bindings/python:runtime",
         "@iree_core//runtime/bindings/python:_runtime.so",
-        "//runtime/sim:libcoralnpu_simulator_mpact.so",
+        "@coralnpu_mpact//sim/hw_sim:libcoralnpu_simulator_mpact.so",
         "@iree_core//tools:iree-run-module",
         "@iree_core//tools:iree-benchmark-module",
     ],
@@ -77,7 +77,7 @@ genrule(
 
         # 2. Shared objects & binaries
         cp $(location @iree_core//runtime/bindings/python:_runtime.so) $$STAGE_DIR/coralnpu/runtime/_runtime_libs/_runtime.so
-        cp $(location //runtime/sim:libcoralnpu_simulator_mpact.so) $$STAGE_DIR/coralnpu/runtime/_runtime_libs/libcoralnpu_simulator_mpact.so
+        cp $(location @coralnpu_mpact//sim/hw_sim:libcoralnpu_simulator_mpact.so) $$STAGE_DIR/coralnpu/runtime/_runtime_libs/libcoralnpu_simulator_mpact.so
         cp $(location @iree_core//tools:iree-run-module) $$STAGE_DIR/coralnpu/runtime/_runtime_libs/iree-run-module
         cp $(location @iree_core//tools:iree-benchmark-module) $$STAGE_DIR/coralnpu/runtime/_runtime_libs/iree-benchmark-module
         touch $$STAGE_DIR/coralnpu/runtime/_runtime_libs/__init__.py

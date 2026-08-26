@@ -18,10 +18,10 @@ py_test(
     name = "hal_test",
     srcs = ["@iree_core//runtime/bindings/python:tests/hal_test.py"],
     data = [
-        "//runtime/sim:libcoralnpu_simulator_mpact.so",
+        "@coralnpu_mpact//sim/hw_sim:libcoralnpu_simulator_mpact.so",
     ],
     env = {
-        "LD_LIBRARY_PATH": "runtime/sim:_main/runtime/sim",
+        "LD_LIBRARY_PATH": "external/coralnpu_mpact/sim/hw_sim:external/coralnpu_mpact+/sim/hw_sim:../coralnpu_mpact/sim/hw_sim:../coralnpu_mpact+/sim/hw_sim",
     },
     legacy_create_init = False,
     main = "@iree_core//runtime/bindings/python:tests/hal_test.py",

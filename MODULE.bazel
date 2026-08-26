@@ -16,6 +16,8 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1.2", dev_dependency = Tr
 
 # Required by LLVM (for clang-fuzzer tools)
 bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
+bazel_dep(name = "abseil-cpp", version = "20250512.1")
+bazel_dep(name = "re2", version = "2024-07-02.bcr.1", repo_name = "com_googlesource_code_re2")
 
 # LLVM also needs these
 bazel_dep(name = "platforms", version = "1.0.0")
@@ -148,6 +150,45 @@ git_override(
     remote = "https://github.com/hedronvision/bazel-compile-commands-extractor.git",
     # Replace the commit hash (above) with the latest (https://github.com/hedronvision/bazel-compile-commands-extractor/commits/main).
     # Even better, set up Renovate and let it do the work for you (see "Suggestion: Updates" in the README).
+)
+
+# --- MPACT & CoralNPU MPACT ---
+bazel_dep(name = "mpact-sim", version = "1.0.2")
+git_override(
+    module_name = "mpact-sim",
+    commit = "cc31f794a6f30b2d18f1ee048ca6a61895e1fb73",
+    remote = "https://github.com/google/mpact-sim.git",
+)
+
+bazel_dep(name = "mpact-riscv", version = "1.0.1")
+git_override(
+    module_name = "mpact-riscv",
+    commit = "949e6453f7c8409e47db50d9bd1d3651a1985223",
+    patch_strip = 1,
+    patches = [
+        "//:mpact-riscv-0001-fix-vector-instructions.patch",
+    ],
+    remote = "https://github.com/google/mpact-riscv.git",
+)
+
+bazel_dep(name = "coralnpu_mpact", version = "0.0.1")
+git_override(
+    module_name = "coralnpu_mpact",
+    commit = "e2a26e6d983f13d4c10875e4e5878a6171c04a06",
+    patch_cmds = [
+        "echo 'module(name = \"coralnpu_mpact\", version = \"0.0.1\")' > MODULE.bazel",
+        "echo 'bazel_dep(name = \"rules_cc\", version = \"0.2.14\")' >> MODULE.bazel",
+        "echo 'bazel_dep(name = \"mpact-sim\", version = \"1.0.2\")' >> MODULE.bazel",
+        "echo 'bazel_dep(name = \"mpact-riscv\", version = \"1.0.1\")' >> MODULE.bazel",
+        "echo 'bazel_dep(name = \"abseil-cpp\", version = \"20250512.1\")' >> MODULE.bazel",
+        "echo 'bazel_dep(name = \"protobuf\", version = \"33.4\", repo_name = \"com_google_protobuf\")' >> MODULE.bazel",
+        "echo 'bazel_dep(name = \"re2\", version = \"2024-07-02.bcr.1\", repo_name = \"com_googlesource_code_re2\")' >> MODULE.bazel",
+    ],
+    patch_strip = 1,
+    patches = [
+        "//:coralnpu-mpact-0001-sync-g3-sim.patch",
+    ],
+    remote = "https://github.com/google-coral/coralnpu-mpact.git",
 )
 
 # --- CoralNPU Hardware Submodule ---

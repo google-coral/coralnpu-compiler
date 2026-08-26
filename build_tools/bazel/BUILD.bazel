@@ -46,7 +46,7 @@ pkg_tar(
 pkg_tar(
     name = "lib_tar",
     srcs = [
-        "//runtime/sim:libcoralnpu_simulator_mpact.so",
+        "@coralnpu_mpact//sim/hw_sim:libcoralnpu_simulator_mpact.so",
         "@iree_core//lib:libIREECompiler.so",
     ],
     package_dir = "lib",

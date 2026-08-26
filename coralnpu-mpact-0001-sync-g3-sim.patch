@@ -1,0 +1,1679 @@
+diff --git a/sim/BUILD b/sim/BUILD
+index 3f3d775..7244706 100644
+--- a/sim/BUILD
++++ b/sim/BUILD
+@@ -13,7 +13,7 @@
+ # limitations under the License.
+ 
+ # Build rules for CoralNPU simulator code.
+-load("@com_google_mpact-sim//mpact/sim/decoder:mpact_sim_isa.bzl", "mpact_bin_fmt_decoder", "mpact_isa_decoder")
++load("@mpact-sim//mpact/sim/decoder:mpact_sim_isa.bzl", "mpact_bin_fmt_decoder", "mpact_isa_decoder")
+ # load("@rules_cc//cc:defs.bzl", "cc_binary")
+ # load("@rules_cc//cc:defs.bzl", "cc_library")
+ 
+@@ -33,14 +33,14 @@ cc_library(
+         "-fprotect-parens",
+     ],
+     deps = [
+-        "@com_google_absl//absl/functional:any_invocable",
+-        "@com_google_absl//absl/log",
+-        "@com_google_absl//absl/log:check",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:str_format",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@abseil-cpp//absl/functional:any_invocable",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/log:check",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:str_format",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -61,15 +61,15 @@ cc_library(
+     copts = ["-O3"],
+     deps = [
+         ":coralnpu_state",
+-        "@com_google_absl//absl/functional:bind_front",
+-        "@com_google_absl//absl/log:check",
+-        "@com_google_absl//absl/numeric:bits",
+-        "@com_google_absl//absl/types:span",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:arch_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
++        "@abseil-cpp//absl/functional:bind_front",
++        "@abseil-cpp//absl/log:check",
++        "@abseil-cpp//absl/numeric:bits",
++        "@abseil-cpp//absl/types:span",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:arch_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
+     ],
+ )
+ 
+@@ -82,14 +82,14 @@ mpact_isa_decoder(
+         "coralnpu_memory.isa",
+         "coralnpu_mul.isa",
+         "coralnpu_shift.isa",
+-        "@com_google_mpact-riscv//riscv:riscv32zb.isa",
++        "@mpact-riscv//riscv:riscv32zb.isa",
+     ],
+     isa_name = "CoralNPU",
+     deps = [
+         ":coralnpu_instructions",
+-        "@com_google_absl//absl/functional:bind_front",
+-        "@com_google_mpact-riscv//riscv:riscv_bitmanip_instructions",
+-        "@com_google_mpact-riscv//riscv:riscv_g",
++        "@abseil-cpp//absl/functional:bind_front",
++        "@mpact-riscv//riscv:riscv_bitmanip_instructions",
++        "@mpact-riscv//riscv:riscv_g",
+     ],
+ )
+ 
+@@ -105,7 +105,7 @@ mpact_bin_fmt_decoder(
+         "coralnpu_memory.bin_fmt",
+         "coralnpu_mul.bin_fmt",
+         "coralnpu_shift.bin_fmt",
+-        "@com_google_mpact-riscv//riscv:riscv32zb.bin_fmt",
++        "@mpact-riscv//riscv:riscv32zb.bin_fmt",
+     ],
+     deps = [
+         ":coralnpu_isa",
+@@ -127,19 +127,19 @@ cc_library(
+         ":coralnpu_bin_fmt",
+         ":coralnpu_isa",
+         ":coralnpu_state",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/functional:any_invocable",
+-        "@com_google_absl//absl/log",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/types:span",
+-        "@com_google_mpact-riscv//riscv:riscv_generic_decoder",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:arch_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/generic:program_error",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/functional:any_invocable",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/types:span",
++        "@mpact-riscv//riscv:riscv_generic_decoder",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:arch_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:program_error",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -160,28 +160,28 @@ cc_library(
+         ":coralnpu_state",
+         "//sim/proto:trace_cc_proto",
+         "//sim/renode:coralnpu_renode_memory",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/flags:flag",
+-        "@com_google_absl//absl/functional:any_invocable",
+-        "@com_google_absl//absl/functional:bind_front",
+-        "@com_google_absl//absl/log",
+-        "@com_google_absl//absl/log:check",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/synchronization",
+-        "@com_google_mpact-riscv//riscv:riscv_arm_semihost",
+-        "@com_google_mpact-riscv//riscv:riscv_fp_state",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:action_points",
+-        "@com_google_mpact-sim//mpact/sim/generic:arch_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:component",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:core_debug_interface",
+-        "@com_google_mpact-sim//mpact/sim/generic:counters",
+-        "@com_google_mpact-sim//mpact/sim/generic:decode_cache",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/flags:flag",
++        "@abseil-cpp//absl/functional:any_invocable",
++        "@abseil-cpp//absl/functional:bind_front",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/log:check",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/synchronization",
++        "@mpact-riscv//riscv:riscv_arm_semihost",
++        "@mpact-riscv//riscv:riscv_fp_state",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:action_points",
++        "@mpact-sim//mpact/sim/generic:arch_state",
++        "@mpact-sim//mpact/sim/generic:component",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:core_debug_interface",
++        "@mpact-sim//mpact/sim/generic:counters",
++        "@mpact-sim//mpact/sim/generic:decode_cache",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -198,17 +198,17 @@ cc_binary(
+     deps = [
+         ":coralnpu_state",
+         ":coralnpu_top",
+-        "@com_google_absl//absl/flags:flag",
+-        "@com_google_absl//absl/flags:parse",
+-        "@com_google_absl//absl/flags:usage",
+-        "@com_google_absl//absl/log",
+-        "@com_google_absl//absl/log:initialize",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:str_format",
+-        "@com_google_absl//absl/time",
+-        "@com_google_mpact-riscv//riscv:debug_command_shell",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/util/program_loader:elf_loader",
++        "@abseil-cpp//absl/flags:flag",
++        "@abseil-cpp//absl/flags:parse",
++        "@abseil-cpp//absl/flags:usage",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/log:initialize",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:str_format",
++        "@abseil-cpp//absl/time",
++        "@mpact-riscv//riscv:debug_command_shell",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/util/program_loader:elf_loader",
+         "@com_googlesource_code_re2//:re2",
+     ],
+ )
+@@ -225,10 +225,10 @@ cc_library(
+         "-O3",
+     ],
+     deps = [
+-        "@com_google_absl//absl/functional:any_invocable",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@abseil-cpp//absl/functional:any_invocable",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -236,17 +236,17 @@ mpact_isa_decoder(
+     name = "coralnpu_v2_isa",
+     src = "coralnpu_v2.isa",
+     includes = [
+-        "@com_google_mpact-riscv//riscv:riscv32g.isa",
+-        "@com_google_mpact-riscv//riscv:riscv32zb.isa",
+-        "@com_google_mpact-riscv//riscv:riscv_vector.isa",
++        "@mpact-riscv//riscv:riscv32g.isa",
++        "@mpact-riscv//riscv:riscv32zb.isa",
++        "@mpact-riscv//riscv:riscv_vector.isa",
+     ],
+     isa_name = "CoralNPUV2",
+     deps = [
+         ":coralnpu_v2_instructions",
+-        "@com_google_absl//absl/functional:bind_front",
+-        "@com_google_mpact-riscv//riscv:riscv_bitmanip_instructions",
+-        "@com_google_mpact-riscv//riscv:riscv_g",
+-        "@com_google_mpact-riscv//riscv:riscv_v",
++        "@abseil-cpp//absl/functional:bind_front",
++        "@mpact-riscv//riscv:riscv_bitmanip_instructions",
++        "@mpact-riscv//riscv:riscv_g",
++        "@mpact-riscv//riscv:riscv_v",
+     ],
+ )
+ 
+@@ -255,10 +255,10 @@ mpact_bin_fmt_decoder(
+     src = "coralnpu_v2.bin_fmt",
+     decoder_name = "CoralNPUV2",
+     includes = [
+-        "@com_google_mpact-riscv//riscv:riscv32g.bin_fmt",
+-        "@com_google_mpact-riscv//riscv:riscv_format16.bin_fmt",
+-        "@com_google_mpact-riscv//riscv:riscv_format32.bin_fmt",
+-        "@com_google_mpact-riscv//riscv:riscv_vector.bin_fmt",
++        "@mpact-riscv//riscv:riscv32g.bin_fmt",
++        "@mpact-riscv//riscv:riscv_format16.bin_fmt",
++        "@mpact-riscv//riscv:riscv_format32.bin_fmt",
++        "@mpact-riscv//riscv:riscv_vector.bin_fmt",
+     ],
+     deps = [
+         ":coralnpu_v2_isa",
+@@ -271,11 +271,11 @@ cc_library(
+     deps = [
+         ":coralnpu_v2_getters",
+         ":coralnpu_v2_state",
+-        "@com_google_absl//absl/base:nullability",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/functional:any_invocable",
+-        "@com_google_mpact-riscv//riscv:riscv_encoding_common",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
++        "@abseil-cpp//absl/base:nullability",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/functional:any_invocable",
++        "@mpact-riscv//riscv:riscv_encoding_common",
++        "@mpact-sim//mpact/sim/generic:core",
+     ],
+ )
+ 
+@@ -297,15 +297,15 @@ cc_library(
+         ":coralnpu_v2_encoding_template",
+         ":coralnpu_v2_isa",
+         ":coralnpu_v2_state",
+-        "@com_google_absl//absl/base:nullability",
+-        "@com_google_mpact-riscv//riscv:riscv_generic_decoder",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:arch_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/generic:program_error",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@abseil-cpp//absl/base:nullability",
++        "@mpact-riscv//riscv:riscv_generic_decoder",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:arch_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:program_error",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -314,16 +314,16 @@ cc_library(
+     hdrs = ["coralnpu_v2_getters.h"],
+     copts = ["-O3"],
+     deps = [
+-        "@com_google_absl//absl/base:nullability",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/functional:any_invocable",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_mpact-riscv//riscv:riscv_encoding_common",
+-        "@com_google_mpact-riscv//riscv:riscv_getters",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
++        "@abseil-cpp//absl/base:nullability",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/functional:any_invocable",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
++        "@mpact-riscv//riscv:riscv_encoding_common",
++        "@mpact-riscv//riscv:riscv_getters",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
+     ],
+ )
+ 
+@@ -338,14 +338,14 @@ cc_library(
+     copts = ["-O3"],
+     deps = [
+         ":coralnpu_v2_state",
+-        "@com_google_absl//absl/base:nullability",
+-        "@com_google_absl//absl/types:span",
+-        "@com_google_mpact-riscv//riscv:riscv_g",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-riscv//riscv:riscv_v",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
++        "@abseil-cpp//absl/base:nullability",
++        "@abseil-cpp//absl/types:span",
++        "@mpact-riscv//riscv:riscv_g",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-riscv//riscv:riscv_v",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
+     ],
+ )
+ 
+@@ -365,23 +365,23 @@ cc_library(
+         ":coralnpu_v2_state",
+         ":coralnpu_v2_user_decoder",
+         "@com_github_serge1_elfio//:elfio",
+-        "@com_google_absl//absl/log",
+-        "@com_google_absl//absl/log:check",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:str_format",
+-        "@com_google_mpact-riscv//riscv:debug_command_shell",
+-        "@com_google_mpact-riscv//riscv:riscv32_htif_semihost",
+-        "@com_google_mpact-riscv//riscv:riscv_fp_state",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-riscv//riscv:riscv_top",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:core_debug_interface",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
+-        "@com_google_mpact-sim//mpact/sim/util/program_loader:elf_loader",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/log:check",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:str_format",
++        "@mpact-riscv//riscv:debug_command_shell",
++        "@mpact-riscv//riscv:riscv32_htif_semihost",
++        "@mpact-riscv//riscv:riscv_fp_state",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-riscv//riscv:riscv_top",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:core_debug_interface",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
++        "@mpact-sim//mpact/sim/util/memory",
++        "@mpact-sim//mpact/sim/util/program_loader:elf_loader",
+     ],
+ )
+ 
+@@ -392,17 +392,17 @@ cc_binary(
+     deps = [
+         ":coralnpu_simulator",
+         ":coralnpu_v2_state",
+-        "@com_google_absl//absl/flags:flag",
+-        "@com_google_absl//absl/flags:marshalling",
+-        "@com_google_absl//absl/flags:parse",
+-        "@com_google_absl//absl/flags:usage",
+-        "@com_google_absl//absl/log",
+-        "@com_google_absl//absl/log:initialize",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:str_format",
+-        "@com_google_absl//absl/strings:string_view",
+-        "@com_google_absl//absl/time",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
++        "@abseil-cpp//absl/flags:flag",
++        "@abseil-cpp//absl/flags:marshalling",
++        "@abseil-cpp//absl/flags:parse",
++        "@abseil-cpp//absl/flags:usage",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/log:initialize",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:str_format",
++        "@abseil-cpp//absl/strings:string_view",
++        "@abseil-cpp//absl/time",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
+     ],
+ )
+ 
+@@ -416,10 +416,10 @@ mpact_isa_decoder(
+     deps = [
+         ":coralnpu_v2_instructions",
+         ":coralnpu_v2_isa",
+-        "@com_google_absl//absl/functional:bind_front",
+-        "@com_google_mpact-riscv//riscv:riscv_bitmanip_instructions",
+-        "@com_google_mpact-riscv//riscv:riscv_g",
+-        "@com_google_mpact-riscv//riscv:riscv_v",
++        "@abseil-cpp//absl/functional:bind_front",
++        "@mpact-riscv//riscv:riscv_bitmanip_instructions",
++        "@mpact-riscv//riscv:riscv_g",
++        "@mpact-riscv//riscv:riscv_v",
+     ],
+ )
+ 
+@@ -453,14 +453,14 @@ cc_library(
+         ":coralnpu_m3_isa",
+         ":coralnpu_v2_encoding_template",
+         ":coralnpu_v2_state",
+-        "@com_google_absl//absl/base:nullability",
+-        "@com_google_mpact-riscv//riscv:riscv_generic_decoder",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:arch_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/generic:program_error",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@abseil-cpp//absl/base:nullability",
++        "@mpact-riscv//riscv:riscv_generic_decoder",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:arch_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:program_error",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -472,16 +472,16 @@ cc_binary(
+         ":coralnpu_architecture",
+         ":coralnpu_simulator",
+         ":coralnpu_v2_state",
+-        "@com_google_absl//absl/flags:flag",
+-        "@com_google_absl//absl/flags:marshalling",
+-        "@com_google_absl//absl/flags:parse",
+-        "@com_google_absl//absl/flags:usage",
+-        "@com_google_absl//absl/log",
+-        "@com_google_absl//absl/log:initialize",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:str_format",
+-        "@com_google_absl//absl/strings:string_view",
+-        "@com_google_absl//absl/time",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
++        "@abseil-cpp//absl/flags:flag",
++        "@abseil-cpp//absl/flags:marshalling",
++        "@abseil-cpp//absl/flags:parse",
++        "@abseil-cpp//absl/flags:usage",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/log:initialize",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:str_format",
++        "@abseil-cpp//absl/strings:string_view",
++        "@abseil-cpp//absl/time",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
+     ],
+ )
+diff --git a/sim/coralnpu.bin_fmt b/sim/coralnpu.bin_fmt
+index b9358dc..d7afe19 100644
+--- a/sim/coralnpu.bin_fmt
++++ b/sim/coralnpu.bin_fmt
+@@ -23,4 +23,4 @@ decoder CoralNPU {
+ #include "coralnpu_memory.bin_fmt"
+ #include "coralnpu_mul.bin_fmt"
+ #include "coralnpu_shift.bin_fmt"
+-#include "external/com_google_mpact-riscv/riscv/riscv32zb.bin_fmt"
++#include "riscv/riscv32zb.bin_fmt"
+diff --git a/sim/coralnpu.isa b/sim/coralnpu.isa
+index 6b54c0e..5966d54 100644
+--- a/sim/coralnpu.isa
++++ b/sim/coralnpu.isa
+@@ -16,7 +16,7 @@ isa CoralNPU {
+ #include "coralnpu_shift.isa"
+ #include "coralnpu_memory.isa"
+ #include "coralnpu_mul.isa"
+-#include "external/com_google_mpact-riscv/riscv/riscv32zb.isa"
++#include "riscv/riscv32zb.isa"
+ 
+ // Combining all coralnpu instruction sets.
+ slot coralnpu : riscv32i, riscv32m, zicsr, zfencei, privileged, coralnpu_arith,
+diff --git a/sim/coralnpu_base.isa b/sim/coralnpu_base.isa
+index dc3ab6f..35603e0 100644
+--- a/sim/coralnpu_base.isa
++++ b/sim/coralnpu_base.isa
+@@ -7,7 +7,7 @@ disasm widths = {-18};
+ // Basic integer ALU instructions, part of the RiscV 32i subset.
+ slot riscv32i {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_i_instructions.h"
++    #include "riscv/riscv_i_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -203,7 +203,7 @@ slot riscv32i {
+ // RiscV32 multiply/divide instructions.
+ slot riscv32m {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_m_instructions.h"
++    #include "riscv/riscv_m_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -247,7 +247,7 @@ slot riscv32m {
+ // RiscV32 CSR manipulation instructions.
+ slot zicsr {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_zicsr_instructions.h"
++    #include "riscv/riscv_zicsr_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -322,7 +322,7 @@ slot zicsr {
+ // Instruction fence.
+ slot zfencei {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_zfencei_instructions.h"
++    #include "riscv/riscv_zfencei_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -336,7 +336,7 @@ slot zfencei {
+ // Privileged instructions.
+ slot privileged {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_priv_instructions.h"
++    #include "riscv/riscv_priv_instructions.h"
+     #include "sim/coralnpu_instructions.h"
+   }
+   default size = 4;
+diff --git a/sim/coralnpu_m3.isa b/sim/coralnpu_m3.isa
+index fd6cc28..12874e8 100644
+--- a/sim/coralnpu_m3.isa
++++ b/sim/coralnpu_m3.isa
+@@ -13,10 +13,10 @@
+ // limitations under the License.
+ 
+ includes {
+-  #include "external/com_google_mpact-riscv/riscv/riscv_vector_fp_instructions.h"
+-  #include "external/com_google_mpact-riscv/riscv/riscv_vector_fp_unary_instructions.h"
+-  #include "external/com_google_mpact-riscv/riscv/riscv_vector_fp_reduction_instructions.h"
+-  #include "external/com_google_mpact-riscv/riscv/riscv_vector_fp_compare_instructions.h"
++  #include "riscv/riscv_vector_fp_instructions.h"
++  #include "riscv/riscv_vector_fp_unary_instructions.h"
++  #include "riscv/riscv_vector_fp_reduction_instructions.h"
++  #include "riscv/riscv_vector_fp_compare_instructions.h"
+ }
+ 
+ isa CoralNPUM3 {
+diff --git a/sim/coralnpu_v2.isa b/sim/coralnpu_v2.isa
+index 4bf5b40..1cb8bfc 100644
+--- a/sim/coralnpu_v2.isa
++++ b/sim/coralnpu_v2.isa
+@@ -28,7 +28,7 @@ isa CoralNPUV2 {
+ // Basic integer ALU instructions, part of the RiscV 32i subset.
+ slot riscv32i {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_i_instructions.h"
++    #include "riscv/riscv_i_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -222,7 +222,7 @@ slot riscv32i {
+ // changed to provide performance hints to a simulated microarchitecture.
+ slot riscv32_hints {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_i_instructions.h"
++    #include "riscv/riscv_i_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -369,7 +369,7 @@ slot riscv32_hints {
+ // Instruction fence.
+ slot zfencei {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_zfencei_instructions.h"
++    #include "riscv/riscv_zfencei_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -383,7 +383,7 @@ slot zfencei {
+ // RiscV32 multiply/divide instructions.
+ slot riscv32m {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_m_instructions.h"
++    #include "riscv/riscv_m_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -428,7 +428,7 @@ slot riscv32m {
+ // RiscV32 CSR manipulation instructions.
+ slot zicsr {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_zicsr_instructions.h"
++    #include "riscv/riscv_zicsr_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -506,7 +506,7 @@ slot zicsr {
+ // RiscV32 F (single precision floating point) instructions.
+ slot riscv32f {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_f_instructions.h"
++    #include "riscv/riscv_f_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -627,7 +627,7 @@ slot riscv32f {
+ // included for CoralNPU V2.
+ slot privileged {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_priv_instructions.h"
++    #include "riscv/riscv_priv_instructions.h"
+   }
+   default size = 4;
+   default latency = global_latency;
+@@ -646,7 +646,7 @@ slot riscv32_zbb {
+   resources TwoOp = { next_pc, rs1 : rd[..rd]};
+   resources ThreeOp = { next_pc, rs1, rs2 : rd[..rd]};
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_bitmanip_instructions.h"
++    #include "riscv/riscv_bitmanip_instructions.h"
+   }
+ 
+   opcodes {
+@@ -743,12 +743,12 @@ slot riscv32_zbb_imm {
+ 
+ slot riscv_zve32x {
+   includes {
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_memory_instructions.h"
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_opi_instructions.h"
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_opm_instructions.h"
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_permute_instructions.h"
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_reduction_instructions.h"
+-    #include "external/com_google_mpact-riscv/riscv/riscv_vector_unary_instructions.h"
++    #include "riscv/riscv_vector_memory_instructions.h"
++    #include "riscv/riscv_vector_opi_instructions.h"
++    #include "riscv/riscv_vector_opm_instructions.h"
++    #include "riscv/riscv_vector_permute_instructions.h"
++    #include "riscv/riscv_vector_reduction_instructions.h"
++    #include "riscv/riscv_vector_unary_instructions.h"
+     #include "absl/functional/bind_front.h"
+   }
+   default size = 4;
+diff --git a/sim/cosim/BUILD b/sim/cosim/BUILD
+index 4f460d4..f1d6d2f 100644
+--- a/sim/cosim/BUILD
++++ b/sim/cosim/BUILD
+@@ -37,11 +37,11 @@ cc_library(
+         "//sim:coralnpu_architecture",
+         "//sim:coralnpu_simulator",
+         "//sim:coralnpu_v2_state",
+-        "@com_google_absl//absl/log",
+-        "@com_google_absl//absl/log:check",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/types:span",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/log:check",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/types:span",
++        "@mpact-sim//mpact/sim/generic:core",
+         # INTERNAL_VERILATOR_DEPENDENCY,
+     ],
+     alwayslink = True,
+diff --git a/sim/hw_sim/BUILD b/sim/hw_sim/BUILD
+index 6c9658d..6db42dd 100644
+--- a/sim/hw_sim/BUILD
++++ b/sim/hw_sim/BUILD
+@@ -1,3 +1,5 @@
++package(default_visibility = ["//visibility:public"])
++
+ # Copyright 2025 Google LLC
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+@@ -12,8 +14,6 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-# load("@rules_cc//cc:defs.bzl", "cc_binary")
+-# load("@rules_cc//cc:defs.bzl", "cc_library")
+ 
+ cc_library(
+     name = "coralnpu_simulator_headers",
+@@ -28,13 +28,18 @@ cc_library(
+     linkstatic = True,
+     deps = [
+         ":coralnpu_simulator_headers",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_mpact-riscv//riscv:riscv32g_vec_decoder",
+-        "@com_google_mpact-riscv//riscv:riscv_fp_state",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-riscv//riscv:riscv_top",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "//sim:coralnpu_m3_user_decoder",
++        "//sim:coralnpu_v2_state",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/strings",
++        "@mpact-riscv//riscv:riscv_fp_state",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-riscv//riscv:riscv_top",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:core_debug_interface",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+     alwayslink = True,
+ )
+@@ -42,7 +47,11 @@ cc_library(
+ # generate libraries for external projects
+ cc_binary(
+     name = "libcoralnpu_simulator_mpact.so",
++    linkopts = ["-Wl,--version-script=$(location :simulator.lds)"],
+     linkshared = True,
+     visibility = ["//visibility:public"],
+-    deps = [":mpact_simulator"],
++    deps = [
++        ":mpact_simulator",
++        ":simulator.lds",
++    ],
+ )
+diff --git a/sim/hw_sim/coralnpu_simulator.h b/sim/hw_sim/coralnpu_simulator.h
+index 711a733..04d2103 100644
+--- a/sim/hw_sim/coralnpu_simulator.h
++++ b/sim/hw_sim/coralnpu_simulator.h
+@@ -1,23 +1,37 @@
+-#ifndef SIM_HW_SIM_CORALNPU_SIMULATOR_H_
+-#define SIM_HW_SIM_CORALNPU_SIMULATOR_H_
++#ifndef LEARNING_BRAIN_RESEARCH_KELVIN_SIM_HW_SIM_CORALNPU_SIMULATOR_H_
++#define LEARNING_BRAIN_RESEARCH_KELVIN_SIM_HW_SIM_CORALNPU_SIMULATOR_H_
+ 
+ #include <cstddef>
+ #include <cstdint>
++#include <functional>
++#include <string>
+ 
+ struct CoralNPUMailbox {
+   uint32_t message[4] = {0, 0, 0, 0};
+ };
+ 
++class CoralMemoryTarget {
++ public:
++  virtual ~CoralMemoryTarget() = default;
++
++  virtual void Load(uint64_t address, uint8_t* data, size_t size) = 0;
++  virtual void Store(uint64_t address, const uint8_t* data, size_t size) = 0;
++};
++
++// callback for tracing
++using TraceCallback = std::function<void(uint32_t pc, uint32_t instruction,
++                                         std::string& disassembly)>;
++
+ class CoralNPUSimulator {
+  public:
+   static CoralNPUSimulator* Create();
+ 
+   virtual ~CoralNPUSimulator() = default;
+ 
+-  // Functions for reading/writing TCMs and Mailbox.
+-  virtual void ReadTCM(uint32_t addr, size_t size, char* data) = 0;
++  // Functions for reading/writing memory and Mailbox.
++  virtual void ReadMem(uint32_t addr, size_t size, char* data) = 0;
+   virtual const CoralNPUMailbox& ReadMailbox() = 0;
+-  virtual void WriteTCM(uint32_t addr, size_t size, const char* data) = 0;
++  virtual void WriteMem(uint32_t addr, size_t size, const char* data) = 0;
+   virtual void WriteMailbox(const CoralNPUMailbox& mailbox) = 0;
+ 
+   // Wait for interrupt
+@@ -26,6 +40,12 @@ class CoralNPUSimulator {
+   // Begin executing starting with the PC set to the specified address. Returns
+   // when the core halts.
+   virtual void Run(uint32_t start_addr) = 0;
++
++  // Returns the total simulated cycle count.
++  virtual uint64_t GetCycleCount() const = 0;
++
++  // Set a callback for tracing instructions with optional disassembly.
++  virtual void SetTraceCallback(TraceCallback callback, bool disasm) = 0;
+ };
+ 
+-#endif  // SIM_HW_SIM_CORALNPU_SIMULATOR_H_
++#endif  // LEARNING_BRAIN_RESEARCH_KELVIN_SIM_HW_SIM_CORALNPU_SIMULATOR_H_
+diff --git a/sim/hw_sim/mpact_simulator.cc b/sim/hw_sim/mpact_simulator.cc
+index 7101e3b..6968248 100644
+--- a/sim/hw_sim/mpact_simulator.cc
++++ b/sim/hw_sim/mpact_simulator.cc
+@@ -17,28 +17,202 @@
+ #include <cstdint>
+ #include <iostream>
+ #include <string>
++#include <utility>
+ 
++#include "sim/coralnpu_m3_user_decoder.h"
++#include "sim/coralnpu_v2_state.h"
+ #include "sim/hw_sim/coralnpu_simulator.h"
++#include "absl/log/log.h"
+ #include "absl/status/status.h"
+ #include "absl/strings/str_cat.h"
+-#include "riscv/riscv32g_vec_decoder.h"
+ #include "riscv/riscv_fp_state.h"
+ #include "riscv/riscv_register.h"
+ #include "riscv/riscv_register_aliases.h"
+ #include "riscv/riscv_state.h"
+ #include "riscv/riscv_top.h"
+ #include "riscv/riscv_vector_state.h"
++#include "mpact/sim/generic/data_buffer.h"
++#include "mpact/sim/generic/instruction.h"
++#include "mpact/sim/generic/ref_count.h"
+ #include "mpact/sim/util/memory/flat_demand_memory.h"
++#include "mpact/sim/util/memory/memory_interface.h"
+ 
+-const uint32_t addr_mailbox = 0x401fc000;  // user-configurable
++namespace {
++
++const uint32_t kAddrMailbox = 0x401fc000;  // user-configurable
++
++// DMA Controller Constants
++constexpr uint32_t kDmaBase = 0x40050000;
++constexpr uint32_t kDmaRegsSize = 0x14;  // 5 registers, 4 bytes each
++
++// Register Offsets
++constexpr uint32_t kDmaCtrlOffset = 0x00;
++constexpr uint32_t kDmaStatusOffset = 0x04;
++constexpr uint32_t kDmaDescAddrOffset = 0x08;
++constexpr uint32_t kDmaCurDescOffset = 0x0c;
++constexpr uint32_t kDmaXferRemainOffset = 0x10;
++
++// Control Register Bits
++constexpr uint32_t kDmaCtrlEnable = 0x1;
++constexpr uint32_t kDmaCtrlStart = 0x2;
++[[maybe_unused]] constexpr uint32_t kDmaCtrlAbort = 0x4;
++
++// Status Register Bits
++constexpr uint32_t kDmaStatusBusy = 0x1;
++constexpr uint32_t kDmaStatusDone = 0x2;
++[[maybe_unused]] constexpr uint32_t kDmaStatusError = 0x4;
++
++class DmaMemoryWrapper : public ::mpact::sim::util::MemoryInterface {
++ public:
++  explicit DmaMemoryWrapper(::mpact::sim::util::MemoryInterface* parent)
++      : parent_(parent) {}
++
++  ~DmaMemoryWrapper() override = default;
++
++  void Load(uint64_t address, ::mpact::sim::generic::DataBuffer* db,
++            ::mpact::sim::generic::Instruction* inst,
++            ::mpact::sim::generic::ReferenceCount* context) override {
++    if (IsDmaAddress(address)) {
++      HandleDmaRead(address, db);
++      if (inst != nullptr) {
++        inst->Execute(context);
++      }
++      return;
++    }
++    parent_->Load(address, db, inst, context);
++  }
++
++  void Store(uint64_t address, ::mpact::sim::generic::DataBuffer* db) override {
++    if (IsDmaAddress(address)) {
++      HandleDmaWrite(address, db);
++      return;
++    }
++    parent_->Store(address, db);
++  }
++
++  void Load(::mpact::sim::generic::DataBuffer* address_db,
++            ::mpact::sim::generic::DataBuffer* mask_db, int el_size,
++            ::mpact::sim::generic::DataBuffer* db,
++            ::mpact::sim::generic::Instruction* inst,
++            ::mpact::sim::generic::ReferenceCount* context) override {
++    parent_->Load(address_db, mask_db, el_size, db, inst, context);
++  }
++
++  void Store(::mpact::sim::generic::DataBuffer* address_db,
++             ::mpact::sim::generic::DataBuffer* mask_db, int el_size,
++             ::mpact::sim::generic::DataBuffer* db) override {
++    parent_->Store(address_db, mask_db, el_size, db);
++  }
++
++ private:
++  bool IsDmaAddress(uint64_t addr) {
++    return addr >= kDmaBase && addr < kDmaBase + kDmaRegsSize;
++  }
++
++  void HandleDmaRead(uint64_t address, ::mpact::sim::generic::DataBuffer* db) {
++    uint32_t offset = address - kDmaBase;
++    uint32_t val = 0;
++    switch (offset) {
++      case kDmaCtrlOffset:
++        val = dma_ctrl_;
++        break;
++      case kDmaStatusOffset:
++        val = dma_status_;
++        break;
++      case kDmaDescAddrOffset:
++        val = dma_desc_addr_;
++        break;
++      case kDmaCurDescOffset:
++        val = dma_cur_desc_;
++        break;
++      case kDmaXferRemainOffset:
++        val = dma_xfer_remain_;
++        break;
++    }
++    if (db->size<uint8_t>() == 4) {
++      db->Set<uint32_t>(0, val);
++    }
++  }
++
++  void HandleDmaWrite(uint64_t address, ::mpact::sim::generic::DataBuffer* db) {
++    uint32_t offset = address - kDmaBase;
++    uint32_t val = 0;
++    if (db->size<uint8_t>() == 4) {
++      val = db->Get<uint32_t>(0);
++    } else {
++      return;
++    }
++
++    switch (offset) {
++      case kDmaCtrlOffset:
++        dma_ctrl_ = val;
++        if ((dma_ctrl_ & (kDmaCtrlEnable | kDmaCtrlStart)) ==
++            (kDmaCtrlEnable | kDmaCtrlStart)) {
++          RunDma();
++        }
++        break;
++      case kDmaDescAddrOffset:
++        dma_desc_addr_ = val;
++        break;
++    }
++  }
++
++  void RunDma() {
++    dma_status_ |= kDmaStatusBusy;
++    dma_status_ &= ~kDmaStatusDone;
++
++    uint32_t desc_addr = dma_desc_addr_;
++    ::mpact::sim::generic::DataBufferFactory db_factory;
++
++    while (desc_addr != 0) {
++      dma_cur_desc_ = desc_addr;
++
++      // Read descriptor (32 bytes)
++      auto* desc_db = db_factory.Allocate(32);
++      parent_->Load(desc_addr, desc_db, nullptr, nullptr);
++
++      uint32_t src_addr = desc_db->Get<uint32_t>(0);
++      uint32_t dst_addr = desc_db->Get<uint32_t>(1);
++      uint32_t len_flags = desc_db->Get<uint32_t>(2);
++      uint32_t next_desc = desc_db->Get<uint32_t>(3);
++
++      uint32_t xfer_len = len_flags & 0x00FFFFFFu;
++
++      if (xfer_len > 0) {
++        auto* data_db = db_factory.Allocate(xfer_len);
++        parent_->Load(src_addr, data_db, nullptr, nullptr);
++        parent_->Store(dst_addr, data_db);
++        data_db->DecRef();
++      }
++
++      desc_db->DecRef();
++      desc_addr = next_desc;
++    }
++
++    dma_status_ &= ~kDmaStatusBusy;
++    dma_status_ |= kDmaStatusDone;
++  }
++
++  ::mpact::sim::util::MemoryInterface* parent_;
++  uint32_t dma_ctrl_ = 0;
++  uint32_t dma_status_ = 0;
++  uint32_t dma_desc_addr_ = 0;
++  uint32_t dma_cur_desc_ = 0;
++  uint32_t dma_xfer_remain_ = 0;
++};
+ 
+ class MpactSimulator final : public CoralNPUSimulator {
+  public:
+   MpactSimulator()
+-      : rv_state_("RiscV32GV", mpact::sim::riscv::RiscVXlen::RV32, &memory_),
++      : memory_(),
++        dma_memory_(&memory_),
++        rv_state_("RiscV32GV", mpact::sim::riscv::RiscVXlen::RV32,
++                  &dma_memory_),
+         rv_fp_state_(rv_state_.csr_set(), &rv_state_),
+-        rvv_state_(&rv_state_, /*vlenb*/ 16),
+-        rv_decoder_(&rv_state_, &memory_),
++        rvv_state_(
++            &rv_state_,
++            /*byte_length=*/::coralnpu::sim::kCoralNPUV2VectorByteLength),
++        rv_decoder_(&rv_state_, &dma_memory_),
+         rv_top_("CoralNPUPlaceholder", &rv_state_, &rv_decoder_) {
+     // Make sure the architectural and abi register aliases are added.
+     std::string reg_name;
+@@ -47,46 +221,141 @@ class MpactSimulator final : public CoralNPUSimulator {
+       (void)rv_state_.AddRegister<::mpact::sim::riscv::RV32Register>(reg_name);
+       (void)rv_state_.AddRegisterAlias<::mpact::sim::riscv::RV32Register>(
+           reg_name, mpact::sim::riscv::kXRegisterAliases[i]);
++
++      reg_name = absl::StrCat(mpact::sim::riscv::RiscVState::kFregPrefix, i);
++      (void)rv_state_.AddRegister<::mpact::sim::riscv::RVFpRegister>(reg_name);
++      (void)rv_state_.AddRegisterAlias<::mpact::sim::riscv::RVFpRegister>(
++          reg_name, mpact::sim::riscv::kFRegisterAliases[i]);
++
++      reg_name = absl::StrCat(mpact::sim::riscv::RiscVState::kVregPrefix, i);
++      (void)rv_state_.AddRegister<::mpact::sim::riscv::RVVectorRegister>(
++          reg_name, /*width=*/::coralnpu::sim::kCoralNPUV2VectorByteLength);
+     }
++    rv_state_.set_rv_fp(&rv_fp_state_);
++    rv_state_.set_rv_vector(&rvv_state_);
++
++    // Configure the MISA (Machine ISA Register) with 0x40201120:
++    // - Bit 30 (MXLEN = 32): 32-bit register width.
++    // - Bit 21 (V): Enable RISC-V Vector extension.
++    // - Bit 12 (M): Enable Integer Multiply/Divide extension.
++    // - Bit 8  (I): Enable Base Integer ISA.
++    // - Bit 5  (F): Enable Single-Precision Floating-Point extension.
++    rv_state_.misa()->Set(static_cast<uint32_t>(0x40201120));
++
++    // Register a full-range memory region with Read/Write/Execute permissions.
++    // The custom CoralNPUV2State enforces memory permission checks for all
++    // decoded load/store instructions. Since this simulator wrapper maps memory
++    // dynamically without registering explicit regions (using
++    // FlatDemandMemory), we must allow all accesses to prevent permission fault
++    // traps on execution.
++    rv_state_.AddMemoryRegion(
++        0, 0xFFFFFFFF, ::coralnpu::sim::MemoryPermission::kReadWriteExecute);
++
++    // Register handler for the custom 'mpause' instruction.
++    // When the firmware terminates successfully, it executes 'mpause'. The
++    // handler intercepts this and requests the simulator core to halt.
++    rv_state_.AddMpauseHandler([this](const ::mpact::sim::generic::Instruction*
++                                          inst) {
++      rv_top_.RequestHalt(
++          ::mpact::sim::generic::CoreDebugInterface::HaltReason::kUserRequest,
++          inst);
++      return true;
++    });
++
++    // Register handler for 'ebreak' instructions.
++    // When the firmware encounters an assertion failure or crash, it executes
++    // 'ebreak'. Halting the core here prevents the simulator from hanging in
++    // the failure idle loop.
++    rv_state_.AddEbreakHandler([this](const ::mpact::sim::generic::Instruction*
++                                          inst) {
++      uint32_t mcause = rv_state_.mcause() ? rv_state_.mcause()->AsUint32() : 0;
++      uint32_t mepc = rv_state_.mepc() ? rv_state_.mepc()->AsUint32() : 0;
++      uint32_t mtval = rv_state_.mtval() ? rv_state_.mtval()->AsUint32() : 0;
++      uint32_t vtype = 0;
++      auto vtype_csr = rv_state_.csr_set()->GetCsr("vtype");
++      if (vtype_csr.ok()) {
++        vtype = vtype_csr.value()->AsUint32();
++      }
++      uint32_t vl = 0;
++      auto vl_csr = rv_state_.csr_set()->GetCsr("vl");
++      if (vl_csr.ok()) {
++        vl = vl_csr.value()->AsUint32();
++      }
++      uint32_t frm = 0;
++      auto frm_csr = rv_state_.csr_set()->GetCsr("frm");
++      if (frm_csr.ok()) {
++        frm = frm_csr.value()->AsUint32();
++      }
++      std::string mepc_disasm = "unknown";
++      auto mepc_inst = rv_top_.GetInstruction(mepc);
++      if (mepc_inst.ok()) {
++        mepc_disasm = mepc_inst.value()->AsString();
++        mepc_inst.value()->DecRef();
++      }
++      LOG(INFO) << "Simulator: ebreak hit at 0x" << std::hex << inst->address()
++                << ", mcause=0x" << mcause << ", mepc=0x" << mepc << " ("
++                << mepc_disasm << ")"
++                << ", mtval=0x" << mtval << ", vtype=0x" << vtype << ", vl=0x"
++                << vl << ", frm=0x" << frm << std::dec;
++      rv_top_.RequestHalt(
++          ::mpact::sim::generic::CoreDebugInterface::HaltReason::kUserRequest,
++          inst);
++      return true;
++    });
++
++    // Register handler for WFI (Wait For Interrupt) instructions.
++    // The original simulator loop intercepted WFI (0x10500073) to halt.
++    // RiscVState provides a built-in 'on_wfi' callback when executing WFI.
++    rv_state_.set_on_wfi([this](
++                             const ::mpact::sim::generic::Instruction* inst) {
++      rv_top_.RequestHalt(
++          ::mpact::sim::generic::CoreDebugInterface::HaltReason::kUserRequest,
++          inst);
++      return true;
++    });
+   }
+   ~MpactSimulator() final = default;
+ 
+-  void ReadTCM(uint32_t addr, size_t size, char* data) final;
++  void ReadMem(uint32_t addr, size_t size, char* data) final;
+   const CoralNPUMailbox& ReadMailbox() final;
+-  void WriteTCM(uint32_t addr, size_t size, const char* data) final;
++  void WriteMem(uint32_t addr, size_t size, const char* data) final;
+   void WriteMailbox(const CoralNPUMailbox& mailbox) final;
+   void Run(uint32_t start_addr) final;
+   bool WaitForTermination(int timeout) final;
++  uint64_t GetCycleCount() const final;
++  void SetTraceCallback(TraceCallback callback, bool disasm) final;
+ 
+  private:
+   CoralNPUMailbox mailbox_;
+   ::mpact::sim::util::FlatDemandMemory memory_;
+-  ::mpact::sim::riscv::RiscVState rv_state_;
++  DmaMemoryWrapper dma_memory_;
++  ::coralnpu::sim::CoralNPUV2State rv_state_;
+   ::mpact::sim::riscv::RiscVFPState rv_fp_state_;
+   ::mpact::sim::riscv::RiscVVectorState rvv_state_;
+-  ::mpact::sim::riscv::RiscV32GVecDecoder rv_decoder_;
++  ::coralnpu::sim::CoralNPUM3UserDecoder rv_decoder_;
+   ::mpact::sim::riscv::RiscVTop rv_top_;
++  TraceCallback trace_callback_;
+ };
+ 
+-void MpactSimulator::ReadTCM(uint32_t addr, size_t size, char* data) {
++void MpactSimulator::ReadMem(uint32_t addr, size_t size, char* data) {
+   auto result = rv_top_.ReadMemory(addr, data, size);
+   if (!result.ok()) {
+-    std::cerr << "Error: " << result.status() << std::endl;
++    LOG(ERROR) << "Error: " << result.status();
+   }
+   assert(result.ok());
+ }
+ 
+ const CoralNPUMailbox& MpactSimulator::ReadMailbox() {
+   auto result = rv_top_.ReadMemory(
+-      addr_mailbox, reinterpret_cast<char*>(mailbox_.message), 16);
++      kAddrMailbox, reinterpret_cast<char*>(mailbox_.message), 16);
+   if (!result.ok()) {
+-    std::cerr << "Error: " << result.status() << std::endl;
++    LOG(ERROR) << "Error: " << result.status();
+   }
+   assert(result.ok());
+   return mailbox_;
+ }
+ 
+-void MpactSimulator::WriteTCM(uint32_t addr, size_t size, const char* data) {
++void MpactSimulator::WriteMem(uint32_t addr, size_t size, const char* data) {
+   auto result = rv_top_.WriteMemory(addr, data, size);
+   if (!result.ok()) {
+     std::cerr << "Error: " << result.status() << std::endl;
+@@ -99,7 +368,7 @@ void MpactSimulator::WriteMailbox(const CoralNPUMailbox& mailbox) {
+     mailbox_.message[i] = mailbox.message[i];
+   }
+ 
+-  this->WriteTCM(addr_mailbox, 16,
++  this->WriteMem(kAddrMailbox, 16,
+                  reinterpret_cast<const char*>(mailbox.message));
+ }
+ 
+@@ -109,32 +378,34 @@ void MpactSimulator::Run(uint32_t start_addr) {
+ }
+ 
+ bool MpactSimulator::WaitForTermination(int timeout) {
+-  const uint32_t halt = 0x08000073;
+-  const uint32_t wfi = 0x10500073;
+-
+-  while (true) {
+-    auto status = rv_top_.Step(1);
+-    if (!status.ok()) {
+-      return false;
+-    }
++  auto status = rv_top_.Run();
++  if (!status.ok()) {
++    LOG(ERROR) << "Simulator run failed: " << status.message();
++    return false;
++  }
+ 
+-    auto pc_reg = rv_top_.ReadRegister("pc");
+-    if (!pc_reg.ok()) {
+-      std::cerr << "Error: " << pc_reg.status() << std::endl;
+-      return false;
+-    }
+-    uint32_t pc = *pc_reg;
+-    uint32_t inst = 0;
+-    this->ReadTCM(pc, 4, reinterpret_cast<char*>(&inst));
+-    if (pc > 0x1FFF || inst == halt || inst == wfi) {
+-      break;
+-    }
++  status = rv_top_.Wait();
++  if (!status.ok()) {
++    LOG(ERROR) << "Simulator wait failed: " << status.message();
++    return false;
+   }
+ 
+-  this->ReadTCM(addr_mailbox, 16, reinterpret_cast<char*>(mailbox_.message));
++  this->ReadMem(kAddrMailbox, 16, reinterpret_cast<char*>(mailbox_.message));
+ 
+   return true;
+ }
+ 
++uint64_t MpactSimulator::GetCycleCount() const {
++  return const_cast<::mpact::sim::riscv::RiscVTop&>(rv_top_)
++      .counter_num_cycles()
++      ->GetValue();
++}
++
++void MpactSimulator::SetTraceCallback(TraceCallback callback, bool disasm) {
++  trace_callback_ = std::move(callback);
++}
++
++}  // namespace
++
+ // static
+ CoralNPUSimulator* CoralNPUSimulator::Create() { return new MpactSimulator(); }
+diff --git a/sim/hw_sim/simulator.lds b/sim/hw_sim/simulator.lds
+new file mode 100644
+index 0000000..0ee28f9
+--- /dev/null
++++ b/sim/hw_sim/simulator.lds
+@@ -0,0 +1,8 @@
++VERS_1.0 {
++  global:
++    _ZN17CoralNPUSimulator6CreateEv;
++    _ZTI17CoralNPUSimulator;
++    _ZTS17CoralNPUSimulator;
++  local:
++    *;
++};
+diff --git a/sim/renode/BUILD b/sim/renode/BUILD
+index 823f49d..affa1a1 100644
+--- a/sim/renode/BUILD
++++ b/sim/renode/BUILD
+@@ -31,11 +31,11 @@ cc_library(
+     deps = [
+         ":renode_debug_interface",
+         "//sim:coralnpu_top",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/log",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
+-        "@com_google_mpact-sim//mpact/sim/util/program_loader:elf_loader",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/strings",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
++        "@mpact-sim//mpact/sim/util/program_loader:elf_loader",
+     ],
+     alwayslink = True,
+ )
+@@ -44,9 +44,9 @@ cc_library(
+     name = "renode_debug_interface",
+     hdrs = ["renode_debug_interface.h"],
+     deps = [
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_mpact-sim//mpact/sim/generic:core_debug_interface",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@mpact-sim//mpact/sim/generic:core_debug_interface",
+     ],
+ )
+ 
+@@ -60,11 +60,11 @@ cc_library(
+     ],
+     deps = [
+         "//sim:coralnpu_state",
+-        "@com_google_absl//absl/base:core_headers",
+-        "@com_google_absl//absl/numeric:bits",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@abseil-cpp//absl/base:core_headers",
++        "@abseil-cpp//absl/numeric:bits",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -81,14 +81,14 @@ cc_library(
+     deps = [
+         ":renode_debug_interface",
+         "//sim:coralnpu_top",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_mpact-riscv//riscv:riscv_debug_info",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:core_debug_interface",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
++        "@mpact-riscv//riscv:riscv_debug_info",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:core_debug_interface",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
+     ],
+     alwayslink = True,
+ )
+diff --git a/sim/renode/test/BUILD b/sim/renode/test/BUILD
+index a2a6dc0..086bfc0 100644
+--- a/sim/renode/test/BUILD
++++ b/sim/renode/test/BUILD
+@@ -29,10 +29,10 @@ cc_test(
+     deps = [
+         "//sim/renode:coralnpu_renode",
+         "//sim/renode:renode_mpact",
+-        "@com_google_absl//absl/log:check",
+-        "@com_google_absl//absl/strings",
++        "@abseil-cpp//absl/log:check",
++        "@abseil-cpp//absl/strings",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_debug_info",
++        "@mpact-riscv//riscv:riscv_debug_info",
+     ],
+ )
+ 
+@@ -49,12 +49,12 @@ cc_test(
+         "//sim:coralnpu_top",
+         "//sim/renode:coralnpu_renode",
+         "//sim/renode:renode_debug_interface",
+-        "@com_google_absl//absl/log:check",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/strings",
++        "@abseil-cpp//absl/log:check",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/strings",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_debug_info",
+-        "@com_google_mpact-sim//mpact/sim/generic:core_debug_interface",
+-        "@com_google_mpact-sim//mpact/sim/util/program_loader:elf_loader",
++        "@mpact-riscv//riscv:riscv_debug_info",
++        "@mpact-sim//mpact/sim/generic:core_debug_interface",
++        "@mpact-sim//mpact/sim/util/program_loader:elf_loader",
+     ],
+ )
+diff --git a/sim/test/BUILD b/sim/test/BUILD
+index b1e6b90..3985b89 100644
+--- a/sim/test/BUILD
++++ b/sim/test/BUILD
+@@ -45,9 +45,9 @@ cc_test(
+         "//sim:coralnpu_isa",
+         "//sim:coralnpu_state",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:arch_state",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:arch_state",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -62,14 +62,14 @@ cc_test(
+         "//sim:coralnpu_decoder",
+         "//sim:coralnpu_state",
+         "@com_github_serge1_elfio//:elfio",
+-        "@com_google_absl//absl/log",
+-        "@com_google_absl//absl/log:check",
+-        "@com_google_absl//absl/strings",
++        "@abseil-cpp//absl/log",
++        "@abseil-cpp//absl/log:check",
++        "@abseil-cpp//absl/strings",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
+-        "@com_google_mpact-sim//mpact/sim/util/program_loader:elf_loader",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/util/memory",
++        "@mpact-sim//mpact/sim/util/program_loader:elf_loader",
+     ],
+ )
+ 
+@@ -92,14 +92,14 @@ cc_test(
+     deps = [
+         "//sim:coralnpu_state",
+         "//sim:coralnpu_top",
+-        "@com_google_absl//absl/flags:flag",
+-        "@com_google_absl//absl/log:check",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/strings",
++        "@abseil-cpp//absl/flags:flag",
++        "@abseil-cpp//absl/log:check",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/strings",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-sim//mpact/sim/generic:core_debug_interface",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
+-        "@com_google_mpact-sim//mpact/sim/util/program_loader:elf_loader",
++        "@mpact-sim//mpact/sim/generic:core_debug_interface",
++        "@mpact-sim//mpact/sim/util/memory",
++        "@mpact-sim//mpact/sim/util/program_loader:elf_loader",
+     ],
+ )
+ 
+@@ -113,15 +113,15 @@ cc_library(
+     ],
+     deps = [
+         "//sim:coralnpu_state",
+-        "@com_google_absl//absl/random",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/types:span",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:arch_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@abseil-cpp//absl/random",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/types:span",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:arch_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -135,11 +135,11 @@ cc_test(
+     deps = [
+         ":coralnpu_vector_instructions_test_base",
+         "//sim:coralnpu_instructions",
+-        "@com_google_absl//absl/functional:bind_front",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/functional:bind_front",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/types:span",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:instruction",
+     ],
+ )
+ 
+@@ -156,12 +156,12 @@ cc_test(
+     deps = [
+         ":coralnpu_vector_instructions_test_base",
+         "//sim:coralnpu_instructions",
+-        "@com_google_absl//absl/functional:bind_front",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/functional:bind_front",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/types:span",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:instruction",
+     ],
+ )
+ 
+@@ -176,12 +176,12 @@ cc_test(
+         ":coralnpu_vector_instructions_test_base",
+         "//sim:coralnpu_instructions",
+         "//sim:coralnpu_state",
+-        "@com_google_absl//absl/functional:bind_front",
+-        "@com_google_absl//absl/random:distributions",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/functional:bind_front",
++        "@abseil-cpp//absl/random:distributions",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/types:span",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:instruction",
+     ],
+ )
+ 
+@@ -195,9 +195,9 @@ cc_test(
+     deps = [
+         ":coralnpu_vector_instructions_test_base",
+         "//sim:coralnpu_instructions",
+-        "@com_google_absl//absl/functional:bind_front",
++        "@abseil-cpp//absl/functional:bind_front",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:instruction",
+     ],
+ )
+ 
+@@ -208,8 +208,8 @@ cc_test(
+     deps = [
+         "//sim:coralnpu_v2_state",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -221,14 +221,14 @@ cc_test(
+         "//sim:coralnpu_v2_isa",
+         "//sim:coralnpu_v2_state",
+         "//sim:coralnpu_v2_user_decoder",
+-        "@com_google_absl//absl/memory",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:str_format",
++        "@abseil-cpp//absl/memory",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:str_format",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -269,8 +269,8 @@ cc_test(
+         "//sim:coralnpu_architecture",
+         "//sim/cosim:coralnpu_cosim_lib",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/strings:str_format",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/strings:str_format",
+         # INTERNAL_VERILATOR_DEPENDENCY,
+     ],
+ )
+@@ -282,20 +282,20 @@ cc_test(
+     deps = [
+         "//sim:coralnpu_v2_instructions",
+         "//sim:coralnpu_v2_state",
+-        "@com_google_absl//absl/functional:any_invocable",
+-        "@com_google_absl//absl/functional:bind_front",
+-        "@com_google_absl//absl/status:status_matchers",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/functional:any_invocable",
++        "@abseil-cpp//absl/functional:bind_front",
++        "@abseil-cpp//absl/status:status_matchers",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/types:span",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_g",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-riscv//riscv:riscv_v",
+-        "@com_google_mpact-sim//mpact/sim/generic:arch_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@mpact-riscv//riscv:riscv_g",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-riscv//riscv:riscv_v",
++        "@mpact-sim//mpact/sim/generic:arch_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -321,9 +321,9 @@ cc_test(
+         "//sim:coralnpu_m3_user_decoder",
+         "//sim:coralnpu_v2_state",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -336,9 +336,9 @@ cc_test(
+         "//sim:coralnpu_m3_user_decoder",
+         "//sim:coralnpu_v2_state",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/util/memory",
+     ],
+ )
+ 
+@@ -357,17 +357,17 @@ cc_test(
+         "//sim:coralnpu_simulator",
+         "//sim:coralnpu_v2_state",
+         "//sim:coralnpu_v2_user_decoder",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:status_matchers",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:status_matchers",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
+         "@com_google_googletest//:gtest_main",
+-        "@com_google_mpact-riscv//riscv:riscv_state",
+-        "@com_google_mpact-sim//mpact/sim/generic:core",
+-        "@com_google_mpact-sim//mpact/sim/generic:core_debug_interface",
+-        "@com_google_mpact-sim//mpact/sim/generic:instruction",
+-        "@com_google_mpact-sim//mpact/sim/generic:type_helpers",
+-        "@com_google_mpact-sim//mpact/sim/util/memory",
+-        "@com_google_mpact-sim//mpact/sim/util/program_loader:elf_loader",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:core_debug_interface",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
++        "@mpact-sim//mpact/sim/util/memory",
++        "@mpact-sim//mpact/sim/util/program_loader:elf_loader",
+     ],
+ )
+diff --git a/sim/test/testfiles/coralnpu_ebreak.elf b/sim/test/testfiles/coralnpu_ebreak.elf
+index 5931229..3adb144 100644
+Binary files a/sim/test/testfiles/coralnpu_ebreak.elf and b/sim/test/testfiles/coralnpu_ebreak.elf differ
+diff --git a/sim/test/testfiles/coralnpu_perf_counters.elf b/sim/test/testfiles/coralnpu_perf_counters.elf
+index 3a9c505..c774f72 100755
+Binary files a/sim/test/testfiles/coralnpu_perf_counters.elf and b/sim/test/testfiles/coralnpu_perf_counters.elf differ
+diff --git a/sim/test/testfiles/coralnpu_v2_rvv_add_intrinsic.elf b/sim/test/testfiles/coralnpu_v2_rvv_add_intrinsic.elf
+index 6559d56..0f67006 100755
+Binary files a/sim/test/testfiles/coralnpu_v2_rvv_add_intrinsic.elf and b/sim/test/testfiles/coralnpu_v2_rvv_add_intrinsic.elf differ
+diff --git a/sim/test/testfiles/coralnpu_vldvst.elf b/sim/test/testfiles/coralnpu_vldvst.elf
+index 34916db..6aeff33 100755
+Binary files a/sim/test/testfiles/coralnpu_vldvst.elf and b/sim/test/testfiles/coralnpu_vldvst.elf differ
+diff --git a/sim/test/testfiles/hello_world_mpause.bin b/sim/test/testfiles/hello_world_mpause.bin
+index d30b157..a74e3fe 100644
+Binary files a/sim/test/testfiles/hello_world_mpause.bin and b/sim/test/testfiles/hello_world_mpause.bin differ
+diff --git a/sim/test/testfiles/hello_world_mpause.elf b/sim/test/testfiles/hello_world_mpause.elf
+index 5e74f05..6218d8b 100755
+Binary files a/sim/test/testfiles/hello_world_mpause.elf and b/sim/test/testfiles/hello_world_mpause.elf differ
+diff --git a/sim/test/testfiles/hello_world_rv32imf.elf b/sim/test/testfiles/hello_world_rv32imf.elf
+index 8f8c513..4ed1815 100755
+Binary files a/sim/test/testfiles/hello_world_rv32imf.elf and b/sim/test/testfiles/hello_world_rv32imf.elf differ
+diff --git a/sim/test/testfiles/rv32i.elf b/sim/test/testfiles/rv32i.elf
+index 9bb0a27..dfd8768 100755
+Binary files a/sim/test/testfiles/rv32i.elf and b/sim/test/testfiles/rv32i.elf differ
+diff --git a/sim/test/testfiles/rv32m.elf b/sim/test/testfiles/rv32m.elf
+index d1f2c31..7ad555d 100755
+Binary files a/sim/test/testfiles/rv32m.elf and b/sim/test/testfiles/rv32m.elf differ
+diff --git a/sim/test/testfiles/rv32soft_fp.elf b/sim/test/testfiles/rv32soft_fp.elf
+index 337c2cb..edf52b1 100755
+Binary files a/sim/test/testfiles/rv32soft_fp.elf and b/sim/test/testfiles/rv32soft_fp.elf differ
+diff --git a/sim/test/testfiles/rv32uf_fadd.elf b/sim/test/testfiles/rv32uf_fadd.elf
+index 5bd93a7..9f11e87 100644
+Binary files a/sim/test/testfiles/rv32uf_fadd.elf and b/sim/test/testfiles/rv32uf_fadd.elf differ

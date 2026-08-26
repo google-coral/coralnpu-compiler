@@ -178,6 +178,11 @@ Then, to build the compiler and runtime:
 cmake --build "${BUILD_DIR}" --target coralnpu-compile iree-run-module
 ```
 
+### Notes on Runtime Simulator in CMake
+
+- **Compiler is standalone**: Building compiler targets (`coralnpu-compile`, IREE compiler plugins, LLVM/MLIR) via CMake is completely standalone and does not invoke or require Bazel.
+- **Runtime Simulator Fallback**: The functional simulator library (`libcoralnpu_simulator_mpact.so` or `libcoralnpu_simulator.so`) is only needed when building the runtime HAL driver simulation backend (`coralnpu_runtime::sim`). If a pre-built simulator library path is not explicitly provided via `-DCORALNPU_MPACT_SIMULATOR_LIB=...` or `-DCORALNPU_VERILATOR_SIMULATOR_LIB=...`, CMake automatically invokes Bazel as a fallback to compile the simulator library from source.
+
 ---
 
 ## Run the standalone compiler (using Bazel)
@@ -349,15 +354,13 @@ To test the Python compiler (`coralnpu_compiler`) and runtime (`coralnpu_runtime
     python -c "import coralnpu.compiler as cnpuc; print(cnpuc)"
     <module 'coralnpu.compiler' from '/path/to/python3.13/site-packages/coralnpu/compiler/__init__.py'>
    ```
-    The runtime needs `runtime/sim/libcoralnpu_simulator_mpact.so` static lib.
 
    ```shell
-    LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./runtime/sim python -c "import coralnpu.runtime as cnpurt; print(cnpurt)"
+    python -c "import coralnpu.runtime as cnpurt; print(cnpurt)"
     <module 'coralnpu.runtime' from '/path/to/python3.13/site-packages/coralnpu/runtime/__init__.py'>
    ```
 
 3. **Run end-to-end Python compilation and inference**:
-    The runtime needs `runtime/sim/libcoralnpu_simulator_mpact.so` static lib.
    ```python
    import numpy as np
    import coralnpu.compiler as coralnpu_compiler
