@@ -117,6 +117,9 @@ build:dev --host_compilation_mode=fastbuild
 # size to links and reduces link times significantly.
 build:dev --fission=yes
 
+# Optimize MPACT instruction simulator and Verilator RTL simulation models in dev mode
+build:dev --per_file_copt=external/.*(mpact|coralnpu_hw|rules_hdl).*@-O3,-march=native,-DNDEBUG
+
 # If you don't have a fast SSD, and compilation time is long, you can try
 # uncommenting these:
 # build:dev --strategy=CcArchive=local
