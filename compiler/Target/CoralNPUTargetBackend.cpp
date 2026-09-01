@@ -26,6 +26,7 @@
 #include "compiler/plugins/target/LLVMCPU/LLVMIRPasses.h"
 #include "compiler/plugins/target/LLVMCPU/LibraryBuilder.h"
 #include "compiler/plugins/target/LLVMCPU/StaticLibraryGenerator.h"
+#include "iree/compiler/Codegen/Common/Passes.h"
 #include "iree/compiler/Codegen/Dialect/CPU/IR/IREECPUDialect.h"
 #include "iree/compiler/Codegen/Dialect/CPU/IR/IREECPUTypes.h"
 #include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenDialect.h"
@@ -373,8 +374,12 @@ void CoralNPUTargetBackend::buildTranslationPassPipeline(
   buildLLVMCPUCodegenPassPipeline(
       passManager, codegenOptions_,
       /*enableAArch64SME=*/false, [this](OpPassManager &pm) {
-        pm.nest<ModuleOp>().addNestedPass<func::FuncOp>(
+        OpPassManager &funcPassManager =
+            pm.nest<ModuleOp>().nest<func::FuncOp>();
+        funcPassManager.addPass(
             createCoralNPULimitLoopUnrollingPass(options_.maxLoopUnrolling));
+        funcPassManager.addPass(iree_compiler::createDropVectorUnitDimsPass());
+        funcPassManager.addPass(createCoralNPUMatrixCodegenPass());
       });
 }
 

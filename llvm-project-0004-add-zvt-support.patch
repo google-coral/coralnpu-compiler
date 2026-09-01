@@ -1,0 +1,1002 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lun Dong <lundong@google.com>
+Date: Thu, 17 Sep 2026 14:30:00 -0700
+Subject: [PATCH] [RISCV] Add Zvt matrix extension support
+
+The RISC-V backend does not know about the CoralNPU Zvt matrix
+extension, so its tile configuration and matrix multiply instructions
+cannot be assembled and the vector configuration around them is not
+tracked.
+
+Add:
+- Subtarget features Zvtbase, Zvt8e, Zvt16e, Zvt64e, Zvti8i32mm,
+  Zvtf8f32mm, Zvtf16f32mm and Zvtf32f32mm.
+- Instruction and encoding definitions in RISCVInstrInfoZvt.td for tile
+  configuration (msetmtype, msettm, msettn, msettk), tile load/store
+  (vtle*, vtse*), tile move (vtmv.v.t, vtmv.t.v), vtzero, vtdiscard and
+  the matrix multiplies (vtmms.tvv, vtmmu.tvv, vtfmm.tvv,
+  vtfmm.alt.tvv).
+- Intrinsic declarations in IntrinsicsRISCVZvt.td and the corresponding
+  ISel patterns.
+- Knowledge of the Zvt pseudos in the VSETVLI insertion and analysis
+  passes, so the SEW/LMUL they require is taken into account.
+---
+ llvm/include/llvm/IR/IntrinsicsRISCV.td            |    1 +
+ llvm/lib/Target/RISCV/RISCVFeatures.td             |   68 +++
+ llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp        |   55 +++
+ llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp       |   63 +++
+ llvm/lib/Target/RISCV/RISCVInstrInfo.td            |    4 +-
+ llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td    |    2 +-
+ llvm/lib/Target/RISCV/RISCVVSETVLIInfoAnalysis.cpp |  165 ++++++++
+ llvm/include/llvm/IR/IntrinsicsRISCVZvt.td         |   87 ++++
+ llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td         |  395 ++++++++++++++++++++
+ 9 files changed, 838 insertions(+), 2 deletions(-)
+
+diff --git a/llvm/include/llvm/IR/IntrinsicsRISCV.td b/llvm/include/llvm/IR/IntrinsicsRISCV.td
+index 32de1a10a4..70c88cb4ac 100644
+--- a/llvm/include/llvm/IR/IntrinsicsRISCV.td
++++ b/llvm/include/llvm/IR/IntrinsicsRISCV.td
+@@ -2017,3 +2017,4 @@ include "llvm/IR/IntrinsicsRISCVXsf.td"
+ include "llvm/IR/IntrinsicsRISCVXCV.td"
+ include "llvm/IR/IntrinsicsRISCVXAndes.td"
+ include "llvm/IR/IntrinsicsRISCVXMIPS.td"
++include "llvm/IR/IntrinsicsRISCVZvt.td"
+diff --git a/llvm/lib/Target/RISCV/RISCVFeatures.td b/llvm/lib/Target/RISCV/RISCVFeatures.td
+index 01ab6054c5..e9b1d42b44 100644
+--- a/llvm/lib/Target/RISCV/RISCVFeatures.td
++++ b/llvm/lib/Target/RISCV/RISCVFeatures.td
+@@ -741,6 +741,74 @@ def HasStdExtZvfbfminOrZvfofp8min
+                          "'Zvfbfmin' (Vector BF16 Converts) or "
+                          "'Zvfofp8min' (Vector OFP8 Converts)">;
+
++//===----------------------------------------------------------------------===//
++// Vector Matrix Extension (Zvt)
++//===----------------------------------------------------------------------===//
++
++def FeatureStdExtZvtbase
++    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension Base",
++                     [FeatureStdExtZve32f]>;
++def HasStdExtZvtbase : Predicate<"Subtarget->hasStdExtZvtbase()">,
++                       AssemblerPredicate<(all_of FeatureStdExtZvtbase),
++                           "'Zvtbase' (RISC-V Vector Matrix Extension Base)">;
++
++def FeatureStdExtZvt8e
++    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension 8-bit Element",
++                     [FeatureStdExtZvtbase]>;
++def HasStdExtZvt8e : Predicate<"Subtarget->hasStdExtZvt8e()">,
++                     AssemblerPredicate<(all_of FeatureStdExtZvt8e),
++                         "'Zvt8e' (RISC-V Vector Matrix Extension 8-bit Element)">;
++
++def FeatureStdExtZvt16e
++    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension 16-bit Element",
++                     [FeatureStdExtZvtbase]>;
++def HasStdExtZvt16e : Predicate<"Subtarget->hasStdExtZvt16e()">,
++                      AssemblerPredicate<(all_of FeatureStdExtZvt16e),
++                          "'Zvt16e' (RISC-V Vector Matrix Extension 16-bit Element)">;
++
++def FeatureStdExtZvt64e
++    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension 64-bit Element",
++                     [FeatureStdExtZvtbase]>;
++def HasStdExtZvt64e : Predicate<"Subtarget->hasStdExtZvt64e()">,
++                      AssemblerPredicate<(all_of FeatureStdExtZvt64e),
++                          "'Zvt64e' (RISC-V Vector Matrix Extension 64-bit Element)">;
++
++def FeatureStdExtZvti8i32mm
++    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension Int8-Int32 Matrix Multiply",
++                     [FeatureStdExtZvtbase]>;
++def HasStdExtZvti8i32mm : Predicate<"Subtarget->hasStdExtZvti8i32mm()">,
++                          AssemblerPredicate<(all_of FeatureStdExtZvti8i32mm),
++                              "'Zvti8i32mm' (RISC-V Vector Matrix Extension Int8-Int32 Matrix Multiply)">;
++
++def FeatureStdExtZvtf8f32mm
++    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension FP8-FP32 Matrix Multiply",
++                     [FeatureStdExtZvtbase]>;
++def HasStdExtZvtf8f32mm : Predicate<"Subtarget->hasStdExtZvtf8f32mm()">,
++                          AssemblerPredicate<(all_of FeatureStdExtZvtf8f32mm),
++                              "'Zvtf8f32mm' (RISC-V Vector Matrix Extension FP8-FP32 Matrix Multiply)">;
++
++def FeatureStdExtZvtf16f32mm
++    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension FP16-FP32 Matrix Multiply",
++                     [FeatureStdExtZvtbase]>;
++def HasStdExtZvtf16f32mm : Predicate<"Subtarget->hasStdExtZvtf16f32mm()">,
++                           AssemblerPredicate<(all_of FeatureStdExtZvtf16f32mm),
++                               "'Zvtf16f32mm' (RISC-V Vector Matrix Extension FP16-FP32 Matrix Multiply)">;
++
++def FeatureStdExtZvtf32f32mm
++    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension FP32-FP32 Matrix Multiply",
++                     [FeatureStdExtZvtbase]>;
++def HasStdExtZvtf32f32mm : Predicate<"Subtarget->hasStdExtZvtf32f32mm()">,
++                           AssemblerPredicate<(all_of FeatureStdExtZvtf32f32mm),
++                               "'Zvtf32f32mm' (RISC-V Vector Matrix Extension FP32-FP32 Matrix Multiply)">;
++
++def HasZvtAnyFMM : Predicate<"Subtarget->hasStdExtZvtf16f32mm() || Subtarget->hasStdExtZvtf32f32mm()">,
++                   AssemblerPredicate<(any_of FeatureStdExtZvtf16f32mm, FeatureStdExtZvtf32f32mm),
++                       "either 'Zvtf16f32mm' or 'Zvtf32f32mm'">;
++
++def HasZvtAltFMM : Predicate<"Subtarget->hasStdExtZvtf8f32mm()">,
++                   AssemblerPredicate<(all_of FeatureStdExtZvtf8f32mm),
++                       "'Zvtf8f32mm'">;
++
+ // Vector Cryptography and Bitmanip Extensions
+
+ def FeatureStdExtZvkb
+diff --git a/llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp b/llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp
+index 76ecd4fccf..9a81fe1e9b 100644
+--- a/llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp
++++ b/llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp
+@@ -2867,6 +2867,61 @@ void RISCVDAGToDAGISel::Select(SDNode *Node) {
+       ReplaceNode(Node, NewNode);
+       return;
+     }
++    case Intrinsic::riscv_zvt_vtmmu_tvv:
++    case Intrinsic::riscv_zvt_vtmms_tvv:
++    case Intrinsic::riscv_zvt_vtfmm_tvv:
++    case Intrinsic::riscv_zvt_vtfmm_alt_tvv: {
++      bool HasFRM = false;
++      unsigned PseudoInst;
++      uint64_t TileNum = Node->getConstantOperandVal(2);
++      SDValue Op1 = Node->getOperand(3);
++      SDValue Op2 = Node->getOperand(4);
++      SDValue Chain = Node->getOperand(0);
++      switch (IntNo) {
++      case Intrinsic::riscv_zvt_vtmmu_tvv:
++        PseudoInst = RISCV::PseudoVTMMU_TVV;
++        break;
++      case Intrinsic::riscv_zvt_vtmms_tvv:
++        PseudoInst = RISCV::PseudoVTMMS_TVV;
++        break;
++      case Intrinsic::riscv_zvt_vtfmm_tvv:
++        if (Op1.getValueType() == MVT::nxv8f16) {
++          PseudoInst = RISCV::PseudoVTFMM_F16_TVV;
++        } else {
++          assert(Op1.getValueType() == MVT::nxv8f32);
++          PseudoInst = RISCV::PseudoVTFMM_F32_TVV;
++        }
++        HasFRM = true;
++        break;
++      case Intrinsic::riscv_zvt_vtfmm_alt_tvv:
++        PseudoInst = RISCV::PseudoVTFMM_ALT_TVV;
++        HasFRM = true;
++        break;
++      }
++
++      SmallVector<SDValue, 8> Operands(
++          {CurDAG->getRegister(getTileReg(TileNum), XLenVT), Op1, Op2});
++      if (HasFRM)
++        Operands.push_back(
++            CurDAG->getTargetConstant(RISCVFPRndMode::DYN, DL, XLenVT));
++      Operands.push_back(Chain);
++
++      auto *NewNode =
++          CurDAG->getMachineNode(PseudoInst, DL, Node->getVTList(), Operands);
++
++      ReplaceNode(Node, NewNode);
++      return;
++    }
++    case Intrinsic::riscv_zvt_vtzero: {
++      uint64_t TileNum = Node->getConstantOperandVal(2);
++      SDValue Chain = Node->getOperand(0);
++      auto *NewNode = CurDAG->getMachineNode(
++          RISCV::PseudoVTZERO, DL, Node->getVTList(),
++          {CurDAG->getRegister(getTileReg(TileNum), XLenVT), Chain});
++
++      ReplaceNode(Node, NewNode);
++      return;
++    }
+     }
+     break;
+   }
+diff --git a/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp b/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
+index b93bb167c8..f758d90ab6 100644
+--- a/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
++++ b/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
+@@ -309,6 +309,51 @@ static VSETVLIInfo adjustIncoming(const VSETVLIInfo &PrevInfo,
+   return Info;
+ }
+
++static bool isZvtMatMul(unsigned Opcode) {
++  switch (Opcode) {
++  case RISCV::PseudoVTFMM_F32_TVV:
++  case RISCV::PseudoVTFMM_F16_TVV:
++  case RISCV::PseudoVTFMM_ALT_TVV:
++  case RISCV::PseudoVTMMU_TVV:
++  case RISCV::PseudoVTMMS_TVV:
++    return true;
++  default:
++    return false;
++  }
++}
++
++static bool isZvtMemOp(unsigned Opcode) {
++  switch (Opcode) {
++  case RISCV::PseudoVTLE8:
++  case RISCV::PseudoVTSE8:
++  case RISCV::PseudoVTLE16:
++  case RISCV::PseudoVTSE16:
++  case RISCV::PseudoVTLE32:
++  case RISCV::PseudoVTSE32:
++  case RISCV::PseudoVTLE64:
++  case RISCV::PseudoVTSE64:
++    return true;
++  default:
++    return false;
++  }
++}
++
++static bool isZvtMove(unsigned Opcode) {
++  switch (Opcode) {
++  case RISCV::PseudoVTMV_V_T_E8:
++  case RISCV::PseudoVTMV_V_T_E16:
++  case RISCV::PseudoVTMV_V_T_E32:
++  case RISCV::PseudoVTMV_V_T_E64:
++  case RISCV::PseudoVTMV_T_V_E8:
++  case RISCV::PseudoVTMV_T_V_E16:
++  case RISCV::PseudoVTMV_T_V_E32:
++  case RISCV::PseudoVTMV_T_V_E64:
++    return true;
++  default:
++    return false;
++  }
++}
++
+ // Given an incoming state reaching MI, minimally modifies that state so that it
+ // is compatible with MI. The resulting state is guaranteed to be semantically
+ // legal for MI, but may not be the state requested by MI.
+@@ -326,13 +371,27 @@ void RISCVInsertVSETVLI::transferBefore(VSETVLIInfo &Info,
+     return;
+   }
+
+-  if (!RISCVII::hasSEWOp(MI.getDesc().TSFlags))
++  if (!RISCVII::hasSEWOp(MI.getDesc().TSFlags) && !isZvtMatMul(MI.getOpcode()) && !isZvtMemOp(MI.getOpcode()) && !isZvtMove(MI.getOpcode()))
+     return;
+
+   DemandedFields Demanded = getDemanded(MI, ST);
+
+   const VSETVLIInfo NewInfo = VIA.computeInfoForInstr(MI);
+   assert(NewInfo.isValid() && !NewInfo.isUnknown());
++  LLVM_DEBUG({
++    if (isZvtMatMul(MI.getOpcode()) || isZvtMemOp(MI.getOpcode()) || isZvtMove(MI.getOpcode())) {
++      dbgs() << "ZVT: transferBefore for " << MI.getOpcode() << "\n";
++      dbgs() << "  Info.isValid(): " << Info.isValid() << "\n";
++      if (Info.isValid() && !Info.isUnknown() && !Info.hasSEWLMULRatioOnly()) {
++        dbgs() << "  Info.SEW: " << Info.getSEW() << "\n";
++      } else {
++        dbgs() << "  Info is not fully valid\n";
++      }
++      dbgs() << "  NewInfo.SEW: " << NewInfo.getSEW() << "\n";
++      bool need = needVSETVLI(Demanded, NewInfo, Info);
++      dbgs() << "  needVSETVLI: " << need << "\n";
++    }
++  });
+   if (Info.isValid() && !needVSETVLI(Demanded, NewInfo, Info))
+     return;
+
+@@ -560,7 +619,7 @@ void RISCVInsertVSETVLI::emitVSETVLIs(MachineBasicBlock &MBB) {
+     }
+
+     uint64_t TSFlags = MI.getDesc().TSFlags;
+-    if (RISCVII::hasSEWOp(TSFlags)) {
++    if (RISCVII::hasSEWOp(TSFlags) || isZvtMatMul(MI.getOpcode()) || isZvtMemOp(MI.getOpcode()) || isZvtMove(MI.getOpcode())) {
+       if (!PrevInfo.isCompatible(DemandedFields::all(), CurInfo, LIS)) {
+         // If this is the first implicit state change, and the state change
+         // requested can be proven to produce the same register contents, we
+diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfo.td b/llvm/lib/Target/RISCV/RISCVInstrInfo.td
+index 19fc76111d..2206ea0305 100644
+--- a/llvm/lib/Target/RISCV/RISCVInstrInfo.td
++++ b/llvm/lib/Target/RISCV/RISCVInstrInfo.td
+@@ -2361,6 +2361,10 @@ include "RISCVInstrInfoZvdot4a8i.td"
+ include "RISCVInstrInfoZvfofp8min.td"
+ include "RISCVInstrInfoZvzip.td"
+
++// Vector Matrix Extension
++include "RISCVInstrInfoZvt.td"
++
++
+ // Packed SIMD
+ include "RISCVInstrInfoP.td"
+
+diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td b/llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td
+index 4ee6563408..f22b406c70 100644
+--- a/llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td
++++ b/llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td
+@@ -144,6 +144,8 @@ class PseudoToVInst<string PseudoInst> {
+                         ["_E32", ""],
+                         ["_E16", ""],
+                         ["_E8", ""],
++                        ["_F32", ""],
++                        ["_F16", ""],
+                         ["FPR64", "F"],
+                         ["FPR32", "F"],
+                         ["FPR16", "F"],
+diff --git a/llvm/lib/Target/RISCV/RISCVVSETVLIInfoAnalysis.cpp b/llvm/lib/Target/RISCV/RISCVVSETVLIInfoAnalysis.cpp
+index ff2d8b09ed..8a88e18305 100644
+--- a/llvm/lib/Target/RISCV/RISCVVSETVLIInfoAnalysis.cpp
++++ b/llvm/lib/Target/RISCV/RISCVVSETVLIInfoAnalysis.cpp
+@@ -15,9 +15,16 @@
+ #include "RISCVSubtarget.h"
+ #include "llvm/CodeGen/LiveIntervals.h"
+
++#define DEBUG_TYPE "riscv-vsetvli"
++
+ namespace llvm {
+ namespace RISCV {
+
++static bool isZvtZero(unsigned Opcode);
++static bool isZvtMatMul(unsigned Opcode);
++static bool isZvtMemOp(unsigned Opcode);
++static bool isZvtMove(unsigned Opcode);
++
+ /// Given a virtual register \p Reg, return the corresponding VNInfo for it.
+ /// This will return nullptr if the virtual register is an implicit_def or
+ /// if LiveIntervals is not available.
+@@ -324,6 +331,12 @@ DemandedFields getDemanded(const MachineInstr &MI, const RISCVSubtarget *ST) {
+   Res.TWiden = RISCVII::hasTWidenOp(MI.getDesc().TSFlags) ||
+                RISCVInstrInfo::isXSfmmVectorConfigInstr(MI);
+
++  if (isZvtMatMul(MI.getOpcode()) || isZvtMemOp(MI.getOpcode()) ||
++      isZvtMove(MI.getOpcode()) || isZvtZero(MI.getOpcode())) {
++    Res.demandVTYPE();
++    Res.demandVL();
++  }
++
+   return Res;
+ }
+
+@@ -402,9 +415,161 @@ static unsigned computeVLMAX(unsigned VLEN, unsigned SEW,
+   return VLEN / SEW;
+ }
+
++static bool isZvtZero(unsigned Opcode) {
++  return Opcode == RISCV::PseudoVTZERO;
++}
++
++static bool isZvtMatMul(unsigned Opcode) {
++  switch (Opcode) {
++  case RISCV::PseudoVTFMM_F32_TVV:
++  case RISCV::PseudoVTFMM_F16_TVV:
++  case RISCV::PseudoVTFMM_ALT_TVV:
++  case RISCV::PseudoVTMMU_TVV:
++  case RISCV::PseudoVTMMS_TVV:
++    return true;
++  default:
++    return false;
++  }
++}
++
++static unsigned getZvtSEW(unsigned Opcode) {
++  switch (Opcode) {
++  case RISCV::PseudoVTFMM_F32_TVV:
++    return 32;
++  case RISCV::PseudoVTFMM_F16_TVV:
++  case RISCV::PseudoVTFMM_ALT_TVV:
++    return 16;
++  case RISCV::PseudoVTMMU_TVV:
++  case RISCV::PseudoVTMMS_TVV:
++    return 8;
++  default:
++    llvm_unreachable("Unexpected Zvt opcode");
++  }
++}
++
++static bool isZvtMemOp(unsigned Opcode) {
++  switch (Opcode) {
++  case RISCV::PseudoVTLE8:
++  case RISCV::PseudoVTSE8:
++  case RISCV::PseudoVTLE16:
++  case RISCV::PseudoVTSE16:
++  case RISCV::PseudoVTLE32:
++  case RISCV::PseudoVTSE32:
++  case RISCV::PseudoVTLE64:
++  case RISCV::PseudoVTSE64:
++    return true;
++  default:
++    return false;
++  }
++}
++
++static unsigned getZvtMemOpSEW(unsigned Opcode) {
++  switch (Opcode) {
++  case RISCV::PseudoVTLE8:
++  case RISCV::PseudoVTSE8:
++    return 8;
++  case RISCV::PseudoVTLE16:
++  case RISCV::PseudoVTSE16:
++    return 16;
++  case RISCV::PseudoVTLE32:
++  case RISCV::PseudoVTSE32:
++    return 32;
++  case RISCV::PseudoVTLE64:
++  case RISCV::PseudoVTSE64:
++    return 64;
++  default:
++    llvm_unreachable("Unexpected Zvt mem opcode");
++  }
++}
++
++static bool isZvtMove(unsigned Opcode) {
++  switch (Opcode) {
++  case RISCV::PseudoVTMV_V_T_E8:
++  case RISCV::PseudoVTMV_V_T_E16:
++  case RISCV::PseudoVTMV_V_T_E32:
++  case RISCV::PseudoVTMV_V_T_E64:
++  case RISCV::PseudoVTMV_T_V_E8:
++  case RISCV::PseudoVTMV_T_V_E16:
++  case RISCV::PseudoVTMV_T_V_E32:
++  case RISCV::PseudoVTMV_T_V_E64:
++    return true;
++  default:
++    return false;
++  }
++}
++
++static unsigned getZvtMoveSEW(unsigned Opcode) {
++  switch (Opcode) {
++  case RISCV::PseudoVTMV_V_T_E8:
++  case RISCV::PseudoVTMV_T_V_E8:
++    return 8;
++  case RISCV::PseudoVTMV_V_T_E16:
++  case RISCV::PseudoVTMV_T_V_E16:
++    return 16;
++  case RISCV::PseudoVTMV_V_T_E32:
++  case RISCV::PseudoVTMV_T_V_E32:
++    return 32;
++  case RISCV::PseudoVTMV_V_T_E64:
++  case RISCV::PseudoVTMV_T_V_E64:
++    return 64;
++  default:
++    llvm_unreachable("Unexpected Zvt move opcode");
++  }
++}
++
+ VSETVLIInfo
+ RISCVVSETVLIInfoAnalysis::computeInfoForInstr(const MachineInstr &MI) const {
+   VSETVLIInfo InstrInfo;
++
++  if (isZvtMatMul(MI.getOpcode())) {
++    unsigned SEW = getZvtSEW(MI.getOpcode());
++    LLVM_DEBUG(dbgs() << "ZVT: computeInfoForInstr for " << MI.getOpcode() << ", SEW=" << SEW << "\n");
++    RISCVVType::VLMUL VLMul = RISCVII::getLMul(MI.getDesc().TSFlags);
++    bool TailAgnostic = true;
++    bool MaskAgnostic = true;
++    unsigned TWiden = 0;
++    if (SEW == 32) TWiden = 1;
++    else if (SEW == 16) TWiden = 2;
++    else if (SEW == 8) TWiden = 4;
++    InstrInfo.setAVLVLMAX();
++    InstrInfo.setVTYPE(VLMul, SEW, TailAgnostic, MaskAgnostic, /*AltFmt*/ false, TWiden);
++    return InstrInfo;
++  }
++
++  if (isZvtZero(MI.getOpcode())) {
++    LLVM_DEBUG(dbgs() << "ZVT: computeInfoForInstr (Zero) for " << MI.getOpcode() << "\n");
++    RISCVVType::VLMUL VLMul = RISCVII::getLMul(MI.getDesc().TSFlags);
++    unsigned SEW = 32;
++    unsigned TWiden = 1;
++    bool TailAgnostic = true;
++    bool MaskAgnostic = true;
++    InstrInfo.setAVLVLMAX();
++    InstrInfo.setVTYPE(VLMul, SEW, TailAgnostic, MaskAgnostic, /*AltFmt*/ false, TWiden);
++    return InstrInfo;
++  }
++
++  if (isZvtMemOp(MI.getOpcode())) {
++    unsigned SEW = getZvtMemOpSEW(MI.getOpcode());
++    LLVM_DEBUG(dbgs() << "ZVT: computeInfoForInstr (MemOp) for " << MI.getOpcode() << ", SEW=" << SEW << "\n");
++    RISCVVType::VLMUL VLMul = RISCVVType::LMUL_1;
++    bool TailAgnostic = true;
++    bool MaskAgnostic = true;
++    InstrInfo.setAVLImm(4);
++    InstrInfo.setVTYPE(VLMul, SEW, TailAgnostic, MaskAgnostic, /*AltFmt*/ false, /*TWiden*/ 0);
++    return InstrInfo;
++  }
++
++  if (isZvtMove(MI.getOpcode())) {
++    unsigned SEW = getZvtMoveSEW(MI.getOpcode());
++    LLVM_DEBUG(dbgs() << "ZVT: computeInfoForInstr (Move) for " << MI.getOpcode() << ", SEW=" << SEW << "\n");
++    RISCVVType::VLMUL VLMul = RISCVVType::LMUL_1;
++    bool TailAgnostic = true;
++    bool MaskAgnostic = true;
++    InstrInfo.setAVLVLMAX();
++    InstrInfo.setVTYPE(VLMul, SEW, TailAgnostic, MaskAgnostic, /*AltFmt*/ false, /*TWiden*/ 0);
++    return InstrInfo;
++  }
++
+   const uint64_t TSFlags = MI.getDesc().TSFlags;
+
+   bool TailAgnostic = true;
+diff --git a/llvm/include/llvm/IR/IntrinsicsRISCVZvt.td b/llvm/include/llvm/IR/IntrinsicsRISCVZvt.td
+new file mode 100644
+index 0000000000..c0a58794e9
+--- /dev/null
++++ b/llvm/include/llvm/IR/IntrinsicsRISCVZvt.td
+@@ -0,0 +1,87 @@
++//===- IntrinsicsRISCVZvt.td - Zvt intrinsics ---------------*- tablegen -*-===//
++//
++// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
++// See https://llvm.org/LICENSE.txt for license information.
++// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++//
++//===----------------------------------------------------------------------===//
++//
++// This file defines all of the Zvt (Vector Matrix Extension) intrinsics for RISC-V.
++//
++//===----------------------------------------------------------------------===//
++
++let TargetPrefix = "riscv" in {
++
++  // Zvt Configuration Intrinsics
++  // Output: (actual_set_dim)
++  // Input: (requested_dim)
++  class ZvtMSetIntrinsic
++      : DefaultAttrsIntrinsic<[llvm_anyint_ty], [LLVMMatchType<0>],
++                              [IntrNoMem, IntrHasSideEffects]>;
++
++  def int_riscv_zvt_msettn : ZvtMSetIntrinsic;
++  def int_riscv_zvt_msettm : ZvtMSetIntrinsic;
++  def int_riscv_zvt_msettk : ZvtMSetIntrinsic;
++
++  // msetmtype: writes mtype (rs1) and vtype (rs2)
++  // Output: ()
++  // Input: (mtype, vtype)
++  def int_riscv_zvt_msetmtype
++      : DefaultAttrsIntrinsic<[], [llvm_anyint_ty, LLVMMatchType<0>],
++                              [IntrNoMem, IntrHasSideEffects]>;
++
++  // Zvt Tile Load/Store
++  // Input: (tile_index_gpr, base_addr)
++  class ZvtTileLoadIntrinsic
++      : Intrinsic<[], [llvm_anyint_ty, llvm_ptr_ty],
++                  [IntrReadMem, IntrHasSideEffects], "", [], 1>;
++
++  class ZvtTileStoreIntrinsic
++      : DefaultAttrsIntrinsic<[], [llvm_anyint_ty, llvm_ptr_ty],
++                              [IntrWriteMem, IntrHasSideEffects]>;
++
++  def int_riscv_zvt_vtle8  : ZvtTileLoadIntrinsic;
++  def int_riscv_zvt_vtle16 : ZvtTileLoadIntrinsic;
++  def int_riscv_zvt_vtle32 : ZvtTileLoadIntrinsic;
++  def int_riscv_zvt_vtle64 : ZvtTileLoadIntrinsic;
++
++  def int_riscv_zvt_vtse8  : ZvtTileStoreIntrinsic;
++  def int_riscv_zvt_vtse16 : ZvtTileStoreIntrinsic;
++  def int_riscv_zvt_vtse32 : ZvtTileStoreIntrinsic;
++  def int_riscv_zvt_vtse64 : ZvtTileStoreIntrinsic;
++
++  // Zvt Tile Zero/Discard
++  // vtzero takes a static tile register, so we use ImmArg.
++  // Input: (tile_num_imm)
++  def int_riscv_zvt_vtzero : DefaultAttrsIntrinsic<[], [llvm_anyint_ty],
++                                                   [ImmArg<ArgIndex<0>>, IntrNoMem, IntrHasSideEffects]>;
++  def int_riscv_zvt_vtdiscard : DefaultAttrsIntrinsic<[], [], [IntrNoMem, IntrHasSideEffects]>;
++
++  // Zvt Tile Moves
++  // vtmv.v.t and vtmv.t.v take tile index in a GPR.
++  // Output: (vector_out)
++  // Input: (tile_index_gpr)
++  def int_riscv_zvt_vtmv_v_t
++      : DefaultAttrsIntrinsic<[llvm_anyvector_ty], [llvm_anyint_ty],
++                              [IntrNoMem]>;
++
++  // Output: ()
++  // Input: (tile_index_gpr, vector_in)
++  def int_riscv_zvt_vtmv_t_v
++      : DefaultAttrsIntrinsic<[], [llvm_anyint_ty, llvm_anyvector_ty],
++                              [IntrNoMem, IntrHasSideEffects]>;
++
++  // Zvt Matrix Multiply Intrinsics
++  // Matmul takes a static tile register (TR class), so we use ImmArg.
++  // Output: ()
++  // Input: (tile_num_imm, vector_A, vector_B)
++  class ZvtMatMulIntrinsic
++      : DefaultAttrsIntrinsic<[], [llvm_anyint_ty, llvm_anyvector_ty, llvm_anyvector_ty],
++                              [ImmArg<ArgIndex<0>>, IntrNoMem, IntrHasSideEffects]>;
++
++  def int_riscv_zvt_vtmmu_tvv : ZvtMatMulIntrinsic;
++  def int_riscv_zvt_vtmms_tvv : ZvtMatMulIntrinsic;
++  def int_riscv_zvt_vtfmm_tvv : ZvtMatMulIntrinsic;
++  def int_riscv_zvt_vtfmm_alt_tvv : ZvtMatMulIntrinsic;
++
++} // TargetPrefix = "riscv"
+diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td b/llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td
+new file mode 100644
+index 0000000000..49f7254701
+--- /dev/null
++++ b/llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td
+@@ -0,0 +1,395 @@
++//===-- RISCVInstrInfoZvt.td - RISC-V Vector Matrix Extension -*- tablegen -*-=//
++//
++// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
++// See https://llvm.org/LICENSE.txt for license information.
++// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++//
++//===----------------------------------------------------------------------===//
++//
++// This file describes the instructions of the RISC-V Vector Matrix Extension
++// (VME), i.e. the Zvt family of extensions, as defined by the draft spec v0.3
++// (zvt-20260427). These instructions are not yet upstream; they are added here
++// so the CoralNPU toolchain can assemble VME programs without raw .insn/.word
++// directives.
++//
++// The matrix tile operand (mtd) reuses the XSfmmbase tile registers (mt0-mt15,
++// register class TR), whose assembly names already match the VME spec. The tile
++// number occupies instruction bits [11:8]; matrix-multiply instructions place an
++// "alternate format" bit at [7], matching sim/coralnpu_zvt.bin_fmt.
++//
++//===----------------------------------------------------------------------===//
++
++//===----------------------------------------------------------------------===//
++// Configuration instructions (OP-V major opcode, funct3 = OPCFG).
++//===----------------------------------------------------------------------===//
++
++let hasSideEffects = 1, mayLoad = 0, mayStore = 0 in {
++// msetmtype rs1, rs2: write mtype = rs1 and vtype = rs2 (vl is cleared).
++class ZvtMSetMType<string opcodestr>
++    : RVInst<(outs), (ins GPR:$rs1, GPR:$rs2), opcodestr, "$rs1, $rs2", [],
++             InstFormatI> {
++  bits<5> rs1;
++  bits<5> rs2;
++
++  let Inst{31-25} = 0b1000001;
++  let Inst{24-20} = rs2;
++  let Inst{19-15} = rs1;
++  let Inst{14-12} = OPCFG.Value;
++  let Inst{11-7} = 0b00000;
++  let Inst{6-0} = OPC_OP_V.Value;
++
++  let Defs = [VTYPE, VL];
++}
++
++// msettn/msettm/msettk rd, rs1: set tn/tm/tk, returning the value in rd.
++class ZvtMSetSingle<bits<5> rs2val, string opcodestr>
++    : RVInst<(outs GPR:$rd), (ins GPR:$rs1), opcodestr, "$rd, $rs1", [],
++             InstFormatI> {
++  bits<5> rs1;
++  bits<5> rd;
++
++  let Inst{31-25} = 0b1000010;
++  let Inst{24-20} = rs2val;
++  let Inst{19-15} = rs1;
++  let Inst{14-12} = OPCFG.Value;
++  let Inst{11-7} = rd;
++  let Inst{6-0} = OPC_OP_V.Value;
++
++  let Defs = [VTYPE, VL];
++}
++} // hasSideEffects = 1
++
++//===----------------------------------------------------------------------===//
++// Tile <-> vector-register moves and tile zero/discard (OP-V, funct3 = OPMVX).
++//===----------------------------------------------------------------------===//
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class ZvtTileMove<bits<6> funct6, dag outs, dag ins, string opcodestr,
++                  string argstr>
++    : RVInst<outs, ins, opcodestr, argstr, [], InstFormatR> {
++  bits<5> rs2;
++  bits<5> rs1;
++  bits<5> vd;
++
++  let Inst{31-26} = funct6;
++  let Inst{25} = 1;
++  let Inst{24-20} = rs2;
++  let Inst{19-15} = rs1;
++  let Inst{14-12} = OPMVX.Value;
++  let Inst{11-7} = vd;
++  let Inst{6-0} = OPC_OP_V.Value;
++
++  let Uses = [VTYPE, VL];
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class ZvtTileZero<string opcodestr>
++    : RVInst<(outs), (ins TR:$rd), opcodestr, "$rd", [], InstFormatR> {
++  bits<4> rd;
++
++  let Inst{31-26} = 0b010000;
++  let Inst{25} = 1;
++  let Inst{24-20} = 0b11110;
++  let Inst{19-15} = 0b00000;
++  let Inst{14-12} = OPMVX.Value;
++  let Inst{11-8} = rd;
++  let Inst{7} = 0;
++  let Inst{6-0} = OPC_OP_V.Value;
++
++  let Uses = [VTYPE, VL];
++}
++
++let hasSideEffects = 1, mayLoad = 0, mayStore = 0 in
++class ZvtTileDiscard<string opcodestr>
++    : RVInst<(outs), (ins), opcodestr, "", [], InstFormatR> {
++  let Inst{31-26} = 0b010000;
++  let Inst{25} = 1;
++  let Inst{24-20} = 0b11100;
++  let Inst{19-15} = 0b00000;
++  let Inst{14-12} = OPMVX.Value;
++  let Inst{11-7} = 0b00000;
++  let Inst{6-0} = OPC_OP_V.Value;
++}
++
++//===----------------------------------------------------------------------===//
++// Tile subset load/store to memory (LOAD-FP / STORE-FP, mew = 1, width = 111).
++// nf selects EEW: 000 -> 8, 001 -> 16, 010 -> 32, 011 -> 64.
++//===----------------------------------------------------------------------===//
++
++class ZvtTileMemOp<bits<3> nf, RISCVOpcode opcode, dag outs, dag ins,
++                   string opcodestr, string argstr>
++    : RVInst<outs, ins, opcodestr, argstr, [], InstFormatR> {
++  bits<5> rs2;
++  bits<5> rs1;
++
++  let Inst{31-29} = nf;
++  let Inst{28} = 1;                       // mew
++  let Inst{27-26} = MOPLDUnitStride.Value;
++  let Inst{25} = 1;                       // vm
++  let Inst{24-20} = rs2;
++  let Inst{19-15} = rs1;
++  let Inst{14-12} = 0b111;                // width
++  let Inst{11-7} = 0b00000;
++  let Inst{6-0} = opcode.Value;
++
++  let Uses = [VTYPE, VL];
++}
++
++let hasSideEffects = 0, mayLoad = 1, mayStore = 0 in
++class ZvtTileLoad<bits<3> nf, string opcodestr>
++    : ZvtTileMemOp<nf, OPC_LOAD_FP, (outs), (ins GPR:$rs2, GPRMemZeroOffset:$rs1),
++                   opcodestr, "$rs2, ${rs1}">;
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 1 in
++class ZvtTileStore<bits<3> nf, string opcodestr>
++    : ZvtTileMemOp<nf, OPC_STORE_FP, (outs), (ins GPR:$rs2, GPRMemZeroOffset:$rs1),
++                   opcodestr, "$rs2, ${rs1}">;
++
++//===----------------------------------------------------------------------===//
++// Matrix multiply C += A^T * B (OP-VE, funct6 = 111100). funct3 selects
++// integer (000) or floating-point (001); the alt bit (Inst[7]) selects the
++// alternate-datatype variant. The destination tile occupies Inst[11:8].
++//===----------------------------------------------------------------------===//
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class ZvtMatmul<bits<3> funct3, bit alt, RegisterClass vr_class, string opcodestr>
++    : RVInst<(outs), (ins TR:$rd, vr_class:$vs2, vr_class:$vs1), opcodestr,
++             "$rd, $vs2, $vs1", [], InstFormatR> {
++  bits<5> vs2;
++  bits<5> vs1;
++  bits<4> rd;
++
++  let Inst{31-26} = 0b111100;
++  let Inst{25} = 1;                 // vm
++  let Inst{24-20} = vs2;
++  let Inst{19-15} = vs1;
++  let Inst{14-12} = funct3;
++  let Inst{11-8} = rd;
++  let Inst{7} = alt;
++  let Inst{6-0} = OPC_OP_VE.Value;
++
++  let Uses = [VTYPE, VL];
++}
++
++//===----------------------------------------------------------------------===//
++// Instruction definitions.
++//===----------------------------------------------------------------------===//
++
++let DecoderNamespace = "Zvt" in {
++
++let Predicates = [HasStdExtZvtbase] in {
++  def MSETMTYPE : ZvtMSetMType<"msetmtype">;
++  def MSETTN    : ZvtMSetSingle<0b00000, "msettn">;
++  def MSETTM    : ZvtMSetSingle<0b00001, "msettm">;
++  def MSETTK    : ZvtMSetSingle<0b00010, "msettk">;
++
++  def VTMV_V_T : ZvtTileMove<0b010000, (outs VR:$vd), (ins GPR:$rs1),
++                             "vtmv.v.t", "$vd, $rs1"> {
++    let rs2 = 0b11111;
++  }
++  def VTMV_T_V : ZvtTileMove<0b010111, (outs), (ins GPR:$rs1, VR:$rs2),
++                             "vtmv.t.v", "$rs1, $rs2"> {
++    let vd = 0b00000;
++  }
++
++  def VTZERO    : ZvtTileZero<"vtzero">;
++  def VTDISCARD : ZvtTileDiscard<"vtdiscard">;
++
++  // TEW=32 loads/stores are part of the base extension.
++  def VTLE32 : ZvtTileLoad<0b010, "vtle32">;
++  def VTSE32 : ZvtTileStore<0b010, "vtse32">;
++} // Predicates = [HasStdExtZvtbase]
++
++let Predicates = [HasStdExtZvt8e] in {
++  def VTLE8 : ZvtTileLoad<0b000, "vtle8">;
++  def VTSE8 : ZvtTileStore<0b000, "vtse8">;
++}
++let Predicates = [HasStdExtZvt16e] in {
++  def VTLE16 : ZvtTileLoad<0b001, "vtle16">;
++  def VTSE16 : ZvtTileStore<0b001, "vtse16">;
++}
++let Predicates = [HasStdExtZvt64e] in {
++  def VTLE64 : ZvtTileLoad<0b011, "vtle64">;
++  def VTSE64 : ZvtTileStore<0b011, "vtse64">;
++}
++
++let Predicates = [HasStdExtZvti8i32mm] in {
++  def VTMMU_TVV : ZvtMatmul<0b000, 0, VR, "vtmmu.tvv">;
++  def VTMMS_TVV : ZvtMatmul<0b000, 1, VR, "vtmms.tvv">;
++}
++
++let Uses = [VTYPE, VL, FRM], mayRaiseFPException = true in {
++  let Predicates = [HasZvtAnyFMM] in
++    def VTFMM_TVV     : ZvtMatmul<0b001, 0, VR, "vtfmm.tvv">;
++  let Predicates = [HasZvtAltFMM] in
++    def VTFMM_ALT_TVV : ZvtMatmul<0b001, 1, VR, "vtfmm.alt.tvv">;
++}
++
++} // DecoderNamespace = "Zvt"
++
++//===----------------------------------------------------------------------===//
++// Pseudos and Patterns for Zvt
++//===----------------------------------------------------------------------===//
++
++class VPseudoZvt_TileLoad
++    : RISCVVPseudo<(outs), (ins GPR:$rs2, GPR:$rs1)> {
++  let mayLoad = 1;
++  let mayStore = 0;
++  let hasSideEffects = 1;
++  let Uses = [VTYPE, VL];
++}
++
++class VPseudoZvt_TileStore
++    : RISCVVPseudo<(outs), (ins GPR:$rs2, GPR:$rs1)> {
++  let mayLoad = 0;
++  let mayStore = 1;
++  let hasSideEffects = 1;
++  let Uses = [VTYPE, VL];
++}
++
++class VPseudoZvt_MatMul<RegisterClass mtd_class, RegisterClass vr_class>
++    : RISCVVPseudo<(outs), (ins mtd_class:$rd, vr_class:$vs2, vr_class:$vs1)> {
++  let mayLoad = 0;
++  let mayStore = 0;
++  let hasSideEffects = 1;
++  let Uses = [VTYPE, VL];
++}
++
++class VPseudoZvt_MatMul_FRM<RegisterClass mtd_class, RegisterClass vr_class>
++    : RISCVVPseudo<(outs), (ins mtd_class:$rd, vr_class:$vs2, vr_class:$vs1, vec_rm:$rm)> {
++  let mayLoad = 0;
++  let mayStore = 0;
++  let hasSideEffects = 1;
++  let Uses = [VTYPE, VL, FRM];
++  let HasRoundModeOp = 1;
++}
++
++class VPseudoZvt_TileMove_V_T<int sew>
++    : RISCVVPseudo<(outs VR:$vd), (ins GPR:$rs1)> {
++  let mayLoad = 0;
++  let mayStore = 0;
++  let hasSideEffects = 1;
++  let Uses = [VTYPE, VL];
++  let SEW = sew;
++}
++
++class VPseudoZvt_TileMove_T_V<int sew>
++    : RISCVVPseudo<(outs), (ins GPR:$rs1, VR:$rs2)> {
++  let mayLoad = 0;
++  let mayStore = 0;
++  let hasSideEffects = 1;
++  let Uses = [VTYPE, VL];
++  let SEW = sew;
++}
++
++class VPseudoZvt_TileZero
++    : RISCVVPseudo<(outs), (ins TR:$rd)> {
++  let mayLoad = 0;
++  let mayStore = 0;
++  let hasSideEffects = 1;
++  let Uses = [VTYPE, VL];
++}
++
++let Predicates = [HasStdExtZvtbase] in {
++  def PseudoVTLE32 : VPseudoZvt_TileLoad;
++  def PseudoVTSE32 : VPseudoZvt_TileStore;
++  def PseudoVTMV_V_T_E8  : VPseudoZvt_TileMove_V_T<8>;
++  def PseudoVTMV_V_T_E16 : VPseudoZvt_TileMove_V_T<16>;
++  def PseudoVTMV_V_T_E32 : VPseudoZvt_TileMove_V_T<32>;
++  def PseudoVTMV_V_T_E64 : VPseudoZvt_TileMove_V_T<64>;
++
++  def PseudoVTMV_T_V_E8  : VPseudoZvt_TileMove_T_V<8>;
++  def PseudoVTMV_T_V_E16 : VPseudoZvt_TileMove_T_V<16>;
++  def PseudoVTMV_T_V_E32 : VPseudoZvt_TileMove_T_V<32>;
++  def PseudoVTMV_T_V_E64 : VPseudoZvt_TileMove_T_V<64>;
++
++  def PseudoVTZERO   : VPseudoZvt_TileZero;
++  def PseudoVTDISCARD : RISCVVPseudo<(outs), (ins)> {
++    let hasSideEffects = 1;
++  }
++}
++
++let Predicates = [HasStdExtZvt8e] in {
++  def PseudoVTLE8 : VPseudoZvt_TileLoad;
++  def PseudoVTSE8 : VPseudoZvt_TileStore;
++}
++let Predicates = [HasStdExtZvt16e] in {
++  def PseudoVTLE16 : VPseudoZvt_TileLoad;
++  def PseudoVTSE16 : VPseudoZvt_TileStore;
++}
++let Predicates = [HasStdExtZvt64e] in {
++  def PseudoVTLE64 : VPseudoZvt_TileLoad;
++  def PseudoVTSE64 : VPseudoZvt_TileStore;
++}
++
++let Predicates = [HasStdExtZvti8i32mm] in {
++  def PseudoVTMMU_TVV : VPseudoZvt_MatMul<TR, VR>;
++  def PseudoVTMMS_TVV : VPseudoZvt_MatMul<TR, VR>;
++}
++
++let Predicates = [HasZvtAnyFMM] in {
++  def PseudoVTFMM_F32_TVV : VPseudoZvt_MatMul_FRM<TR, VRM4>;
++  def PseudoVTFMM_F16_TVV : VPseudoZvt_MatMul_FRM<TR, VRM2>;
++}
++let Predicates = [HasZvtAltFMM] in {
++  def PseudoVTFMM_ALT_TVV : VPseudoZvt_MatMul_FRM<TR, VRM4> {
++    let BaseInstr = VTFMM_ALT_TVV;
++  }
++}
++
++// Patterns
++class PatZvtTileLoad<Intrinsic intr, Instruction pseudo>
++    : Pat<(intr (XLenVT GPR:$rs2), (XLenVT GPR:$rs1)),
++          (pseudo (XLenVT GPR:$rs2), (XLenVT GPR:$rs1))>;
++
++class PatZvtTileStore<Intrinsic intr, Instruction pseudo>
++    : Pat<(intr (XLenVT GPR:$rs2), (XLenVT GPR:$rs1)),
++          (pseudo (XLenVT GPR:$rs2), (XLenVT GPR:$rs1))>;
++
++let Predicates = [HasStdExtZvtbase] in {
++  def : PatZvtTileLoad<int_riscv_zvt_vtle32, PseudoVTLE32>;
++  def : PatZvtTileStore<int_riscv_zvt_vtse32, PseudoVTSE32>;
++
++  def : Pat<(int_riscv_zvt_vtdiscard), (PseudoVTDISCARD)>;
++}
++
++let Predicates = [HasStdExtZvt8e] in {
++  def : PatZvtTileLoad<int_riscv_zvt_vtle8, PseudoVTLE8>;
++  def : PatZvtTileStore<int_riscv_zvt_vtse8, PseudoVTSE8>;
++}
++let Predicates = [HasStdExtZvt16e] in {
++  def : PatZvtTileLoad<int_riscv_zvt_vtle16, PseudoVTLE16>;
++  def : PatZvtTileStore<int_riscv_zvt_vtse16, PseudoVTSE16>;
++}
++let Predicates = [HasStdExtZvt64e] in {
++  def : PatZvtTileLoad<int_riscv_zvt_vtle64, PseudoVTLE64>;
++  def : PatZvtTileStore<int_riscv_zvt_vtse64, PseudoVTSE64>;
++}
++
++class PatZvtMSetSingle<Intrinsic intr, Instruction inst>
++    : Pat<(XLenVT (intr (XLenVT GPR:$rs1))),
++          (inst GPR:$rs1)>;
++
++let Predicates = [HasStdExtZvtbase] in {
++  def : PatZvtMSetSingle<int_riscv_zvt_msettn, MSETTN>;
++  def : PatZvtMSetSingle<int_riscv_zvt_msettm, MSETTM>;
++  def : PatZvtMSetSingle<int_riscv_zvt_msettk, MSETTK>;
++
++  def : Pat<(int_riscv_zvt_msetmtype (XLenVT GPR:$rs1), (XLenVT GPR:$rs2)),
++            (MSETMTYPE GPR:$rs1, GPR:$rs2)>;
++}
++
++class PatZvtTileMove_V_T<Intrinsic intr, Instruction pseudo, ValueType val_ty>
++    : Pat<(val_ty (intr (XLenVT GPR:$rs1))),
++          (pseudo (XLenVT GPR:$rs1))>;
++
++class PatZvtTileMove_T_V<Intrinsic intr, Instruction pseudo, ValueType val_ty>
++    : Pat<(intr (XLenVT GPR:$rs1), (val_ty VR:$rs2)),
++          (pseudo (XLenVT GPR:$rs1), (val_ty VR:$rs2))>;
++
++let Predicates = [HasStdExtZvtbase] in {
++  foreach vti = [VI8M1, VI16M1, VI32M1, VI64M1, VF16M1, VF32M1, VF64M1, VBF16M1] in {
++    def : PatZvtTileMove_V_T<int_riscv_zvt_vtmv_v_t, !cast<Instruction>("PseudoVTMV_V_T_E" # vti.SEW), vti.Vector>;
++    def : PatZvtTileMove_T_V<int_riscv_zvt_vtmv_t_v, !cast<Instruction>("PseudoVTMV_T_V_E" # vti.SEW), vti.Vector>;
++  }
++}
+-- 
+2.55.0.1082.g2b9226bbc0-goog

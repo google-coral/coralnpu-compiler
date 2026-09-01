@@ -52,6 +52,7 @@ iree_cc_library(
     iree::compiler::plugins::target::LLVMCPU::LinkerTool
     iree::compiler::plugins::target::LLVMCPU::StaticLibraryGenerator
     iree::compiler::plugins::target::LLVMCPU::Builtins
+    iree::compiler::Codegen::Common
     iree::compiler::Codegen::Dialect::CPU::IR::IREECPUDialect
     iree::compiler::Codegen::Dialect::Codegen::IR::IREECodegenDialect
     iree::compiler::Codegen::Dialect::VectorExt::IR::IREEVectorExtDialect

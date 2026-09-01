@@ -43,7 +43,7 @@ cc_library(
     name = "simulator_verilator",
     deps = [
         "@coralnpu_hw//hw_sim:coralnpu_simulator_headers",
-        "@coralnpu_hw//hw_sim:core_mini_axi_simulator_rvv",
+        "@coralnpu_hw//hw_sim:core_mini_axi_simulator_vme",
     ],
 )
 

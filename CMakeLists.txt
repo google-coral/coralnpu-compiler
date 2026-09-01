@@ -140,4 +140,8 @@ ExternalProject_Add(
 )
 
 add_subdirectory(pjrt_plugin)
+if(TARGET coralnpu_compiler_Target_CoralNPUTarget)
+  add_dependencies(coralnpu_compiler_Target_CoralNPUTarget coralnpu_crt_project)
+endif()
+
 add_subdirectory(tests)

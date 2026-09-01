@@ -36,6 +36,7 @@ cc_library(
         "CoralNPUAffinityAnnotation.cpp",
         "CoralNPUDumpAffinityExecutionProfile.cpp",
         "CoralNPULimitLoopUnrolling.cpp",
+        "CoralNPUMatrixCodegen.cpp",
         "CoralNPUTileSizeSelectionAnalysis.cpp",
         "CoralNPUTileSizeSelectionDTCM.cpp",
         "CoralNPUTileSizeSelectionRegister.cpp",
@@ -80,6 +81,8 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TensorDialect",
         "@llvm-project//mlir:TilingInterface",
+        "@llvm-project//mlir:TransformUtils",
         "@llvm-project//mlir:VectorDialect",
+        "@llvm-project//mlir:VectorTransforms",
     ],
 )

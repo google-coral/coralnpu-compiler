@@ -110,11 +110,11 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
     # ------------------------------------------------------------------------------
     # Verilator Simulator
     # ------------------------------------------------------------------------------
-    set(CORALNPU_VERILATOR_SIMULATOR_LIB "" CACHE FILEPATH "Path to libcoralnpu_simulator_rvv.so for verilator")
+    set(CORALNPU_VERILATOR_SIMULATOR_LIB "" CACHE FILEPATH "Path to libcoralnpu_simulator_vme.so for verilator")
     if(NOT CORALNPU_VERILATOR_SIMULATOR_LIB OR NOT EXISTS "${CORALNPU_VERILATOR_SIMULATOR_LIB}")
       set(VERILATOR_CANDIDATES
-        "${CMAKE_SOURCE_DIR}/bazel-bin/external/coralnpu_hw+/hw_sim/libcoralnpu_simulator_rvv.so"
-        "${CMAKE_SOURCE_DIR}/bazel-bin/external/coralnpu_hw/hw_sim/libcoralnpu_simulator_rvv.so"
+        "${CMAKE_SOURCE_DIR}/bazel-bin/external/coralnpu_hw+/hw_sim/libcoralnpu_simulator_vme.so"
+        "${CMAKE_SOURCE_DIR}/bazel-bin/external/coralnpu_hw/hw_sim/libcoralnpu_simulator_vme.so"
       )
       set(FOUND_VERILATOR_SO "")
       foreach(CANDIDATE IN LISTS VERILATOR_CANDIDATES)
@@ -125,9 +125,9 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
       endforeach()
 
       if(NOT FOUND_VERILATOR_SO)
-        message(STATUS "[CoralNPU Runtime] Verilator simulator library not found. Building with Bazel (@coralnpu_hw//hw_sim:libcoralnpu_simulator_rvv.so)...")
+        message(STATUS "[CoralNPU Runtime] Verilator simulator library not found. Building with Bazel (@coralnpu_hw//hw_sim:libcoralnpu_simulator_vme.so)...")
         execute_process(
-          COMMAND sh -c "cd ${CMAKE_SOURCE_DIR} && export PWD=${CMAKE_SOURCE_DIR} && USE_BAZEL_VERSION=8.6.0 bazel build --config=dev @coralnpu_hw//hw_sim:libcoralnpu_simulator_rvv.so"
+          COMMAND sh -c "cd ${CMAKE_SOURCE_DIR} && export PWD=${CMAKE_SOURCE_DIR} && USE_BAZEL_VERSION=8.6.0 bazel build --config=dev @coralnpu_hw//hw_sim:libcoralnpu_simulator_vme.so"
           RESULT_VARIABLE BAZEL_BUILD_RES
         )
         if(NOT BAZEL_BUILD_RES EQUAL 0)
@@ -142,7 +142,7 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
         endforeach()
 
         if(NOT FOUND_VERILATOR_SO)
-          file(GLOB GLOBBED_VERILATOR_SO "${CMAKE_SOURCE_DIR}/bazel-bin/external/*coralnpu_hw*/hw_sim/libcoralnpu_simulator_rvv.so")
+          file(GLOB GLOBBED_VERILATOR_SO "${CMAKE_SOURCE_DIR}/bazel-bin/external/*coralnpu_hw*/hw_sim/libcoralnpu_simulator_vme.so")
           if(GLOBBED_VERILATOR_SO)
             list(GET GLOBBED_VERILATOR_SO 0 FOUND_VERILATOR_SO)
           endif()
@@ -150,15 +150,15 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
       endif()
 
       if(NOT FOUND_VERILATOR_SO OR NOT EXISTS "${FOUND_VERILATOR_SO}")
-        message(FATAL_ERROR "[CoralNPU Runtime] Verilator simulator library was built, but could not locate libcoralnpu_simulator_rvv.so in bazel-bin.")
+        message(FATAL_ERROR "[CoralNPU Runtime] Verilator simulator library was built, but could not locate libcoralnpu_simulator_vme.so in bazel-bin.")
       endif()
 
       set(CORALNPU_VERILATOR_SIMULATOR_LIB "${FOUND_VERILATOR_SO}")
     endif()
 
-    set(VERILATOR_CMAKE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcoralnpu_simulator_rvv.so")
+    set(VERILATOR_CMAKE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcoralnpu_simulator_vme.so")
     configure_file("${CORALNPU_VERILATOR_SIMULATOR_LIB}" "${VERILATOR_CMAKE_LIB}" COPYONLY)
-    configure_file("${CORALNPU_VERILATOR_SIMULATOR_LIB}" "${CMAKE_BINARY_DIR}/runtime/sim/libcoralnpu_simulator_rvv.so" COPYONLY)
+    configure_file("${CORALNPU_VERILATOR_SIMULATOR_LIB}" "${CMAKE_BINARY_DIR}/runtime/sim/libcoralnpu_simulator_vme.so" COPYONLY)
 
     iree_cc_library(
       NAME

@@ -131,5 +131,20 @@ def CoralNPULimitLoopUnrolling : Pass<"coralnpu-limit-loop-unrolling", "mlir::fu
   ];
 }
 
+def CoralNPUMatrixCodegen : InterfacePass<"coralnpu-matrix-codegen", "mlir::FunctionOpInterface"> {
+  let summary = "Lowers vector contractions directly to Zvt Matrix instructions and inline assembly";
+  let description = [{
+    This pass lowers vector.contract operations to Zvt Matrix instructions
+    and optimized inline assembly microkernels on supported hardware.
+  }];
+  let constructor = "::mlir::coralnpu_compiler::createCoralNPUMatrixCodegenPass()";
+  // affine: the trailing vector transfer lowering can emit affine.apply.
+  let dependentDialects = [
+    "::mlir::affine::AffineDialect", "::mlir::arith::ArithDialect",
+    "::mlir::LLVM::LLVMDialect", "::mlir::memref::MemRefDialect",
+    "::mlir::vector::VectorDialect"
+  ];
+}
+
 #endif // IREE_CORALNPU_PASSES
 

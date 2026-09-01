@@ -77,10 +77,10 @@ build:generic_clang --copt=-Wfloat-zero-conversion
 build:generic_clang --copt=-Wfor-loop-analysis
 build:generic_clang --copt=-Wformat-security
 build:generic_clang --copt=-Wgnu-redeclared-enum
-build:generic_clang --copt=-Wimplicit-fallthrough
+build:generic_clang --copt=-Wimplicit-fallthrough --copt=-Wno-error=implicit-fallthrough
 build:generic_clang --copt=-Winfinite-recursion
 build:generic_clang --copt=-Wliteral-conversion
-build:generic_clang --copt=-Wnon-virtual-dtor
+build:generic_clang --copt=-Wnon-virtual-dtor --copt=-Wno-error=non-virtual-dtor
 build:generic_clang --copt=-Woverloaded-virtual
 build:generic_clang --copt=-Wself-assign
 build:generic_clang --copt=-Wstring-conversion

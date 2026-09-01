@@ -541,6 +541,17 @@ void setMatmulVectorSizes(
     IREE::Codegen::DispatchLoweringPassPipeline &pipeline) {
   pipeline = IREE::Codegen::DispatchLoweringPassPipeline::CPUDoubleTilingExpert;
 
+  if (isZvtMatrixContraction(op.getOperation())) {
+    const auto &loops = analysis.parallelLoops;
+    int64_t nDim = analysis.staticLoopRanges[loops[0]];
+    int64_t mDim = analysis.staticLoopRanges[loops[1]];
+    int64_t nTile = (nDim >= 32 && nDim % 32 == 0) ? 32 : 16;
+    int64_t mTile = (nTile == 32 && mDim >= 32 && mDim % 32 == 0) ? 32 : 16;
+    vectorParallelSizes[loops[0]] = nTile;
+    vectorParallelSizes[loops[1]] = mTile;
+    return;
+  }
+
   bool isMixedPrecision = false;
   if (op.getNumDpsInputs() >= 2 && op.getNumDpsInits() >= 1) {
     Type inType = op.getDpsInputOperand(0)->get().getType();
@@ -620,6 +631,13 @@ void setMmt4DVectorSizes(
     MutableArrayRef<int64_t> vectorParallelSizes,
     IREE::Codegen::DispatchLoweringPassPipeline &pipeline) {
   pipeline = IREE::Codegen::DispatchLoweringPassPipeline::CPUDoubleTilingExpert;
+  if (isZvtMatrixContraction(op.getOperation())) {
+    const auto &loops = analysis.parallelLoops;
+    if (loops.size() >= 2) {
+      vectorParallelSizes[loops[0]] = 16;
+      vectorParallelSizes[loops[1]] = 16;
+    }
+  }
 }
 
 void setElementwiseArithBinaryVectorSizes(
@@ -1682,8 +1700,19 @@ struct CoralNPUTileSizeSelectionRegisterPass
     auto loweringConfig =
         IREE::CPU::LoweringConfigAttr::get(context, configItems);
 
-    auto translationInfo =
-        IREE::Codegen::TranslationInfoAttr::get(context, pipeline);
+    DictionaryAttr pipelineConfig = nullptr;
+    if (tilingOp && isZvtMatrixContraction(tilingOp.getOperation())) {
+      // Peel so a dimension that is not a multiple of the DTCM tile size
+      // (e.g. 96 tiled by 64) yields a static remainder subview instead of a
+      // masked affine.min slice, which cannot lower to fixed 16x16 Zvt ops.
+      Builder b(context);
+      pipelineConfig = b.getDictionaryAttr({b.getNamedAttr(
+          iree_compiler::getEnableLoopPeelingStr(), b.getBoolAttr(true))});
+    }
+
+    auto translationInfo = IREE::Codegen::TranslationInfoAttr::get(
+        context, pipeline, /*workgroupSize=*/{},
+        /*subgroupSize=*/std::nullopt, pipelineConfig);
 
     auto compilationInfo = IREE::Codegen::CompilationInfoAttr::get(
         context, loweringConfig, translationInfo);

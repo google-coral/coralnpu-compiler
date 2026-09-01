@@ -1,0 +1,876 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lun Dong <lundong@google.com>
+Date: Tue, 1 Sep 2026 00:00:00 -0700
+Subject: [PATCH] [sim] Add CoralNPU M4 decoder and Zvt matrix state to MPACT
+ simulator
+
+Add coralnpu_m4 ISA/decoder definitions, register Zvt matrix tile state, and
+wire Zvt instruction semantics into the CoralNPU MPACT simulator.
+---
+diff --git a/sim/coralnpu_m4.bin_fmt b/sim/coralnpu_m4.bin_fmt
+new file mode 100644
+index 0000000..0a48504
+--- /dev/null
++++ b/sim/coralnpu_m4.bin_fmt
+@@ -0,0 +1,57 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++#include "coralnpu_m3.bin_fmt"
++#include "riscv_zvt.bin_fmt"
++
++// TODO(b/448154052): Kelvin V2 sim should reuse mpact-riscv isa and bin_fmt files
++// Matrix-multiply format (OP-VE). Same field layout as VArith but the rd field
++// carries the destination tile (MSBs) and an "alt format" bit (LSB).
++format VMatrix[32] : Inst32Format {
++  fields:
++    unsigned func6[6];
++    unsigned vm[1];
++    unsigned vs2[5];
++    unsigned vs1[5];
++    unsigned func3[3];
++    unsigned mtd[5];
++    unsigned opcode[7];
++  overlays:
++    unsigned alt[1] = mtd[0];
++    // Named tile index (mt0..mt15): rd[11:8], i.e. mtd[4..1].
++    unsigned mtile[4] = mtd[4..1];
++};
++
++decoder CoralNPUM4 {
++  namespace coralnpu::sim::encoding_m4;
++  opcode_enum = "::coralnpu::sim::isa32_m4::OpcodeEnum";
++  includes {
++    #include "sim/coralnpu_m4_decoder.h"
++  }
++  CoralNPUM4Inst32 = {
++    RiscVIInst32,
++    RiscVZicsrInst32,
++    RiscVZifenceiInst32,
++    RiscVMInst32,
++    RiscVFInst32,
++    RiscVZve32xInst32,
++    RiscVZve32fInst32,
++    RiscVZbbInst32,
++    RiscVZbbInst32Only,
++    RiscVZbbImmInst32,
++    RiscVPrivInst32,
++    CoralNPUV2CustomInst32,
++    RiscVZvtInst32,
++  };
++};
+diff --git a/sim/coralnpu_m4.isa b/sim/coralnpu_m4.isa
+new file mode 100644
+index 0000000..a89c27d
+--- /dev/null
++++ b/sim/coralnpu_m4.isa
+@@ -0,0 +1,43 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++isa CoralNPUM4 {
++  namespace coralnpu::sim::isa32_m4;
++  slots { coralnpu_m4; }
++}
++
++#include "coralnpu_m3.isa"
++#include "riscv_zvt.isa"
++
++slot coralnpu_m4 : riscv_zvt, coralnpu_m3 {
++  includes {
++    #include "sim/coralnpu_m4_instructions.h"
++  }
++  default size = 4;
++  default latency = global_latency;
++  default opcode =
++    disasm: "Illegal instruction at %(@:08x)",
++    semfunc: "&::mpact::sim::riscv::RiscVIUnimplemented";
++
++  opcodes {
++    vtle8 = override, semfunc: "absl::bind_front(&::mpact::sim::riscv::CoralNPUM4Vtle, 8)";
++    vtle16 = override, semfunc: "absl::bind_front(&::mpact::sim::riscv::CoralNPUM4Vtle, 16)";
++    vtle32 = override, semfunc: "absl::bind_front(&::mpact::sim::riscv::CoralNPUM4Vtle, 32)";
++    vtle64 = override, semfunc: "absl::bind_front(&::mpact::sim::riscv::CoralNPUM4Vtle, 64)";
++    vtse8 = override, semfunc: "absl::bind_front(&::mpact::sim::riscv::CoralNPUM4Vtse, 8)";
++    vtse16 = override, semfunc: "absl::bind_front(&::mpact::sim::riscv::CoralNPUM4Vtse, 16)";
++    vtse32 = override, semfunc: "absl::bind_front(&::mpact::sim::riscv::CoralNPUM4Vtse, 32)";
++    vtse64 = override, semfunc: "absl::bind_front(&::mpact::sim::riscv::CoralNPUM4Vtse, 64)";
++  }
++}
+diff --git a/sim/coralnpu_m4_encoding.cc b/sim/coralnpu_m4_encoding.cc
+new file mode 100644
+index 0000000..af984e6
+--- /dev/null
++++ b/sim/coralnpu_m4_encoding.cc
+@@ -0,0 +1,29 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++#include "sim/coralnpu_m4_encoding.h"
++
++#include <cstdint>
++
++#include "sim/coralnpu_m4_bin_decoder.h"
++#include "sim/coralnpu_v2_encoding_template.h"
++
++namespace coralnpu::sim {
++
++void CoralNPUM4Encoding::ParseInstruction(uint32_t inst_word) {
++  CoralNPUV2EncodingTemplate::ParseInstruction(
++      inst_word, ::coralnpu::sim::encoding_m4::DecodeCoralNPUM4Inst32);
++}
++
++}  // namespace coralnpu::sim
+diff --git a/sim/coralnpu_m4_encoding.h b/sim/coralnpu_m4_encoding.h
+new file mode 100644
+index 0000000..63892a4
+--- /dev/null
++++ b/sim/coralnpu_m4_encoding.h
+@@ -0,0 +1,71 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// This file defines the CoralNPUM4Encoding class, which implements the
++// instruction parser for the CoralNPU M4 architecture. It extends the
++// V2 encoding with M4-specific operand getters.
++
++#ifndef LEARNING_BRAIN_RESEARCH_KELVIN_SIM_CORALNPU_M4_ENCODING_H_
++#define LEARNING_BRAIN_RESEARCH_KELVIN_SIM_CORALNPU_M4_ENCODING_H_
++
++#include <cstdint>
++
++#include "sim/coralnpu_m4_bin_decoder.h"
++#include "sim/coralnpu_m4_decoder.h"
++#include "sim/coralnpu_m4_enums.h"
++#include "sim/coralnpu_v2_encoding_template.h"
++#include "sim/coralnpu_v2_state.h"
++#include "riscv/riscv_zvt_getters.h"
++
++namespace coralnpu::sim {
++
++// The encoding parser for the CoralNPU M4 architecture. This class parses
++// 32-bit instruction words into their constituent fields and identifies the
++// opcode, configuring the M4-specific source and destination operand getters
++// (such as the matrix tile and vector group operands for the Zvt extension).
++class CoralNPUM4Encoding
++    : public CoralNPUV2EncodingTemplate<
++          ::coralnpu::sim::isa32_m4::CoralNPUM4EncodingBase,
++          ::coralnpu::sim::isa32_m4::OpcodeEnum,
++          ::coralnpu::sim::isa32_m4::SlotEnum,
++          ::coralnpu::sim::isa32_m4::SourceOpEnum,
++          ::coralnpu::sim::isa32_m4::DestOpEnum,
++          ::coralnpu::sim::encoding_m4::Extractors> {
++ public:
++  using Base = CoralNPUV2EncodingTemplate<
++      ::coralnpu::sim::isa32_m4::CoralNPUM4EncodingBase,
++      ::coralnpu::sim::isa32_m4::OpcodeEnum,
++      ::coralnpu::sim::isa32_m4::SlotEnum,
++      ::coralnpu::sim::isa32_m4::SourceOpEnum,
++      ::coralnpu::sim::isa32_m4::DestOpEnum,
++      ::coralnpu::sim::encoding_m4::Extractors>;
++
++  explicit CoralNPUM4Encoding(CoralNPUV2State* state) : Base(state) {
++    // Add the M4-specific operand getters on top of the inherited V2 getters.
++    ::mpact::sim::riscv::AddRiscVZvtSourceGetters<
++        ::coralnpu::sim::isa32_m4::SourceOpEnum,
++        ::coralnpu::sim::encoding_m4::Extractors>(this->source_op_getters_,
++                                                  this);
++    ::mpact::sim::riscv::AddRiscVZvtDestGetters<
++        ::coralnpu::sim::isa32_m4::DestOpEnum,
++        ::coralnpu::sim::encoding_m4::Extractors>(this->dest_op_getters_, this);
++  }
++
++  // Parses an instruction and determines the opcode.
++  void ParseInstruction(uint32_t inst_word);
++};
++
++}  // namespace coralnpu::sim
++
++#endif  // LEARNING_BRAIN_RESEARCH_KELVIN_SIM_CORALNPU_M4_ENCODING_H_
+diff --git a/sim/coralnpu_m4_instructions.cc b/sim/coralnpu_m4_instructions.cc
+new file mode 100644
+index 0000000..afa5254
+--- /dev/null
++++ b/sim/coralnpu_m4_instructions.cc
+@@ -0,0 +1,92 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++#include "sim/coralnpu_m4_instructions.h"
++
++#include <algorithm>
++#include <cstdint>
++
++#include "sim/coralnpu_v2_state.h"
++#include "absl/log/check.h"
++#include "riscv/riscv_state.h"
++#include "riscv/riscv_vector_state.h"
++#include "riscv/riscv_zvt_instructions.h"
++#include "riscv/riscv_zvt_state.h"
++#include "mpact/sim/generic/instruction.h"
++#include "mpact/sim/generic/type_helpers.h"
++
++namespace mpact::sim::riscv {
++
++using ::mpact::sim::generic::operator*;  // NOLINT
++
++namespace {
++
++int TileSubsetCount(::mpact::sim::riscv::RiscVZvtMatrixState* matrix_state,
++                    ::mpact::sim::riscv::RiscVVectorState* vector_state,
++                    int tile_element_width) {
++  const int kEffectiveTileElements = tile_element_width < 64
++                                         ? matrix_state->tile_elements()
++                                         : matrix_state->tile_elements() / 2;
++  return std::min(vector_state->vector_length(), kEffectiveTileElements);
++}
++
++}  // namespace
++
++void CoralNPUM4Vtle(int eew_bits,
++                    const ::mpact::sim::generic::Instruction* inst) {
++  auto m_result = ::mpact::sim::riscv::GetMatrixState(inst);
++  CHECK(m_result.ok()) << m_result.status();
++  auto* matrix_state = *m_result;
++  auto* state = static_cast<::coralnpu::sim::CoralNPUV2State*>(
++      matrix_state->riscv_state());
++  auto* vector_state = state->rv_vector();
++  const uint64_t kBase =
++      ::mpact::sim::generic::GetInstructionSource<uint64_t>(inst, 0);
++  const int kElementSize = eew_bits / 8;
++  const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
++  if (!state->HasPermission(kBase, kCount * kElementSize,
++                            ::coralnpu::sim::MemoryPermission::kRead)) {
++    state->Trap(/*is_interrupt=*/false, kBase,
++                *::mpact::sim::riscv::ExceptionCode::kLoadAccessFault,
++                inst->address(), inst);
++    return;
++  }
++
++  ::mpact::sim::riscv::RiscVZvtVtle(eew_bits, inst);
++}
++
++void CoralNPUM4Vtse(int eew_bits,
++                    const ::mpact::sim::generic::Instruction* inst) {
++  auto m_result = ::mpact::sim::riscv::GetMatrixState(inst);
++  CHECK(m_result.ok()) << m_result.status();
++  auto* matrix_state = *m_result;
++  auto* state = static_cast<::coralnpu::sim::CoralNPUV2State*>(
++      matrix_state->riscv_state());
++  auto* vector_state = state->rv_vector();
++  const uint64_t kBase =
++      ::mpact::sim::generic::GetInstructionSource<uint64_t>(inst, 0);
++  const int kElementSize = eew_bits / 8;
++  const int kCount = TileSubsetCount(matrix_state, vector_state, eew_bits);
++  if (!state->HasPermission(kBase, kCount * kElementSize,
++                            ::coralnpu::sim::MemoryPermission::kWrite)) {
++    state->Trap(/*is_interrupt=*/false, kBase,
++                *::mpact::sim::riscv::ExceptionCode::kStoreAccessFault,
++                inst->address(), inst);
++    return;
++  }
++
++  ::mpact::sim::riscv::RiscVZvtVtse(eew_bits, inst);
++}
++
++}  // namespace mpact::sim::riscv
+diff --git a/sim/coralnpu_m4_instructions.h b/sim/coralnpu_m4_instructions.h
+new file mode 100644
+index 0000000..dc57eea
+--- /dev/null
++++ b/sim/coralnpu_m4_instructions.h
+@@ -0,0 +1,39 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// This file declares the simulation semantic functions for the
++// CoralNPU M4-specific custom instructions. These instructions interact
++// with the Zvt matrix extension state, including memory-to-tile load
++// and store operations with statically encoded element widths.
++
++#ifndef LEARNING_BRAIN_RESEARCH_KELVIN_SIM_CORALNPU_M4_INSTRUCTIONS_H_
++#define LEARNING_BRAIN_RESEARCH_KELVIN_SIM_CORALNPU_M4_INSTRUCTIONS_H_
++
++#include "mpact/sim/generic/instruction.h"
++
++namespace mpact::sim::riscv {
++
++// Loads a tile row or column subset from memory.
++// The effective element width (EEW) in bits is specified by `eew_bits`.
++void CoralNPUM4Vtle(int eew_bits,
++                    const ::mpact::sim::generic::Instruction* inst);
++
++// Stores a tile row or column subset to memory.
++// The effective element width (EEW) in bits is specified by `eew_bits`.
++void CoralNPUM4Vtse(int eew_bits,
++                    const ::mpact::sim::generic::Instruction* inst);
++
++}  // namespace mpact::sim::riscv
++
++#endif  // LEARNING_BRAIN_RESEARCH_KELVIN_SIM_CORALNPU_M4_INSTRUCTIONS_H_
+diff --git a/sim/coralnpu_m4_user_decoder.cc b/sim/coralnpu_m4_user_decoder.cc
+new file mode 100644
+index 0000000..fff39d3
+--- /dev/null
++++ b/sim/coralnpu_m4_user_decoder.cc
+@@ -0,0 +1,86 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++#include "sim/coralnpu_m4_user_decoder.h"
++
++#include <cstdint>
++#include <memory>
++
++#include "sim/coralnpu_m4_decoder.h"
++#include "sim/coralnpu_m4_encoding.h"
++#include "sim/coralnpu_m4_enums.h"
++#include "sim/coralnpu_v2_state.h"
++#include "absl/base/nullability.h"
++#include "riscv/riscv_state.h"
++#include "mpact/sim/generic/instruction.h"
++#include "mpact/sim/generic/program_error.h"
++#include "mpact/sim/util/memory/memory_interface.h"
++
++namespace coralnpu::sim {
++using ::coralnpu::sim::CoralNPUM4Encoding;
++using ::coralnpu::sim::CoralNPUV2State;
++using ::coralnpu::sim::isa32_m4::CoralNPUM4InstructionSet;
++using ::mpact::sim::generic::Instruction;
++using ::mpact::sim::generic::ProgramErrorController;
++using ::mpact::sim::generic::operator*;  // NOLINT
++using ::coralnpu::sim::isa32_m4::kOpcodeNames;
++using ::coralnpu::sim::isa32_m4::OpcodeEnum;
++using ::mpact::sim::riscv::ExceptionCode;
++using ::mpact::sim::util::MemoryInterface;
++
++CoralNPUM4UserDecoder::CoralNPUM4UserDecoder(
++    CoralNPUV2State* absl_nonnull state, MemoryInterface* absl_nonnull memory)
++    : state_(state) {
++  // Allocate the isa factory class, the top level isa decoder instance, and
++  // the encoding parser.
++  coralnpu_m4_isa_factory_ = std::make_unique<CoralNPUM4IsaFactory>();
++  coralnpu_m4_isa_ = std::make_unique<CoralNPUM4InstructionSet>(
++      state, coralnpu_m4_isa_factory_.get());
++  coralnpu_m4_encoding_ = std::make_unique<CoralNPUM4Encoding>(state);
++  decode_error_ = state->program_error_controller()->GetProgramError(
++      ProgramErrorController::kInternalErrorName);
++  decoder_ = std::make_unique<RiscVGenericDecoder>(
++      state, memory, coralnpu_m4_encoding_.get(), coralnpu_m4_isa_.get());
++}
++
++CoralNPUM4UserDecoder::~CoralNPUM4UserDecoder() = default;
++
++Instruction* CoralNPUM4UserDecoder::DecodeInstruction(uint64_t address) {
++  if (!state_->HasPermission(static_cast<uint32_t>(address), 4,
++                             MemoryPermission::kExecute)) {
++    Instruction* inst = new Instruction(0, state_);
++    inst->set_size(1);
++    inst->SetDisassemblyString("Invalid instruction address");
++    inst->set_opcode(*::coralnpu::sim::isa32_m4::OpcodeEnum::kNone);
++    inst->set_address(address);
++    inst->set_semantic_function([this](Instruction* inst) {
++      state_->Trap(/*is_interrupt=*/false, /*trap_value=*/inst->address(),
++                   *ExceptionCode::kInstructionAccessFault, inst->address(),
++                   inst);
++    });
++    return inst;
++  }
++
++  return decoder_->DecodeInstruction(address);
++}
++
++int CoralNPUM4UserDecoder::GetNumOpcodes() const {
++  return static_cast<int>(OpcodeEnum::kPastMaxValue);
++}
++
++const char* CoralNPUM4UserDecoder::GetOpcodeName(int index) const {
++  return kOpcodeNames[index];
++}
++
++}  // namespace coralnpu::sim
+diff --git a/sim/coralnpu_m4_user_decoder.h b/sim/coralnpu_m4_user_decoder.h
+new file mode 100644
+index 0000000..0802f0d
+--- /dev/null
++++ b/sim/coralnpu_m4_user_decoder.h
+@@ -0,0 +1,97 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// This file defines the user-level decoder for the CoralNPU M4 architecture.
++// It integrates the M4 instruction set, encoding parser, and generic RISC-V
++// decoder to translate binary instructions into executable semantic models.
++
++#ifndef LEARNING_BRAIN_RESEARCH_KELVIN_SIM_CORALNPU_M4_USER_DECODER_H_
++#define LEARNING_BRAIN_RESEARCH_KELVIN_SIM_CORALNPU_M4_USER_DECODER_H_
++
++#include <cstdint>
++#include <memory>
++
++#include "sim/coralnpu_m4_decoder.h"
++#include "sim/coralnpu_m4_encoding.h"
++#include "sim/coralnpu_m4_enums.h"
++#include "sim/coralnpu_v2_state.h"
++#include "absl/base/nullability.h"
++#include "riscv/riscv_generic_decoder.h"
++#include "mpact/sim/generic/arch_state.h"
++#include "mpact/sim/generic/data_buffer.h"
++#include "mpact/sim/generic/decoder_interface.h"
++#include "mpact/sim/generic/instruction.h"
++#include "mpact/sim/generic/program_error.h"
++#include "mpact/sim/util/memory/memory_interface.h"
++
++namespace coralnpu::sim {
++
++// Factory class needed by the generated decoder; creates the decoder for each
++// slot instance (there is a single slot).
++class CoralNPUM4IsaFactory
++    : public ::coralnpu::sim::isa32_m4::CoralNPUM4InstructionSetFactory {
++  using ArchState = ::mpact::sim::generic::ArchState;
++  using CoralnpuM4Slot = ::coralnpu::sim::isa32_m4::CoralnpuM4Slot;
++
++ public:
++  std::unique_ptr<CoralnpuM4Slot> CreateCoralnpuM4Slot(
++      ArchState* state) override {
++    return std::make_unique<CoralnpuM4Slot>(state);
++  }
++};
++
++// The main instruction decoder for the CoralNPU M4 architecture. It uses
++// the generic RISC-V decoder infrastructure to map instruction addresses
++// to their decoded mpact::sim::generic::Instruction representations.
++class CoralNPUM4UserDecoder : public ::mpact::sim::generic::DecoderInterface {
++ public:
++  using CoralNPUM4Encoding = ::coralnpu::sim::CoralNPUM4Encoding;
++  using CoralNPUM4InstructionSet =
++      ::coralnpu::sim::isa32_m4::CoralNPUM4InstructionSet;
++  using CoralNPUV2State = ::coralnpu::sim::CoralNPUV2State;
++  using DataBuffer = ::mpact::sim::generic::DataBuffer;
++  using Instruction = ::mpact::sim::generic::Instruction;
++  using MemoryInterface = ::mpact::sim::util::MemoryInterface;
++  using OpcodeEnum = ::coralnpu::sim::isa32_m4::OpcodeEnum;
++  using ProgramError = ::mpact::sim::generic::ProgramError;
++  using RiscVGenericDecoder =
++      ::mpact::sim::riscv::RiscVGenericDecoder<CoralNPUV2State, OpcodeEnum,
++                                               CoralNPUM4Encoding,
++                                               CoralNPUM4InstructionSet>;
++
++  explicit CoralNPUM4UserDecoder(CoralNPUV2State* absl_nonnull state,
++                                 MemoryInterface* absl_nonnull memory);
++  ~CoralNPUM4UserDecoder() override;
++
++  // Decodes an instruction at the given address.
++  Instruction* DecodeInstruction(uint64_t address) override;
++
++  // Returns the number of opcodes supported by this decoder.
++  int GetNumOpcodes() const override;
++
++  // Returns the name of the opcode at the given index.
++  const char* GetOpcodeName(int index) const override;
++
++ private:
++  CoralNPUV2State* state_;
++  std::unique_ptr<ProgramError> decode_error_;
++  std::unique_ptr<CoralNPUM4Encoding> coralnpu_m4_encoding_;
++  std::unique_ptr<CoralNPUM4IsaFactory> coralnpu_m4_isa_factory_;
++  std::unique_ptr<CoralNPUM4InstructionSet> coralnpu_m4_isa_;
++  std::unique_ptr<RiscVGenericDecoder> decoder_;
++};
++
++}  // namespace coralnpu::sim
++
++#endif  // LEARNING_BRAIN_RESEARCH_KELVIN_SIM_CORALNPU_M4_USER_DECODER_H_
+diff --git a/sim/riscv_zvt.bin_fmt b/sim/riscv_zvt.bin_fmt
+new file mode 100644
+index 0000000..dde5ca3
+--- /dev/null
++++ b/sim/riscv_zvt.bin_fmt
+@@ -0,0 +1,50 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// Matrix configuration instructions, encoded in the vector-configuration
++// (OP-V) major opcode like the vset* family (spec 15.1.1.4). They are
++// distinguished from vsetvl (func7 == 0b100'0000) by func7:
++//   msetmtype       func7 == 0b100'0001
++// msettn/tm/tk    func7 == 0b100'0010, selected by the low rs2 bits.
++
++instruction group RiscVZvtInst32[32] : Inst32Format {
++  msetmtype     : VConfig : func7 == 0b100'0001,                 func3 == 0b111, opcode == 0b101'0111;
++  msettn        : VConfig : func7 == 0b100'0010, rs2 == 0b00000, func3 == 0b111, opcode == 0b101'0111;
++  msettm        : VConfig : func7 == 0b100'0010, rs2 == 0b00001, func3 == 0b111, opcode == 0b101'0111;
++  msettk        : VConfig : func7 == 0b100'0010, rs2 == 0b00010, func3 == 0b111, opcode == 0b101'0111;
++
++  // Tile manipulation (OP-V, func3 == 0b110).
++  vtmv_v_t      : VArith : func6 == 0b010'000, vs2 == 0b11111, func3 == 0b110, opcode == 0b101'0111;
++  vtmv_t_v      : VArith : func6 == 0b010'111,                 func3 == 0b110, opcode == 0b101'0111;
++  vtzero        : VArith : func6 == 0b010'000, vs2 == 0b11110, vs1 == 0b00000, func3 == 0b110, opcode == 0b101'0111;
++  vtdiscard     : VArith : func6 == 0b010'000, vs2 == 0b11100, vs1 == 0b00000, func3 == 0b110, opcode == 0b101'0111;
++
++  // Tile load/store to memory (LOAD-FP / STORE-FP, mew == 1, width == 0b111;
++  // the nf field selects EEW: 0->8, 1->16, 2->32, 3->64).
++  vtle8         : VMem : nf == 0b000, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b000'0111;
++  vtle16        : VMem : nf == 0b001, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b000'0111;
++  vtle32        : VMem : nf == 0b010, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b000'0111;
++  vtle64        : VMem : nf == 0b011, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b000'0111;
++  vtse8         : VMem : nf == 0b000, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b010'0111;
++  vtse16        : VMem : nf == 0b001, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b010'0111;
++  vtse32        : VMem : nf == 0b010, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b010'0111;
++  vtse64        : VMem : nf == 0b011, mew == 0b1, mop == 0b00, vm == 0b1, width == 0b111, opcode == 0b010'0111;
++
++  // Matrix multiply (OP-VE, func6 == 0b111100). func3 selects int(000)/fp(001);
++  // the alt bit selects the alternate datatype variant.
++  vtmmu_tvv     : VMatrix : func6 == 0b111'100, func3 == 0b000, alt == 0b0, opcode == 0b111'0111;
++  vtmms_tvv     : VMatrix : func6 == 0b111'100, func3 == 0b000, alt == 0b1, opcode == 0b111'0111;
++  vtfmm_tvv     : VMatrix : func6 == 0b111'100, func3 == 0b001, alt == 0b0, opcode == 0b111'0111;
++  vtfmm_alt_tvv : VMatrix : func6 == 0b111'100, func3 == 0b001, alt == 0b1, opcode == 0b111'0111;
++};
+diff --git a/sim/riscv_zvt.isa b/sim/riscv_zvt.isa
+new file mode 100644
+index 0000000..db77d9e
+--- /dev/null
++++ b/sim/riscv_zvt.isa
+@@ -0,0 +1,89 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// Zvtbase matrix configuration instructions (spec 15.1.1.4).
++slot riscv_zvt {
++  includes {
++    #include "riscv/riscv_zvt_instructions.h"
++  }
++  default size = 4;
++  opcodes {
++    msetmtype{: rs1, rs2 : },
++      disasm: "msetmtype", "%rs1, %rs2",
++      semfunc: "&::mpact::sim::riscv::RiscVZvtMsetMtype";
++    msettn{: rs1 : rd},
++      disasm: "msettn", "%rd, %rs1",
++      semfunc: "&::mpact::sim::riscv::RiscVZvtMsetTn";
++    msettm{: rs1 : rd},
++      disasm: "msettm", "%rd, %rs1",
++      semfunc: "&::mpact::sim::riscv::RiscVZvtMsetTm";
++    msettk{: rs1 : rd},
++      disasm: "msettk", "%rd, %rs1",
++      semfunc: "&::mpact::sim::riscv::RiscVZvtMsetTk";
++
++    // Tile manipulation.
++    vtzero{: mtd : },
++      disasm: "vtzero", "%mtd",
++      semfunc: "&::mpact::sim::riscv::RiscVZvtVtZero";
++    vtdiscard{: : },
++      disasm: "vtdiscard",
++      semfunc: "&::mpact::sim::riscv::RiscVZvtVtDiscard";
++    vtmv_v_t{: rs1 : matVd},
++      disasm: "vtmv.v.t", "%matVd, %rs1",
++      semfunc: "&::mpact::sim::riscv::RiscVZvtVtmvVt";
++    vtmv_t_v{: matA, rs1 : },
++      disasm: "vtmv.t.v", "%rs1, %matA",
++      semfunc: "&::mpact::sim::riscv::RiscVZvtVtmvTv";
++
++    // Tile load/store to memory (EEW statically encoded).
++    vtle8{: rs1, rs2 : },
++      disasm: "vtle8", "%rs2, (%rs1)",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtVtle, 8)";
++    vtle16{: rs1, rs2 : },
++      disasm: "vtle16", "%rs2, (%rs1)",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtVtle, 16)";
++    vtle32{: rs1, rs2 : },
++      disasm: "vtle32", "%rs2, (%rs1)",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtVtle, 32)";
++    vtle64{: rs1, rs2 : },
++      disasm: "vtle64", "%rs2, (%rs1)",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtVtle, 64)";
++    vtse8{: rs1, rs2 : },
++      disasm: "vtse8", "%rs2, (%rs1)",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtVtse, 8)";
++    vtse16{: rs1, rs2 : },
++      disasm: "vtse16", "%rs2, (%rs1)",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtVtse, 16)";
++    vtse32{: rs1, rs2 : },
++      disasm: "vtse32", "%rs2, (%rs1)",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtVtse, 32)";
++    vtse64{: rs1, rs2 : },
++      disasm: "vtse64", "%rs2, (%rs1)",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtVtse, 64)";
++
++    // Matrix multiply: C += A^T * B.
++    vtmms_tvv{: matA, matB, mtd : },
++      disasm: "vtmms.tvv", "%mtd, %matA, %matB",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtMatmul, ::mpact::sim::riscv::RiscVZvtMatmulKind::kInt8Signed)";
++    vtmmu_tvv{: matA, matB, mtd : },
++      disasm: "vtmmu.tvv", "%mtd, %matA, %matB",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtMatmul, ::mpact::sim::riscv::RiscVZvtMatmulKind::kInt8Unsigned)";
++    vtfmm_tvv{: matA, matB, mtd : fflags},
++      disasm: "vtfmm.tvv", "%mtd, %matA, %matB",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtMatmul, ::mpact::sim::riscv::RiscVZvtMatmulKind::kFp32)";
++    vtfmm_alt_tvv{: matA, matB, mtd : fflags},
++      disasm: "vtfmm.alt.tvv", "%mtd, %matA, %matB",
++      semfunc: "absl::bind_front(&::mpact::sim::riscv::RiscVZvtMatmul, ::mpact::sim::riscv::RiscVZvtMatmulKind::kBf16)";
++  }
++}
+diff --git a/sim/BUILD b/sim/BUILD
+index 7244706..685397a 100644
+--- a/sim/BUILD
++++ b/sim/BUILD
+@@ -485,3 +485,87 @@ cc_binary(
+         "@mpact-sim//mpact/sim/generic:type_helpers",
+     ],
+ )
++
++cc_library(
++    name = "coralnpu_m4_instructions",
++    srcs = ["coralnpu_m4_instructions.cc"],
++    hdrs = ["coralnpu_m4_instructions.h"],
++    copts = ["-O3"],
++    deps = [
++        ":coralnpu_v2_state",
++        "@abseil-cpp//absl/log:check",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-riscv//riscv:riscv_zvt_instructions",
++        "@mpact-riscv//riscv:riscv_zvt_state",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:type_helpers",
++    ],
++)
++
++mpact_isa_decoder(
++    name = "coralnpu_m4_isa",
++    src = "coralnpu_m4.isa",
++    includes = [
++        "coralnpu_m3.isa",
++        "coralnpu_m4_instructions.h",
++        "coralnpu_v2.isa",
++        "riscv_zvt.isa",
++    ],
++    isa_name = "CoralNPUM4",
++    deps = [
++        ":coralnpu_m3_isa",
++        ":coralnpu_m4_instructions",
++        ":coralnpu_v2_instructions",
++        ":coralnpu_v2_isa",
++        "@abseil-cpp//absl/functional:bind_front",
++        "@mpact-riscv//riscv:riscv_bitmanip_instructions",
++        "@mpact-riscv//riscv:riscv_g",
++        "@mpact-riscv//riscv:riscv_v",
++        "@mpact-riscv//riscv:riscv_zvt_instructions",
++    ],
++)
++
++mpact_bin_fmt_decoder(
++    name = "coralnpu_m4_bin_fmt",
++    src = "coralnpu_m4.bin_fmt",
++    decoder_name = "CoralNPUM4",
++    includes = [
++        "coralnpu_m3.bin_fmt",
++        "coralnpu_m4_decoder.h",
++        "coralnpu_v2.bin_fmt",
++        "riscv_zvt.bin_fmt",
++    ],
++    deps = [
++        ":coralnpu_m3_bin_fmt",
++        ":coralnpu_m4_isa",
++        ":coralnpu_v2_bin_fmt",
++    ],
++)
++
++cc_library(
++    name = "coralnpu_m4_user_decoder",
++    srcs = [
++        "coralnpu_m4_encoding.cc",
++        "coralnpu_m4_user_decoder.cc",
++    ],
++    hdrs = [
++        "coralnpu_m4_encoding.h",
++        "coralnpu_m4_user_decoder.h",
++    ],
++    copts = ["-O3"],
++    deps = [
++        ":coralnpu_m4_bin_fmt",
++        ":coralnpu_m4_isa",
++        ":coralnpu_v2_encoding_template",
++        ":coralnpu_v2_state",
++        "@abseil-cpp//absl/base:nullability",
++        "@mpact-riscv//riscv:riscv_generic_decoder",
++        "@mpact-riscv//riscv:riscv_state",
++        "@mpact-riscv//riscv:riscv_zvt_getters",
++        "@mpact-sim//mpact/sim/generic:arch_state",
++        "@mpact-sim//mpact/sim/generic:core",
++        "@mpact-sim//mpact/sim/generic:instruction",
++        "@mpact-sim//mpact/sim/generic:program_error",
++        "@mpact-sim//mpact/sim/util/memory",
++    ],
++)
+diff --git a/sim/hw_sim/BUILD b/sim/hw_sim/BUILD
+index 6db42dd..d1b42d2 100644
+--- a/sim/hw_sim/BUILD
++++ b/sim/hw_sim/BUILD
+@@ -28,7 +28,7 @@ cc_library(
+     linkstatic = True,
+     deps = [
+         ":coralnpu_simulator_headers",
+-        "//sim:coralnpu_m3_user_decoder",
++        "//sim:coralnpu_m4_user_decoder",
+         "//sim:coralnpu_v2_state",
+         "@abseil-cpp//absl/log",
+         "@abseil-cpp//absl/status",
+@@ -36,6 +36,7 @@ cc_library(
+         "@mpact-riscv//riscv:riscv_fp_state",
+         "@mpact-riscv//riscv:riscv_state",
+         "@mpact-riscv//riscv:riscv_top",
++        "@mpact-riscv//riscv:riscv_zvt_state",
+         "@mpact-sim//mpact/sim/generic:core",
+         "@mpact-sim//mpact/sim/generic:core_debug_interface",
+         "@mpact-sim//mpact/sim/generic:instruction",
+diff --git a/sim/hw_sim/mpact_simulator.cc b/sim/hw_sim/mpact_simulator.cc
+index 6968248..18d1699 100644
+--- a/sim/hw_sim/mpact_simulator.cc
++++ b/sim/hw_sim/mpact_simulator.cc
+@@ -19,7 +19,7 @@
+ #include <string>
+ #include <utility>
+
+-#include "sim/coralnpu_m3_user_decoder.h"
++#include "sim/coralnpu_m4_user_decoder.h"
+ #include "sim/coralnpu_v2_state.h"
+ #include "sim/hw_sim/coralnpu_simulator.h"
+ #include "absl/log/log.h"
+@@ -31,6 +31,7 @@
+ #include "riscv/riscv_state.h"
+ #include "riscv/riscv_top.h"
+ #include "riscv/riscv_vector_state.h"
++#include "riscv/riscv_zvt_state.h"
+ #include "mpact/sim/generic/data_buffer.h"
+ #include "mpact/sim/generic/instruction.h"
+ #include "mpact/sim/generic/ref_count.h"
+@@ -212,6 +213,9 @@ class MpactSimulator final : public CoralNPUSimulator {
+         rvv_state_(
+             &rv_state_,
+             /*byte_length=*/::coralnpu::sim::kCoralNPUV2VectorByteLength),
++        rv_zvt_state_(
++            ::mpact::sim::riscv::RiscVZvtMatrixState::Create(&rv_state_)
++                .value()),
+         rv_decoder_(&rv_state_, &dma_memory_),
+         rv_top_("CoralNPUPlaceholder", &rv_state_, &rv_decoder_) {
+     // Make sure the architectural and abi register aliases are added.
+@@ -332,7 +336,8 @@ class MpactSimulator final : public CoralNPUSimulator {
+   ::coralnpu::sim::CoralNPUV2State rv_state_;
+   ::mpact::sim::riscv::RiscVFPState rv_fp_state_;
+   ::mpact::sim::riscv::RiscVVectorState rvv_state_;
+-  ::coralnpu::sim::CoralNPUM3UserDecoder rv_decoder_;
++  std::unique_ptr<::mpact::sim::riscv::RiscVZvtMatrixState> rv_zvt_state_;
++  ::coralnpu::sim::CoralNPUM4UserDecoder rv_decoder_;
+   ::mpact::sim::riscv::RiscVTop rv_top_;
+   TraceCallback trace_callback_;
+ };

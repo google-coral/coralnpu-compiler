@@ -17,13 +17,16 @@ iree_lit_test_suite(
     lit
   SRCS
     "affinity_annotation.mlir"
+    "convolution_to_igemm.mlir"
     "dump_affinity_execution_profile.mlir"
     "dump_affinity_execution_profile_empty.mlir"
+    "matrix_codegen.mlir"
     "register_allocation_report.mlir"
     "target_options.mlir"
   TOOLS
     FileCheck
     iree-compile
+    iree-opt
   LABELS
     "ci"
 )

@@ -15,6 +15,7 @@
 #include "compiler/Target/CoralNPUTargetBackend.h"
 
 // IREE headers
+#include "iree/compiler/Codegen/Common/Transforms.h"
 #include "iree/compiler/Dialect/HAL/IR/HALTypes.h"
 #include "iree/compiler/Dialect/HAL/Target/TargetRegistry.h"
 #include "iree/compiler/Dialect/Util/IR/UtilOps.h"
@@ -94,6 +95,17 @@ struct CoralNPUSession
   void extendPreprocessingPassPipeline(OpPassManager &passManager) override {
     passManager.addPass(createCoralNPUAffinityAnnotationPass(
         {options.affinityIOMinThresholdKb, options.affinityIOMaxThresholdKb}));
+    // Matches the device symbol *name*; real globals are @__device_N, so this
+    // only fires in the lit test. Widening it needs a conv allowlist first:
+    // depthwise/dilated im2col fails to lower.
+    passManager.nest<IREE::Util::FuncOp>().addPass(createConvolutionToIGEMMPass(
+        /*configFn=*/std::nullopt, [](Operation *op) {
+          auto affinity = op->getAttrOfType<IREE::HAL::DeviceAffinityAttr>(
+              "stream.affinity");
+          return affinity &&
+                 affinity.getDevice().getLeafReference().getValue().contains(
+                     "coralnpu");
+        }));
   }
 
   // Adds the affinity profile dump at the end of the Stream pipeline, the

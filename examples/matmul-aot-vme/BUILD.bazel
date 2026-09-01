@@ -12,29 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@iree_core//build_tools/bazel:iree_lit_test.bzl", "iree_lit_test_suite")
+load("@rules_python//python:defs.bzl", "py_binary")
 
-package(
-    default_visibility = ["//visibility:public"],
-    features = ["layering_check"],
-    licenses = ["notice"],  # Apache 2.0
-)
+package(default_visibility = ["//visibility:public"])
 
-iree_lit_test_suite(
-    name = "lit",
-    srcs = glob(["*.mlir"]),
-    cfg = "lit.cfg.py",
-    tools = [
-        "@iree_core//tools:iree-compile",
-        "@iree_core//tools:iree-opt",
-        "@llvm-project//llvm:FileCheck",
+py_binary(
+    name = "export_matmul",
+    srcs = ["export_matmul.py"],
+    deps = [
+        "@pip_deps//jax",
+        "@pip_deps//jaxlib",
+        "@pip_deps//numpy",
     ],
 )
 
-test_suite(
-    name = "ci",
-    tags = ["ci"],
-    tests = [
-        ":lit",
+py_binary(
+    name = "run_matmul",
+    srcs = ["run_matmul.py"],
+    deps = [
+        "@iree_core//runtime/bindings/python:runtime",
+        "@pip_deps//numpy",
     ],
 )

@@ -17,6 +17,7 @@
 #include "runtime/driver/registration/driver_module.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 
 #include "iree/base/api.h"
 #include "iree/base/internal/dynamic_library.h"
@@ -63,10 +64,18 @@ static iree_status_t iree_hal_coralnpu_simulator_load(
     return iree_ok_status();
   }
   if (iree_string_view_equal(name, IREE_SV("verilator"))) {
+    iree_status_t status = iree_hal_coralnpu_simulator_load_dylib(
+        "libcoralnpu_simulator_vme.so", "coralnpu_simulator_verilator_create",
+        "", out_exec_backend);
+    if (iree_status_is_ok(status)) {
+      return status;
+    }
+    iree_status_ignore(status);
     return iree_hal_coralnpu_simulator_load_dylib(
         "libcoralnpu_simulator_rvv.so", "coralnpu_simulator_verilator_create",
         "Verilator simulator library not available; ensure "
-        "libcoralnpu_simulator_rvv.so is in LD_LIBRARY_PATH",
+        "libcoralnpu_simulator_vme.so or libcoralnpu_simulator_rvv.so is in "
+        "LD_LIBRARY_PATH",
         out_exec_backend);
   }
   if (iree_string_view_equal(name, IREE_SV("fpga")) ||
@@ -120,8 +129,12 @@ static iree_status_t iree_hal_coralnpu_driver_factory_try_create(
   iree_hal_coralnpu_exec_backend_t exec_backend =
       iree_hal_coralnpu_exec_backend_override;
   if (!exec_backend.create) {
+    const char* sim_name = getenv("CORALNPU_SIMULATOR");
+    if (!sim_name || !*sim_name) {
+      sim_name = FLAG_simulator;
+    }
     IREE_RETURN_IF_ERROR(iree_hal_coralnpu_simulator_load(
-        iree_make_cstring_view(FLAG_simulator), &exec_backend));
+        iree_make_cstring_view(sim_name), &exec_backend));
   }
 
   iree_hal_coralnpu_device_params_t default_params;
