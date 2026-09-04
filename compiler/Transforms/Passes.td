@@ -29,10 +29,15 @@ def CoralNPUAffinityAnnotation : Pass<"coralnpu-affinity-annotation", "mlir::Mod
   }];
 
   let options = [
-    Option<"ioMinThresholdBytes", "io-min-threshold-bytes", "int64_t",
+    Option<"ioMinThresholdKb", "io-min-threshold-kb", "int64_t",
            /*default=*/"0",
-           "Minimum estimated dispatch input/output bytes required before "
+           "Minimum estimated dispatch input/output size in KB required before "
            "placing an operation on CoralNPU. Use 0 for bring-up tests.">,
+    Option<"ioMaxThresholdKb", "io-max-threshold-kb", "int64_t",
+           /*default=*/"65536",
+           "Maximum estimated dispatch input/output size in KB. Operations "
+           "that exceed this will not be dispatched to the CoralNPU "
+           "(default: 65536).">,
   ];
 }
 

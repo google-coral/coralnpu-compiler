@@ -246,6 +246,17 @@ LogicalResult CoralNPUOptions::validate(MLIRContext *context) const {
               "none, pretty, json; got '"
            << registerAllocationReportFormat << "'";
   }
+  if (affinityIOMinThresholdKb < 0) {
+    return emitError(loc) << "coralnpu-affinity-io-min-threshold-kb must be "
+                             "non-negative, got "
+                          << affinityIOMinThresholdKb;
+  }
+  if (affinityIOMaxThresholdKb < affinityIOMinThresholdKb) {
+    return emitError(loc)
+           << "coralnpu-affinity-io-max-threshold-kb must be no less than "
+              "coralnpu-affinity-io-min-threshold-kb, got "
+           << affinityIOMaxThresholdKb;
+  }
 
   return success();
 }

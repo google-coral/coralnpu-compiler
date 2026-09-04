@@ -41,13 +41,6 @@ namespace mlir::coralnpu_compiler {
 
 namespace {
 
-llvm::cl::opt<int64_t> clAffinityIOMinThersholdBytes(
-    "coralnpu-affinity-io-min-threshold-bytes",
-    llvm::cl::desc(
-        "Minimum estimated dispatch input/output bytes required before "
-        "placing an operation on CoralNPU."),
-    llvm::cl::init(0));
-
 struct CoralNPUTargetDevice final : public IREE::HAL::TargetDevice {
   CoralNPUTargetDevice(const CoralNPUOptions & /*options*/) {}
 
@@ -100,8 +93,8 @@ struct CoralNPUSession
 
   // Adds passes to the |buildPreprocessingPassPipeline| pipeline at the end.
   void extendPreprocessingPassPipeline(OpPassManager &passManager) override {
-    passManager.addPass(
-        createCoralNPUAffinityAnnotationPass({clAffinityIOMinThersholdBytes}));
+    passManager.addPass(createCoralNPUAffinityAnnotationPass(
+        {options.affinityIOMinThresholdKb, options.affinityIOMaxThresholdKb}));
   }
 };
 

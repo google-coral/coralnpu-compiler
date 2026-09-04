@@ -284,12 +284,8 @@ struct CoralNPUAffinityAnnotationPass
     ModuleOp moduleOp = getOperation();
     MLIRContext *context = &getContext();
 
-    if (ioMinThresholdBytes < 0) {
-      moduleOp.emitError("io-min-threshold-bytes must be non-negative, got ")
-          << ioMinThresholdBytes;
-      signalPassFailure();
-      return;
-    }
+    int64_t minThresholdBytes = ioMinThresholdKb * 1024;
+    int64_t maxThresholdBytes = ioMaxThresholdKb * 1024;
 
     IREE::HAL::DeviceAnalysis deviceAnalysis(moduleOp);
     if (failed(deviceAnalysis.run())) {
@@ -363,11 +359,12 @@ struct CoralNPUAffinityAnnotationPass
 
       if (isSupportedOperandAndResultTypes(op, supportedTypes) &&
           canBeVectorized(op)) {
-        if (estimateIOBytes(op) > ioMinThresholdBytes) {
+        int64_t ioBytes = estimateIOBytes(op);
+        if (ioBytes >= minThresholdBytes && ioBytes <= maxThresholdBytes) {
           op->setAttr("stream.affinity", coralnpuAffinityAttr);
         }
         // Operations that meet supported type and vectorization criteria but
-        // fall below the minimum IO threshold are intentionally left
+        // fall outside the threshold range are intentionally left
         // unannotated to allow fusion with adjacent operations, falling back to
         // stream.affinity.default if executed standalone.
       } else if (hostAffinityAttr) {

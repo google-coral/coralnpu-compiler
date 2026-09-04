@@ -1,11 +1,11 @@
-// RUN: %coralnpu_compile --compile-to=preprocessing --coralnpu-affinity-io-min-threshold-bytes=1000 %s | FileCheck %s
+// RUN: %coralnpu_compile --compile-to=preprocessing --coralnpu-affinity-io-min-threshold-kb=1 --coralnpu-affinity-io-max-threshold-kb=20 %s | FileCheck %s
 
 // CHECK-LABEL: @big_matmul
 func.func @big_matmul(
     %arg0: tensor<32x32xf32>,
     %arg1: tensor<32x32xf32>,
     %arg2: tensor<32x32xf32>) -> tensor<32x32xf32> {
-  // 32x32xf32 = 4096 bytes per tensor, total > 1000 bytes.
+  // 32x32xf32 = 4096 bytes per tensor, total 12 KB (1 KB <= 12 KB <= 20 KB).
   // CHECK: linalg.matmul
   // CHECK-SAME: stream.affinity = #hal.device.affinity<@__device_1>
   %0 = linalg.matmul ins(%arg0, %arg1 : tensor<32x32xf32>, tensor<32x32xf32>)
@@ -13,12 +13,25 @@ func.func @big_matmul(
   return %0 : tensor<32x32xf32>
 }
 
+// CHECK-LABEL: @huge_matmul
+func.func @huge_matmul(
+    %arg0: tensor<64x64xf32>,
+    %arg1: tensor<64x64xf32>,
+    %arg2: tensor<64x64xf32>) -> tensor<64x64xf32> {
+  // 64x64xf32 = 16384 bytes per tensor, total 48 KB > max threshold (20 KB).
+  // CHECK: linalg.matmul
+  // CHECK-NOT: stream.affinity
+  %0 = linalg.matmul ins(%arg0, %arg1 : tensor<64x64xf32>, tensor<64x64xf32>)
+                     outs(%arg2 : tensor<64x64xf32>) -> tensor<64x64xf32>
+  return %0 : tensor<64x64xf32>
+}
+
 // CHECK-LABEL: @small_matmul
 func.func @small_matmul(
     %arg0: tensor<2x2xf32>,
     %arg1: tensor<2x2xf32>,
     %arg2: tensor<2x2xf32>) -> tensor<2x2xf32> {
-  // 2x2xf32 = 16 bytes per tensor, total 48 bytes < 1000 bytes.
+  // 2x2xf32 = 16 bytes per tensor, total 48 bytes < min threshold (1 KB).
   // Below threshold: left unannotated to allow fusion with adjacent operations.
   // CHECK: linalg.matmul
   // CHECK-NOT: stream.affinity

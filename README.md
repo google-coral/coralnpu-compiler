@@ -239,6 +239,14 @@ Dumps a report containing vector register utilization (unique registers used, ve
 
 `--coralnpu-link-executables={true|false}` controls whether all executable dispatches are linked into a single library or emitted as individual self-contained executables (default: `false`). Emitting separate executables per dispatch avoids overflowing tightly constrained ITCM memory (e.g., 8 KB) on multi-dispatch models.
 
+
+**Affinity I/O thresholds:**
+
+`--coralnpu-affinity-io-min-threshold-kb=<KB>` (default: `0`)
+`--coralnpu-affinity-io-max-threshold-kb=<KB>` (default: `65536`)
+
+Controls which operations are offloaded to CoralNPU based on their estimated input/output tensor size. Operations smaller than `min-threshold` or larger than `max-threshold` will not be dispatched to CoralNPU and instead remain on the host (or default) device.
+
 ---
 
 ## Packaging and Distribution

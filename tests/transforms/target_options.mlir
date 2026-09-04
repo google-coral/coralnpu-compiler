@@ -1,8 +1,14 @@
 // RUN: (%coralnpu_compile --coralnpu-dtcm-size-kb=0 %s || true) 2>&1 | FileCheck %s --check-prefix=CHECK-ERR-ZERO
+// RUN: (%coralnpu_compile --coralnpu-affinity-io-min-threshold-kb=-1 %s || true) 2>&1 | FileCheck %s --check-prefix=CHECK-ERR-MIN
+// RUN: (%coralnpu_compile --coralnpu-affinity-io-min-threshold-kb=10 --coralnpu-affinity-io-max-threshold-kb=5 %s || true) 2>&1 | FileCheck %s --check-prefix=CHECK-ERR-MAX
 // RUN: (%coralnpu_compile --coralnpu-linker-script-path=/nonexistent/path.ld %s || true) 2>&1 | FileCheck %s --check-prefix=CHECK-ERR-LINK
 // RUN: %coralnpu_compile --coralnpu-dtcm-size-kb=1024 --coralnpu-dump-affinity-profile-format=pretty %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=CHECK-SUCCESS
 
 // CHECK-ERR-ZERO: coralnpu-dtcm-size-kb must be positive, got 0
+
+// CHECK-ERR-MIN: coralnpu-affinity-io-min-threshold-kb must be non-negative, got -1
+
+// CHECK-ERR-MAX: coralnpu-affinity-io-max-threshold-kb must be no less than coralnpu-affinity-io-min-threshold-kb, got 5
 
 // CHECK-ERR-LINK: failed to serialize executables
 
