@@ -21,6 +21,7 @@
 #include "iree/compiler/Dialect/Util/IR/UtilOps.h"
 
 // MLIR
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
@@ -29,6 +30,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/Pass/Pass.h"
 
 // LLVM
@@ -252,12 +254,17 @@ int64_t estimateBytesForType(Type type) {
 int64_t estimateIOBytes(Operation *op) {
   int64_t totalBytes = 0;
 
-  for (Value operand : op->getOperands()) {
-    totalBytes += estimateBytesForType(operand.getType());
+  auto inputs = isa<linalg::LinalgOp>(op)
+                    ? cast<linalg::LinalgOp>(op).getDpsInputs()
+                    : llvm::to_vector(op->getOperands());
+  for (Value input : inputs) {
+    if (!matchPattern(input, m_Constant())) {
+      totalBytes += estimateBytesForType(input.getType());
+    }
   }
 
-  for (Value operand : op->getResults()) {
-    totalBytes += estimateBytesForType(operand.getType());
+  for (Value result : op->getResults()) {
+    totalBytes += estimateBytesForType(result.getType());
   }
 
   return totalBytes;

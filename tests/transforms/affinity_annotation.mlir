@@ -67,3 +67,16 @@ func.func @constants_and_metadata() -> tensor<32x32xf32> {
   return %0 : tensor<32x32xf32>
 }
 
+// CHECK-LABEL: @large_constant_small_dynamic_io
+func.func @large_constant_small_dynamic_io(%arg0: tensor<1x64xf32>) -> tensor<1x4xf32> {
+  // Constant weight is 64x4xf32 = 1024 bytes.
+  // Dynamic I/O is input (256 bytes) + output (16 bytes) = 272 bytes < 1000 bytes.
+  // Constant weights must not be counted, and DPS outputs must not be double-counted.
+  // CHECK: linalg.matmul
+  // CHECK-NOT: stream.affinity
+  %cst = arith.constant dense<1.000000e+00> : tensor<64x4xf32>
+  %empty = tensor.empty() : tensor<1x4xf32>
+  %0 = linalg.matmul ins(%arg0, %cst : tensor<1x64xf32>, tensor<64x4xf32>)
+                     outs(%empty : tensor<1x4xf32>) -> tensor<1x4xf32>
+  return %0 : tensor<1x4xf32>
+}
