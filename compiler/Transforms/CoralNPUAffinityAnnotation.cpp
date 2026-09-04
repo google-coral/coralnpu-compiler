@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <limits>
+
 #include "compiler/Target/Utils.h"
 #include "compiler/Transforms/Passes.h"
 
 // IREE
 #include "iree/compiler/Dialect/HAL/Analysis/DeviceAnalysis.h"
 #include "iree/compiler/Dialect/HAL/IR/HALTypes.h"
+#include "iree/compiler/Dialect/Stream/IR/StreamTypes.h"
 #include "iree/compiler/Dialect/Util/IR/UtilOps.h"
 
 // MLIR
@@ -235,6 +238,8 @@ int64_t estimateBytesForType(Type type) {
   // NB: pay attention to sub-byte types.
 
   if (auto shapedType = dyn_cast<ShapedType>(type)) {
+    if (!shapedType.hasStaticShape())
+      return std::numeric_limits<int64_t>::max();
     Type elementType = shapedType.getElementType();
 
     unsigned elementBits = elementType.getIntOrFloatBitWidth();
@@ -270,29 +275,6 @@ int64_t estimateIOBytes(Operation *op) {
   return totalBytes;
 }
 
-// Discover the NPU device alias.
-IREE::HAL::DeviceAffinityAttr getCoralNPUDeviceAffinityAttr(
-    MLIRContext *context, ModuleOp moduleOp) {
-  IREE::HAL::DeviceAnalysis deviceAnalysis(moduleOp);
-  if (failed(deviceAnalysis.run())) {
-    return nullptr;
-  }
-
-  for (auto globalOp : deviceAnalysis.getDeviceGlobals()) {
-    auto deviceSet = deviceAnalysis.lookupDeviceTargets(globalOp);
-    if (!deviceSet) continue;
-    for (auto targetAttr : deviceSet->getValues()) {
-      if (targetAttr.getDeviceID().getValue() == "coralnpu") {
-        return IREE::HAL::DeviceAffinityAttr::get(
-            context, SymbolRefAttr::get(globalOp.getGlobalName()),
-            /*queue_mask=*/-1ll);
-      }
-    }
-  }
-
-  return nullptr;
-}
-
 struct CoralNPUAffinityAnnotationPass
     : public impl::CoralNPUAffinityAnnotationBase<
           CoralNPUAffinityAnnotationPass> {
@@ -309,20 +291,89 @@ struct CoralNPUAffinityAnnotationPass
       return;
     }
 
-    iree_compiler::IREE::HAL::DeviceAffinityAttr coralnpuAffinityAttr =
-        getCoralNPUDeviceAffinityAttr(context, moduleOp);
+    IREE::HAL::DeviceAnalysis deviceAnalysis(moduleOp);
+    if (failed(deviceAnalysis.run())) {
+      moduleOp.emitWarning("failed to run device analysis");
+      return;
+    }
+
+    IREE::HAL::DeviceAffinityAttr coralnpuAffinityAttr = nullptr;
+    IREE::HAL::DeviceAffinityAttr hostAffinityAttr = nullptr;
+
+    for (auto globalOp : deviceAnalysis.getDeviceGlobals()) {
+      if (coralnpuAffinityAttr && hostAffinityAttr) break;
+      auto deviceSet = deviceAnalysis.lookupDeviceTargets(globalOp);
+      if (!deviceSet) continue;
+      for (auto targetAttr : deviceSet->getValues()) {
+        auto deviceAffinity = IREE::HAL::DeviceAffinityAttr::get(
+            context, SymbolRefAttr::get(globalOp.getGlobalName()),
+            /*queue_mask=*/-1ll);
+        if (targetAttr.getDeviceID().getValue() == "coralnpu") {
+          if (!coralnpuAffinityAttr) coralnpuAffinityAttr = deviceAffinity;
+        } else if (!hostAffinityAttr) {
+          hostAffinityAttr = deviceAffinity;
+        }
+      }
+    }
+
     if (!coralnpuAffinityAttr) return;
+
+    if (auto defaultAffinity =
+            dyn_cast_if_present<IREE::HAL::DeviceAffinityAttr>(
+                IREE::Stream::AffinityAttr::lookupOrDefault(moduleOp))) {
+      if (defaultAffinity != coralnpuAffinityAttr) {
+        hostAffinityAttr = defaultAffinity;
+      }
+    }
+
+    if (hostAffinityAttr) {
+      if (!moduleOp->hasAttr("stream.topology")) {
+        auto host = hostAffinityAttr.getDevice(),
+             npu = coralnpuAffinityAttr.getDevice();
+        IREE::HAL::DeviceLinkAttr links[] = {
+            IREE::HAL::DeviceLinkAttr::get(context, host, npu,
+                                           /*unified_memory=*/true,
+                                           /*transparent_access=*/true,
+                                           nullptr),
+            IREE::HAL::DeviceLinkAttr::get(context, npu, host,
+                                           /*unified_memory=*/true,
+                                           /*transparent_access=*/true,
+                                           nullptr)};
+        moduleOp->setAttr("stream.topology",
+                          IREE::HAL::DeviceTopologyAttr::get(context, links));
+      }
+
+      if (!moduleOp->hasAttr("stream.affinity.default")) {
+        moduleOp->setAttr("stream.affinity.default", hostAffinityAttr);
+      }
+    }
 
     IREE::HAL::TargetBackend::SupportedTypes supportedTypes =
         getCoralNPUSupportedTypes(context);
 
     moduleOp.walk([&](Operation *op) {
       // If op already has affinity, don't change it
-      if (op->getAttr("stream.affinity")) return;
+      if (op->hasAttr("stream.affinity")) return;
+
+      // Only assign device affinity to compute (linalg) operations. Pure
+      // layout and memory operations remain unannotated to enable fusion into
+      // adjacent dispatches.
+      auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
+      if (!linalgOp) return;
 
       if (isSupportedOperandAndResultTypes(op, supportedTypes) &&
-          estimateIOBytes(op) > ioMinThresholdBytes && canBeVectorized(op)) {
-        op->setAttr("stream.affinity", coralnpuAffinityAttr);
+          canBeVectorized(op)) {
+        if (estimateIOBytes(op) > ioMinThresholdBytes) {
+          op->setAttr("stream.affinity", coralnpuAffinityAttr);
+        }
+        // Operations that meet supported type and vectorization criteria but
+        // fall below the minimum IO threshold are intentionally left
+        // unannotated to allow fusion with adjacent operations, falling back to
+        // stream.affinity.default if executed standalone.
+      } else if (hostAffinityAttr) {
+        // Operations that cannot be supported or vectorized on CoralNPU are
+        // assigned to the host device fallback.
+        op->setAttr("stream.affinity", hostAffinityAttr);
       }
     });
   }

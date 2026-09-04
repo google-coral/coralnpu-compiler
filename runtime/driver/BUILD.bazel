@@ -57,6 +57,7 @@ cc_library(
         "@iree_core//runtime/src/iree/base/internal:fpu_state",
         "@iree_core//runtime/src/iree/base/threading",
         "@iree_core//runtime/src/iree/hal",
+        "@iree_core//runtime/src/iree/hal/drivers/local_sync:sync_driver",
         "@iree_core//runtime/src/iree/hal/local:executable_environment",
         "@iree_core//runtime/src/iree/hal/local:executable_library",
         "@iree_core//runtime/src/iree/hal/local:executable_loader",

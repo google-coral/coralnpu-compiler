@@ -54,6 +54,7 @@ iree_cc_library(
     iree::base::internal::fpu_state
     iree::base::threading
     iree::hal
+    iree::hal::drivers::local_sync::sync_driver
     iree::hal::local
     iree::hal::local::executable_environment
     iree::hal::local::executable_library
