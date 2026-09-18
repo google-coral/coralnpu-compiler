@@ -122,6 +122,14 @@
   logical concern; split unrelated third-party changes into separate numbered
   patch files so they are easy to rebase or drop when upgrading upstream
   submodules.
+- Do NOT add new third-party dependencies (`http_archive`, submodules, or CMake
+  packages) under `restricted` (e.g., GPL, LGPL, AGPL) or `reciprocal` (e.g.,
+  MPL, EPL) licenses, or link existing `restricted` targets (`@libftdi1`,
+  `@libusb`) into release packages (`//build_tools/bazel:dist_tar` or Python
+  wheels), without explicit user authorization and flagging the license/linking
+  implications. Set `package(licenses = [...])` in `*.BUILD` files to match the
+  upstream license category (`"notice"` for Apache-2.0/MIT/BSD, `"restricted"`
+  for GPL/LGPL, `"reciprocal"` for MPL/EPL).
 
 ## Build systems & Testing
 - Unless you are explicitly asked to, use bazel.

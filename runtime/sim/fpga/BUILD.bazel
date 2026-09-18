@@ -17,25 +17,18 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     default_visibility = ["//visibility:public"],
-    features = ["-layering_check"],
+    features = ["layering_check"],
     licenses = ["notice"],  # Apache 2.0
 )
 
 cc_library(
     name = "simulator",
     srcs = ["simulator.cpp"],
-    copts = [
-        "-I/usr/include/libftdi1",
-        "-I/usr/include/libusb-1.0",
-    ],
-    linkopts = [
-        "-lftdi1",
-        "-lusb-1.0",
-    ],
     linkstatic = True,
     deps = [
         "@coralnpu_hw//hw_sim:coralnpu_simulator_headers",
         "@coralnpu_hw//sw/utils/nexus_loader:spi_master",
+        "@libftdi1",
     ],
     alwayslink = True,
 )

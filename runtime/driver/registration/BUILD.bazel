@@ -12,12 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     default_visibility = ["//visibility:public"],
     features = ["layering_check"],
     licenses = ["notice"],  # Apache 2.0
+)
+
+# When True, statically links the FPGA backend into :registration and omits
+# dlopen-based simulator loading (Spike and Verilator). Used by standalone
+# static FPGA binaries (e.g. //tests/fpga:fpga_tests_tar).
+bool_flag(
+    name = "static_fpga",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "static_fpga_enabled",
+    flag_values = {":static_fpga": "True"},
 )
 
 # Registers the driver with IREE, selects the execution backend it runs on and
@@ -28,14 +42,24 @@ cc_library(
     name = "registration",
     srcs = ["driver_module.c"],
     hdrs = ["driver_module.h"],
+    local_defines = select({
+        ":static_fpga_enabled": ["CORALNPU_STATIC_FPGA=1"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//runtime/driver:coralnpu",
         "//runtime/metrics:stats_writer",
         "//runtime/sim:simulation",
         "//runtime/sim:simulator_mpact",
         "@iree_core//runtime/src/iree/base",
-        "@iree_core//runtime/src/iree/base/internal:dynamic_library",
         "@iree_core//runtime/src/iree/base/tooling:flags",
         "@iree_core//runtime/src/iree/hal",
-    ],
+    ] + select({
+        ":static_fpga_enabled": [
+            "//runtime/sim/fpga:simulator",
+        ],
+        "//conditions:default": [
+            "@iree_core//runtime/src/iree/base/internal:dynamic_library",
+        ],
+    }),
 )

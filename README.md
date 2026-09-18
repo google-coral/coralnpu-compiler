@@ -384,6 +384,25 @@ LD_LIBRARY_PATH=$(pwd)/bazel-bin/runtime/sim/fpga \
     ...
 ```
 
+Alternatively, build the standalone static runner binaries (with the FPGA and
+MPACT backends linked in and no shared-library or host `glibc` dependencies):
+
+```shell
+bazel build --config=dev //tools:iree-run-module-static //tools:iree-check-module-static
+```
+
+> [!NOTE]
+> The Bazel FPGA targets (`libcoralnpu_simulator_fpga.so`,
+> `iree-run-module-static`, and `iree-check-module-static`) statically link
+> `libftdi1` and `libusb` (and the `-static` binaries also statically link host
+> `glibc`), which are licensed under **LGPL-2.1**. These targets are intended
+> for local and lab execution; distributing prebuilt binaries requires
+> satisfying LGPL-2.1 Section 6 obligations (such as providing source code and
+> relinkable object files).
+
+When running a model on an FPGA, set `CORALNPU_FPGA_SERIAL` to the board's FTDI
+serial (e.g. `export CORALNPU_FPGA_SERIAL=Nexus-FTDI-12`).
+
 Spike (`--simulator=spike`) works the same way with
 `//runtime/sim/spike:libcoralnpu_simulator_spike.so` in `bazel-bin/runtime/sim/spike`.
 

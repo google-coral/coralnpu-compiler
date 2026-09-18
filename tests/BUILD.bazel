@@ -30,6 +30,7 @@ test_suite(
     tests = [
         "//tests/dma:ci",
         "//tests/examples:ci",
+        # "//tests/fpga:ci",
         "//tests/models/linalg:ci",
         "//tests/models/stablehlo:ci",
         "//tests/python-bindings:ci",

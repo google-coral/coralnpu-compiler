@@ -256,6 +256,12 @@ extern "C" __attribute__((visibility("default"))) CoralNPUSimulator*
 coralnpu_simulator_fpga_create(void) {
   auto sim = std::make_unique<FpgaSimulator>();
   const char* serial = std::getenv("CORALNPU_FPGA_SERIAL");
+  if (!serial || !*serial) {
+    std::fprintf(stderr,
+                 "[CoralNPU FPGA] Error: set CORALNPU_FPGA_SERIAL to the "
+                 "board's FTDI serial (e.g. Nexus-FTDI-12).\n");
+    return nullptr;
+  }
   if (!sim->Connect(serial)) {
     std::fprintf(stderr,
                  "[CoralNPU FPGA] Notice: FPGA device not connected "

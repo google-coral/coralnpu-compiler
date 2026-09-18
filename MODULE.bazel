@@ -46,6 +46,8 @@ coralnpuc_extension = use_extension("//build_tools/bazel:extensions.bzl", "coral
 use_repo(
     coralnpuc_extension,
     "accellera_systemc",
+    "libftdi1",
+    "libusb",
     "llvm-raw",
     "riscv_isa_sim",
     "rv32_toolchain",

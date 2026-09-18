@@ -31,8 +31,12 @@ typedef struct coralnpu_simulator_t coralnpu_simulator_t;
 
 typedef coralnpu_simulator_t *(*coralnpu_simulator_create_fn_t)(void);
 
-// Linked-in MPACT factory; other backends are dlopen'd.
+// Creates an MPACT instruction-set simulator instance (always linked in).
 coralnpu_simulator_t *coralnpu_simulator_mpact_create(void);
+
+// Creates a Nexus FPGA hardware backend instance (linked in when
+// CORALNPU_STATIC_FPGA is enabled; otherwise loaded via dlopen).
+coralnpu_simulator_t *coralnpu_simulator_fpga_create(void);
 
 void coralnpu_simulator_destroy(coralnpu_simulator_t *sim);
 void coralnpu_simulator_write_mem(coralnpu_simulator_t *sim, uint32_t addr,

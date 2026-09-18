@@ -66,6 +66,27 @@ def _coralnpuc_extension_impl(module_ctx):
             urls = ["https://github.com/verilator/verilator/archive/refs/tags/v5.052.tar.gz"],
         )
 
+        # Hermetic USB/FTDI libraries for the Nexus FPGA backend
+        # (//runtime/sim/fpga:simulator). Building from source avoids host
+        # /usr/include dependencies and configures libusb with its Linux
+        # netlink backend instead of libudev (Debian/Ubuntu ship no static
+        # libudev.a), enabling fully static FPGA binaries in
+        # //tests/fpga:fpga_tests_tar.
+        http_archive(
+            name = "libusb",
+            build_file = "//build_tools/bazel:libusb.BUILD",
+            sha256 = "5977fc950f8d1395ccea9bd48c06b3f808fd3c2c961b44b0c2e6e29fc3a70a85",
+            strip_prefix = "libusb-1.0.29",
+            urls = ["https://github.com/libusb/libusb/releases/download/v1.0.29/libusb-1.0.29.tar.bz2"],
+        )
+        http_archive(
+            name = "libftdi1",
+            build_file = "//build_tools/bazel:libftdi1.BUILD",
+            sha256 = "7c7091e9c86196148bd41177b4590dccb1510bfe6cea5bf7407ff194482eb049",
+            strip_prefix = "libftdi1-1.5",
+            urls = ["https://www.intra2net.com/en/developer/libftdi/download/libftdi1-1.5.tar.bz2"],
+        )
+
 coralnpuc_extension = module_extension(
     implementation = _coralnpuc_extension_impl,
 )

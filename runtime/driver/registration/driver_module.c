@@ -21,11 +21,14 @@
 #include <string.h>
 
 #include "iree/base/api.h"
-#include "iree/base/internal/dynamic_library.h"
 #include "iree/base/tooling/flags.h"
 #include "runtime/driver/coralnpu_driver.h"
 #include "runtime/metrics/stats_writer.h"
 #include "runtime/sim/simulator_backend.h"
+
+#if !defined(CORALNPU_STATIC_FPGA)
+#include "iree/base/internal/dynamic_library.h"
+#endif  // !defined(CORALNPU_STATIC_FPGA)
 
 IREE_FLAG(string, simulator, "mpact",
           "Execution backend to run CoralNPU dispatches on (mpact, spike, "
@@ -53,6 +56,7 @@ static const char* iree_hal_coralnpu_flag_or_env(const char* flag,
   return value && *value && strcmp(flag, default_value) == 0 ? value : flag;
 }
 
+#if !defined(CORALNPU_STATIC_FPGA)
 // Loads the simulator library |library_name| and sets |out_exec_backend| to a
 // backend named |backend_name| that uses the library's factory |symbol_name|.
 static iree_status_t iree_hal_coralnpu_simulator_load_dylib(
@@ -78,9 +82,11 @@ static iree_status_t iree_hal_coralnpu_simulator_load_dylib(
       iree_hal_coralnpu_simulator_backend_make(factory, backend_name);
   return iree_ok_status();
 }
+#endif  // !defined(CORALNPU_STATIC_FPGA)
 
-// Sets |out_exec_backend| to the execution backend |name|. MPACT is linked
-// in; the other simulators are loaded from their shared libraries.
+// Sets |out_exec_backend| to the execution backend |name|. MPACT is always
+// linked in; when CORALNPU_STATIC_FPGA is defined, the FPGA backend is also
+// linked in and shared-library simulators (Spike, Verilator) are unavailable.
 static iree_status_t iree_hal_coralnpu_simulator_load(
     iree_string_view_t name,
     iree_hal_coralnpu_exec_backend_t* out_exec_backend) {
@@ -89,6 +95,22 @@ static iree_status_t iree_hal_coralnpu_simulator_load(
         coralnpu_simulator_mpact_create, IREE_SV("mpact"));
     return iree_ok_status();
   }
+#if defined(CORALNPU_STATIC_FPGA)
+  if (iree_string_view_equal(name, IREE_SV("fpga")) ||
+      iree_string_view_equal(name, IREE_SV("hw"))) {
+    *out_exec_backend = iree_hal_coralnpu_simulator_backend_make(
+        coralnpu_simulator_fpga_create, IREE_SV("fpga"));
+    return iree_ok_status();
+  }
+  if (iree_string_view_equal(name, IREE_SV("spike")) ||
+      iree_string_view_equal(name, IREE_SV("verilator"))) {
+    return iree_make_status(
+        IREE_STATUS_UNAVAILABLE,
+        "simulator '%.*s' is not available in the static FPGA build (only "
+        "'mpact', 'fpga', and 'hw' are linked in)",
+        (int)name.size, name.data);
+  }
+#else
   if (iree_string_view_equal(name, IREE_SV("spike"))) {
     return iree_hal_coralnpu_simulator_load_dylib(
         "libcoralnpu_simulator_spike.so", "coralnpu_simulator_spike_create",
@@ -105,6 +127,7 @@ static iree_status_t iree_hal_coralnpu_simulator_load(
         "libcoralnpu_simulator_fpga.so", "coralnpu_simulator_fpga_create",
         IREE_SV("fpga"), out_exec_backend);
   }
+#endif  // defined(CORALNPU_STATIC_FPGA)
   return iree_make_status(
       IREE_STATUS_INVALID_ARGUMENT,
       "unknown simulator '%.*s' (expected 'mpact', 'spike', 'verilator', "
