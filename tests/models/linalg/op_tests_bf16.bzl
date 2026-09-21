@@ -35,7 +35,7 @@ def linalg_op_tests_bf16(name = "linalg_op_bf16_tests", check_mlir_files = None,
     op_tests_bf16(name = "generic_add_rank2_bf16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "generic_add_rank2_bf16.mlir")
 
     # TODO: Fix compiler bug with multi-output generic ops.
-    op_tests_bf16(name = "generic_multi_output_bf16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "generic_multi_output_bf16.mlir", tags = ["manual"])
+    op_tests_bf16(name = "generic_multi_output_bf16", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "generic_multi_output_bf16.mlir")
     op_tests_bf16(name = "generic_add_rank3_bf16", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "generic_add_rank3_bf16.mlir")
     op_tests_bf16(name = "generic_add_rank4_bf16", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "generic_add_rank4_bf16.mlir")
     op_tests_bf16(name = "matmul_bf16", instances = ["(4,8)(8,4)", ("(120,256)(256,300)", ["manual"]), ("(300,100)(100,450)", ["manual"])], test = "matmul_bf16.mlir")
@@ -95,7 +95,7 @@ def linalg_op_tests_bf16(name = "linalg_op_bf16_tests", check_mlir_files = None,
     op_tests_bf16(name = "batch_matvec_bf16", instances = ["(2,4,8)(2,8)", ("(3,120,256)(3,256)", ["manual"])], test = "batch_matvec_bf16.mlir")
     op_tests_bf16(name = "batch_vecmat_bf16", instances = ["(2,8)(2,8,4)", ("(3,256)(3,256,120)", ["manual"])], test = "batch_vecmat_bf16.mlir")
     op_tests_bf16(name = "dot_bf16", instances = ["(8)(8)", ("(256)(256)", ["manual"]), ("(450)(450)", ["manual"])], test = "dot_bf16.mlir")
-    op_tests_bf16(name = "conv_1d_bf16", instances = ["(11)(3)", ("(258)(5)", ["manual"]), ("(453)(4)", ["manual"]), ("(135001)(5)", ["manual"])], test = "conv_1d_bf16.mlir")
+    op_tests_bf16(name = "conv_1d_bf16", instances = ["(11)(3)", "(258)(5)", "(453)(4)", "(135001)(5)"], test = "conv_1d_bf16.mlir")
     op_tests_bf16(name = "conv_1d_nwc_wcf_bf16", instances = ["(1,11,4)(3,4,8)", "(1,256,8)(5,8,16)", "(1,4097,33)(5,33,17)"], test = "conv_1d_nwc_wcf_bf16.mlir")
     op_tests_bf16(name = "conv_1d_ncw_fcw_bf16", instances = ["(1,4,11)(8,4,3)", "(1,8,256)(16,8,5)", "(1,33,4097)(17,33,5)"], test = "conv_1d_ncw_fcw_bf16.mlir")
     op_tests_bf16(name = "conv_2d_bf16", instances = ["(11,11)(3,3)", "(125,256)(5,7)", "(301,451)(5,7)"], test = "conv_2d_bf16.mlir")

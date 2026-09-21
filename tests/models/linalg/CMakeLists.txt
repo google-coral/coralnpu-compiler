@@ -15,9 +15,6 @@
 include(defs.cmake)
 
 set(LINALG_MANUAL_PATTERNS
-    "softmax_"
-    "select_"
-    "generic_multi_output_"
     "pack_padding_.*_(7_15|17_33)"
     # BF16 manual instances (due to large accumulation divergence or ITCM size)
     "matmul_bf16_(120_256-256_300|300_100-100_450)"
@@ -34,7 +31,6 @@ set(LINALG_MANUAL_PATTERNS
     "batch_matvec_bf16_3_120_256-3_256"
     "batch_vecmat_bf16_3_256-3_256_120"
     "dot_bf16_(256-256|450-450)"
-    "conv_1d_bf16_(258-5|453-4|135001-5)"
 )
 
 foreach(TYPE f32 bf16 i16 i32 i8)

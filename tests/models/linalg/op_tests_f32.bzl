@@ -35,7 +35,7 @@ def linalg_op_tests_f32(name = "linalg_op_f32_tests", check_mlir_files = None, g
     op_tests_f32(name = "generic_add_rank2_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "generic_add_rank2_f32.mlir")
 
     # TODO: Fix compiler bug with multi-output generic ops.
-    op_tests_f32(name = "generic_multi_output_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "generic_multi_output_f32.mlir", tags = ["manual"])
+    op_tests_f32(name = "generic_multi_output_f32", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "generic_multi_output_f32.mlir")
     op_tests_f32(name = "generic_add_rank3_f32", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "generic_add_rank3_f32.mlir")
     op_tests_f32(name = "generic_add_rank4_f32", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "generic_add_rank4_f32.mlir")
     op_tests_f32(name = "matmul_f32", instances = ["(4,8)(8,4)", "(120,256)(256,300)", "(300,100)(100,450)"], test = "matmul_f32.mlir")

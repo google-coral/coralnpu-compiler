@@ -15,14 +15,7 @@
 include(defs.cmake)
 
 set(STABLEHLO_MANUAL_PATTERNS
-    "case_"
-    "compare_eq_"
-    "concatenate_rank[234]_"
-    "is_finite_"
-    "pad_rank2_"
-    "reverse_rank2_i32_(120_256|300_450)"
     "scatter_"
-    "slice_rank[234]_"
     # BF16 manual instances (due to large accumulation divergence)
     "convolution_rank2_bf16_(120_256-256_300|300_100-100_450)"
     "convolution_rank3_bf16_2_120_3-5_3_32"
