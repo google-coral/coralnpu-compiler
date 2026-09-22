@@ -7,7 +7,6 @@ load(
     "compute_missing_gen_targets",
     "copy_generated_check_tests",
     "copy_generated_check_tests_suite",
-    "coralnpu_check_test",
     "sync_generated_tests_suite",
 )
 load("//tests/models/linalg:op_tests_bf16.bzl", "linalg_op_tests_bf16")
@@ -255,27 +254,6 @@ filegroup(
     srcs = f32_existing + bf16_existing + i16_existing + i32_existing + i8_existing,
     visibility = ["//visibility:public"],
 )
-
-# 6. Verilator RTL smoke tests (runs in CI)
-[
-    coralnpu_check_test(
-        name = "%s_verilator_test" % name,
-        timeout = "short",
-        src = src,
-        compiler_flags = [
-            "--iree-hal-target-device=coralnpu",
-            "> /dev/null",
-        ],
-        simulator = "verilator",
-        tags = ["ci"],
-    )
-    for name, src in [
-        ("abs_f32_4_8", "generated_f32/abs_f32_4_8_check.mlir"),
-        ("add_i32_4_8-4_8", "generated_i32/add_i32_4_8-4_8_check.mlir"),
-        ("matmul_f32_4_8-8_4", "generated_f32/matmul_f32_4_8-8_4_check.mlir"),
-        ("matmul_i8_4_8-8_4", "generated_i8/matmul_i8_4_8-8_4_check.mlir"),
-    ]
-]
 
 test_suite(
     name = "ci",

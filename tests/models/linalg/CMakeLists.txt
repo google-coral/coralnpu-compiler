@@ -42,29 +42,5 @@ foreach(TYPE f32 bf16 i16 i32 i8)
   )
 endforeach()
 
-if(CORALNPU_ENABLE_VERILATOR)
-  foreach(_VERILATOR_TEST
-      "generated_f32/abs_f32_4_8_check.mlir"
-      "generated_i32/add_i32_4_8-4_8_check.mlir"
-      "generated_f32/matmul_f32_4_8-8_4_check.mlir"
-      "generated_i8/matmul_i8_4_8-8_4_check.mlir")
-    get_filename_component(_BASE_NAME "${_VERILATOR_TEST}" NAME_WE)
-    string(REGEX REPLACE "_check$" "" _BASE_NAME "${_BASE_NAME}")
-    coralnpu_check_test(
-      NAME
-        "${_BASE_NAME}_verilator_test"
-      SRC
-        "${_VERILATOR_TEST}"
-      COMPILER_FLAGS
-        ${_COMMON_COMPILER_FLAGS}
-      RUNNER_ARGS
-        "--device=coralnpu"
-        "--simulator=verilator"
-      LABELS
-        "ci"
-    )
-  endforeach()
-endif()
-
 coralnpu_check_generated_sync_test()
 
