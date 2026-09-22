@@ -12,32 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["cat.jpg"])
-
-py_binary(
-    name = "export_mobilenet",
-    srcs = ["export_mobilenet.py"],
-    deps = [
-        "@pip_deps//jax",
-        "@pip_deps//jaxlib",
-        "@pip_deps//keras",
-        "@pip_deps//numpy",
-    ],
-)
-
-py_binary(
-    name = "classify",
-    srcs = ["classify.py"],
+py_library(
+    name = "utils",
+    srcs = ["utils.py"],
     deps = [
         "@iree_core//runtime/bindings/python:runtime",
         "@pip_deps//jax",
         "@pip_deps//jaxlib",
-        "@pip_deps//keras",
         "@pip_deps//numpy",
-        "@pip_deps//pillow",
     ],
 )

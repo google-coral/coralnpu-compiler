@@ -1,0 +1,115 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("//tests/examples:defs.bzl", "coralnpu_example_test")
+
+package(
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+coralnpu_example_test(
+    name = "anomaly_detection_test",
+    export_tool = "//examples/anomaly-detection-jax-aot:export_anomaly_detection",
+    reference = "//examples/anomaly-detection-jax-aot:reference.npy",
+    runner_tool = "//examples/anomaly-detection-jax-aot:detect_anomaly",
+    tags = ["ci"],
+)
+
+# This is an example of how to add a verilator test.
+coralnpu_example_test(
+    name = "anomaly_detection_verilator_test",
+    timeout = "eternal",
+    export_tool = "//examples/anomaly-detection-jax-aot:export_anomaly_detection",
+    reference = "//examples/anomaly-detection-jax-aot:reference.npy",
+    runner_tool = "//examples/anomaly-detection-jax-aot:detect_anomaly",
+    simulator = "verilator",
+    # Too slow for CI
+    tags = ["manual"],
+)
+
+coralnpu_example_test(
+    name = "person_detection_test",
+    export_tool = "//examples/person-detection-jax-aot:export_person_detection",
+    reference = "//examples/person-detection-jax-aot:reference.npy",
+    runner_tool = "//examples/person-detection-jax-aot:detect_person",
+    tags = ["ci"],
+)
+
+coralnpu_example_test(
+    name = "resnet8_cifar10_test",
+    export_tool = "//examples/resnet8-cifar10-jax-aot:export_resnet8",
+    reference = "//examples/resnet8-cifar10-jax-aot:reference.npy",
+    runner_tool = "//examples/resnet8-cifar10-jax-aot:classify_cifar10",
+    tags = ["ci"],
+)
+
+coralnpu_example_test(
+    name = "keyword_spotting_test",
+    export_tool = "//examples/keyword-spotting-jax-aot:export_keyword_spotting",
+    reference = "//examples/keyword-spotting-jax-aot:reference.npy",
+    runner_tool = "//examples/keyword-spotting-jax-aot:spot_keyword",
+    tags = ["ci"],
+)
+
+coralnpu_example_test(
+    name = "mobilenetv1_test",
+    export_tool = "//examples/mobilenetv1-jax-aot:export_mobilenetv1",
+    reference = "//examples/mobilenetv1-jax-aot:reference.npy",
+    runner_tool = "//examples/mobilenetv1-jax-aot:classify_mobilenetv1",
+    tags = ["ci"],
+)
+
+coralnpu_example_test(
+    name = "efficientnet_test",
+    export_tool = "//examples/efficientnet-jax-aot:export_efficientnet",
+    reference = "//examples/efficientnet-jax-aot:reference.npy",
+    runner_tool = "//examples/efficientnet-jax-aot:classify_efficientnet",
+    tags = ["ci"],
+)
+
+# MPACT simulation takes too long for CI.
+coralnpu_example_test(
+    name = "yolo_test",
+    timeout = "long",
+    export_tool = "//examples/yolo-tflite-aot:export_yolo",
+    reference = "//examples/yolo-tflite-aot:reference.npy",
+    runner_tool = "//examples/yolo-tflite-aot:detect_yolo",
+    # Too slow for CI
+    tags = ["manual"],
+)
+
+# Smaller version of yolo.
+coralnpu_example_test(
+    name = "yolo_160_test",
+    export_tool = "//examples/yolo-tflite-aot:export_yolo_160",
+    reference = "//examples/yolo-tflite-aot:reference_160.npy",
+    runner_tool = "//examples/yolo-tflite-aot:detect_yolo_160",
+    tags = ["manual"],
+)
+
+# TODO: Enable moonshine_test in CI once ITCM overflow during compilation is resolved.
+coralnpu_example_test(
+    name = "moonshine_test",
+    export_tool = "//examples/moonshine-jax-aot:export_moonshine",
+    highmem = True,
+    reference = "//examples/moonshine-jax-aot:reference.npy",
+    runner_tool = "//examples/moonshine-jax-aot:transcribe_moonshine",
+    tags = ["manual"],
+)
+
+test_suite(
+    name = "ci",
+    tags = ["ci"],
+)

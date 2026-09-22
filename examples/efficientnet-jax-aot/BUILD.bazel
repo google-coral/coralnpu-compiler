@@ -16,26 +16,23 @@ load("@rules_python//python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["cat.jpg"])
+exports_files(["reference.npy"])
 
 py_binary(
-    name = "export_mobilenet",
-    srcs = ["export_mobilenet.py"],
+    name = "export_efficientnet",
+    srcs = ["export_efficientnet.py"],
     deps = [
-        "@pip_deps//jax",
-        "@pip_deps//jaxlib",
+        "//examples:utils",
         "@pip_deps//keras",
-        "@pip_deps//numpy",
     ],
 )
 
 py_binary(
-    name = "classify",
-    srcs = ["classify.py"],
+    name = "classify_efficientnet",
+    srcs = ["classify_efficientnet.py"],
+    data = ["//examples/mobilenetv2-jax-aot:cat.jpg"],
     deps = [
-        "@iree_core//runtime/bindings/python:runtime",
-        "@pip_deps//jax",
-        "@pip_deps//jaxlib",
+        "//examples:utils",
         "@pip_deps//keras",
         "@pip_deps//numpy",
         "@pip_deps//pillow",

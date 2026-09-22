@@ -50,7 +50,7 @@ def parse_args():
   )
   parser.add_argument(
       "--output-dir",
-      default="./agent-temp",
+      default="./",
       help="Directory to store summary reports.",
   )
   parser.add_argument(
