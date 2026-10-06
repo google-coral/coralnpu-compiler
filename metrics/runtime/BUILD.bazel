@@ -39,6 +39,7 @@ cc_library(
     hdrs = ["stats_collector.h"],
     deps = [
         ":dispatch_stats",
+        "//crt:coralnpu_dispatch_hdrs",
         "//runtime/driver:run_hooks",
     ],
 )

@@ -23,6 +23,13 @@
 extern "C" {
 #endif  // __cplusplus
 
+// The host runs every dispatch by loading its "firmware" on the core: the
+// bare-metal ELF that the compiler links from the executable library,
+// libcoralnpu_iree.a (coralnpu_main.c), and libcoralnpu_crt.a. The host and
+// the firmware communicate through the firmware's
+// `coralnpu_dispatch_request` variable: the host writes the whole request
+// before every run, and reads it back after the firmware halted.
+
 #define CORALNPU_DISPATCH_MAGIC 0x434E5055u
 #define CORALNPU_DISPATCH_VERSION 1u
 
@@ -33,6 +40,12 @@ typedef enum coralnpu_dispatch_status_t {
   CORALNPU_DISPATCH_STATUS_COMPLETE = 3,
   CORALNPU_DISPATCH_STATUS_ERROR = 4,
 } coralnpu_dispatch_status_t;
+
+// Bits of `coralnpu_dispatch_request_t::valid_mask`.
+typedef enum coralnpu_dispatch_valid_t {
+  CORALNPU_DISPATCH_VALID_KERNEL_CYCLES = 1u << 0,   // kernel_cycles_{lo,hi}
+  CORALNPU_DISPATCH_VALID_KERNEL_INSTRET = 1u << 1,  // kernel_instret_{lo,hi}
+} coralnpu_dispatch_valid_t;
 
 typedef struct coralnpu_dispatch_request_t {
   uint32_t magic;
@@ -61,13 +74,26 @@ typedef struct coralnpu_dispatch_request_t {
   // Both are 0 if the dispatch uses no local memory.
   uint32_t local_memory_addr;
   uint32_t local_memory_size;
+
+  // Firmware outputs, which the host writes as zero.
+
+  // Bitfield of CORALNPU_DISPATCH_VALID_* values: which of the fields below
+  // the firmware filled.
+  uint32_t valid_mask;
+
+  // mcycle and minstret deltas around the workgroup loop, without the crt
+  // startup and the request validation.
+  uint32_t kernel_cycles_lo;
+  uint32_t kernel_cycles_hi;
+  uint32_t kernel_instret_lo;
+  uint32_t kernel_instret_hi;
 } coralnpu_dispatch_request_t;
 
 #if defined(__cplusplus)
-static_assert(sizeof(coralnpu_dispatch_request_t) == 64,
+static_assert(sizeof(coralnpu_dispatch_request_t) == 84,
               "unexpected CoralNPU dispatch ABI size");
 #else
-_Static_assert(sizeof(coralnpu_dispatch_request_t) == 64,
+_Static_assert(sizeof(coralnpu_dispatch_request_t) == 84,
                "unexpected CoralNPU dispatch ABI size");
 #endif
 

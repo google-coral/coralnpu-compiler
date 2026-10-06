@@ -119,15 +119,16 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
   total cycles (`bazel test --config=dev //metrics/tests/runtime:ci`).
 
 ### CL 2b: Report Firmware-Measured Kernel Cycles and Retired Instructions
-- [ ] **Step 3 (`crt/coralnpu_{dispatch.h,main.c}`,
+- [x] **Step 3 (`crt/coralnpu_{dispatch.h,main.c}`,
   `runtime/driver/coralnpu_run_hooks.h`, `runtime/sim/simulator_inline.c`,
   `metrics/runtime/*`)**: Extend `coralnpu_dispatch_request_t` to 84 bytes,
   sample 64-bit `mcycle` and `minstret` around the 3D workgroup loop, and report
   `cycles.kernel` and `instret.kernel`.
-- [ ] **Tests (`metrics/tests/runtime/stats_test.py`)**: *Positive*: Verify
-  `0 < cycles.kernel < cycles.total` and `instret.kernel > 0` (`bazel test
-  --config=dev //metrics/tests/runtime:stats_test`). *Negative*: Verify failed
-  or non-halted dispatches omit kernel counters when `valid_mask` is unset.
+- [x] **Tests (`metrics/tests/runtime/stats_test.py`)**: *Positive*: Verify
+  `0 < cycles.kernel < cycles.total` and `instret.kernel > 0` in JSON and
+  `pretty` tables (`bazel test --config=dev //metrics/tests/runtime:stats_test`).
+  *Negative*: Verify failed dispatches omit kernel counters when `valid_mask` is
+  unset, and verify default-disabled and invalid `--coralnpu_stats_format` runs.
 
 ### CL 2c: Add Per-Dispatch ELF Memory Footprint and Stack Peak to Stats
 - [ ] **Step 4 (`runtime/driver/coralnpu_dispatch_observer.h`,
@@ -154,6 +155,14 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
   `iree_hal_coralnpu_device_check_params` that `end_dispatch` is non-null when
   `begin_dispatch` is provided, and passed `observed ? &hooks : NULL` to
   `exec_backend.dispatch`.
+- **CL 2b (`crt/coralnpu_main.c` ITCM Footprint & CSR Barrier)**: Marked
+  `coralnpu_dispatch_fail` `__attribute__((noinline))` (writing directly to
+  `coralnpu_dispatch_request`), marked `coralnpu_read_{mcycle,minstret}`
+  `__attribute__((always_inline))` with a `"memory"` clobber (avoiding mixed
+  inline/out-of-line emission under `-Os` and instruction reordering across CSR
+  reads), placed the zero-initialized 80-byte `environment` struct in `.bss`
+  (`DTCM`) instead of `.rodata` (`ITCM`), and cached `workgroup_count_{x,y,z}`
+  in locals to fit the 8 KiB ITCM budget.
 
 ---
 

@@ -21,6 +21,8 @@
 #ifndef RUNTIME_DRIVER_CORALNPU_RUN_HOOKS_H_
 #define RUNTIME_DRIVER_CORALNPU_RUN_HOOKS_H_
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -33,6 +35,9 @@ typedef struct iree_hal_coralnpu_core_access_t {
   void *self;
   // Returns the cycle counter of the core; 0 if the backend has none.
   uint64_t (*cycle_count)(void *self);
+  // Reads |size| bytes at |address| of the memory of the core into |data|.
+  // The read may advance the cycle counter (e.g. on Verilator).
+  void (*read_mem)(void *self, uint32_t address, void *data, size_t size);
 } iree_hal_coralnpu_core_access_t;
 
 // The run of a dispatch: the core runs the program of the dispatch from its
@@ -40,6 +45,11 @@ typedef struct iree_hal_coralnpu_core_access_t {
 typedef struct iree_hal_coralnpu_run_t {
   // The core that runs the dispatch.
   iree_hal_coralnpu_core_access_t core;
+  // Address of the dispatch request of the firmware
+  // (crt/coralnpu_dispatch.h).
+  uint32_t dispatch_request_addr;
+  // Whether the core halted; set before after_run.
+  bool halted;
 } iree_hal_coralnpu_run_t;
 
 // Hooks that an execution backend calls while it runs a dispatch. Each hook

@@ -16,6 +16,7 @@
 import argparse
 import json
 import os
+import struct
 import subprocess
 import sys
 import tempfile
@@ -42,14 +43,14 @@ _BAZEL_TEST_ENV = (
 )
 
 
-def run_check_module(*flags, **extra_env):
+def run_check_module(*flags, module=None, **extra_env):
   """Runs the test module with iree-check-module on MPACT."""
   env = {k: v for k, v in os.environ.items() if k not in _BAZEL_TEST_ENV}
   env.update(extra_env)
   return subprocess.run(
       [
           _CHECK_MODULE,
-          f"--module={_MODULE}",
+          f"--module={module or _MODULE}",
           "--device=coralnpu",
           "--simulator=mpact",
           *flags,
@@ -59,6 +60,24 @@ def run_check_module(*flags, **extra_env):
       check=False,
       env=env,
   )
+
+
+def _halt_at_entry(module_bytes):
+  """Replaces the first instruction of each embedded ELF with mpause."""
+  data = bytearray(module_bytes)
+  offset = data.find(b"\x7fELF")
+  while offset != -1:
+    if data[offset + 4:offset + 6] == b"\x01\x01":
+      (e_phoff,) = struct.unpack_from("<I", data, offset + 0x1C)
+      e_phentsize, e_phnum = struct.unpack_from("<HH", data, offset + 0x2A)
+      for i in range(e_phnum):
+        phdr = offset + e_phoff + i * e_phentsize
+        p_type, p_offset, p_vaddr, _, p_filesz = struct.unpack_from(
+            "<IIIII", data, phdr)
+        if p_type == 1 and p_vaddr == 0 and p_filesz >= 4:
+          struct.pack_into("<I", data, offset + p_offset, 0x08000073)  # mpause
+    offset = data.find(b"\x7fELF", offset + 1)
+  return bytes(data)
 
 
 def json_records(text):
@@ -79,6 +98,10 @@ class StatsTest(unittest.TestCase):
     self.assertEqual(record["backend"], {"simulator": "mpact"})
     self.assertEqual(record["status"], {"code": "OK"})
     self.assertGreater(record["cycles"]["total"], 0)
+    # Firmware-measured counters of the workgroup loop only.
+    self.assertGreater(record["cycles"]["kernel"], 0)
+    self.assertLess(record["cycles"]["kernel"], record["cycles"]["total"])
+    self.assertGreater(record["instret"]["kernel"], 0)
 
   def test_json_file(self):
     with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMPDIR")) as tmp:
@@ -112,12 +135,60 @@ class StatsTest(unittest.TestCase):
     self.assertIn("CoralNPU dispatch stats (backend: mpact)", result.stderr)
     self.assertIn("executable::export", result.stderr)
     self.assertIn("(total)", result.stderr)
+    self.assertIn("kcycles(total)", result.stderr)
+    self.assertIn("kinstret(total)", result.stderr)
+    totals = [
+        line.split()
+        for line in result.stderr.splitlines()
+        if line.endswith("  (total)")
+    ]
+    self.assertTrue(totals, result.stderr)
+    for row in totals:
+      _, _, cycles, kcycles, kinstret = (int(x) for x in row[:5])
+      self.assertGreater(kcycles, 0)
+      self.assertLess(kcycles, cycles)
+      self.assertGreater(kinstret, 0)
 
   def test_disabled_by_default(self):
     result = run_check_module()
     self.assertEqual(result.returncode, 0, result.stderr)
     self.assertNotIn(_SCHEMA, result.stdout + result.stderr)
     self.assertNotIn("CoralNPU dispatch stats", result.stdout + result.stderr)
+
+  def test_failed_dispatch_omits_kernel_counters(self):
+    with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMPDIR")) as tmp:
+      bad_module = os.path.join(tmp, "bad_module.vmfb")
+      with open(_MODULE, "rb") as f:
+        patched = _halt_at_entry(f.read())
+      with open(bad_module, "wb") as f:
+        f.write(patched)
+      result = run_check_module(
+          "--coralnpu_stats_format=json",
+          "--coralnpu_stats_file=-",
+          module=bad_module,
+      )
+      self.assertNotEqual(result.returncode, 0)
+      records = json_records(result.stdout)
+      self.assertTrue(records, result.stdout)
+      for record in records:
+        self.assertNotEqual(record["status"]["code"], "OK")
+        self.assertGreater(record["cycles"]["total"], 0)
+        self.assertNotIn("kernel", record["cycles"])
+        self.assertNotIn("instret", record)
+      pretty = run_check_module("--coralnpu_stats_format=pretty",
+                                module=bad_module)
+      self.assertNotEqual(pretty.returncode, 0)
+      totals = [
+          line.split()
+          for line in pretty.stderr.splitlines()
+          if line.endswith("  (total)")
+      ]
+      self.assertTrue(totals, pretty.stderr)
+      for row in totals:
+        self.assertGreater(int(row[1]), 0)  # failed
+        self.assertGreater(int(row[2]), 0)  # cycles(total)
+        self.assertEqual(row[3], "-")  # kcycles(total)
+        self.assertEqual(row[4], "-")  # kinstret(total)
 
   def test_env_fallback(self):
     # The environment applies unless the flags are set.

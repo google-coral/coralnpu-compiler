@@ -44,6 +44,11 @@ typedef struct iree_hal_coralnpu_stats_entry_t {
   uint64_t cycles_sum;
   uint64_t cycles_min;
   uint64_t cycles_max;
+  // Number of dispatches that reported kernel cycles / instret, and sums.
+  uint64_t kernel_cycles_count;
+  uint64_t kernel_cycles_sum;
+  uint64_t kernel_instret_count;
+  uint64_t kernel_instret_sum;
 } iree_hal_coralnpu_stats_entry_t;
 
 struct iree_hal_coralnpu_stats_t {
@@ -201,10 +206,27 @@ static void iree_hal_coralnpu_stats_write_json_record(
   fputc('}', file);
   fprintf(file, ",\"status\":{\"code\":\"%s\"}",
           iree_status_code_string(status_code));
-  if (iree_all_bits_set(dispatch_stats->valid_fields,
-                        IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_CYCLES_TOTAL)) {
-    fprintf(file, ",\"cycles\":{\"total\":%" PRIu64 "}",
-            dispatch_stats->cycles_total);
+  const uint32_t valid = dispatch_stats->valid_fields;
+  const bool has_cycles_total = iree_all_bits_set(
+      valid, IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_CYCLES_TOTAL);
+  const bool has_cycles_kernel = iree_all_bits_set(
+      valid, IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_CYCLES_KERNEL);
+  // The "cycles" object has only the counts that were reported.
+  if (has_cycles_total || has_cycles_kernel) {
+    fputs(",\"cycles\":{", file);
+    if (has_cycles_total) {
+      fprintf(file, "\"total\":%" PRIu64 "%s", dispatch_stats->cycles_total,
+              has_cycles_kernel ? "," : "");
+    }
+    if (has_cycles_kernel) {
+      fprintf(file, "\"kernel\":%" PRIu64, dispatch_stats->cycles_kernel);
+    }
+    fputc('}', file);
+  }
+  if (iree_all_bits_set(
+          valid, IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_INSTRET_KERNEL)) {
+    fprintf(file, ",\"instret\":{\"kernel\":%" PRIu64 "}",
+            dispatch_stats->instret_kernel);
   }
   fputs("}\n", file);
   fflush(file);
@@ -287,6 +309,18 @@ static iree_status_t iree_hal_coralnpu_stats_record(
       if (cycles < entry->cycles_min) entry->cycles_min = cycles;
       if (cycles > entry->cycles_max) entry->cycles_max = cycles;
     }
+    if (iree_all_bits_set(
+            dispatch_stats->valid_fields,
+            IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_CYCLES_KERNEL)) {
+      ++entry->kernel_cycles_count;
+      entry->kernel_cycles_sum += dispatch_stats->cycles_kernel;
+    }
+    if (iree_all_bits_set(
+            dispatch_stats->valid_fields,
+            IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_INSTRET_KERNEL)) {
+      ++entry->kernel_instret_count;
+      entry->kernel_instret_sum += dispatch_stats->instret_kernel;
+    }
   }
 
   iree_slim_mutex_unlock(&stats->mutex);
@@ -353,42 +387,72 @@ static void iree_hal_coralnpu_stats_write_summary(
     return;
   }
 
-  fprintf(file, " %10s %7s %15s %13s %13s %13s  %s\n", "dispatches", "failed",
-          "cycles(total)", "cycles(avg)", "cycles(min)", "cycles(max)",
+  fprintf(file, " %10s %7s %15s %13s %13s %13s %15s %15s  %s\n", "dispatches",
+          "failed", "cycles(total)", "cycles(avg)", "cycles(min)",
+          "cycles(max)", "kcycles(total)", "kinstret(total)",
           "executable::export");
   uint64_t total_dispatches = 0;
   uint64_t total_failures = 0;
   uint64_t total_cycles = 0;
+  uint64_t total_kernel_cycles = 0;
+  uint64_t total_kernel_instret = 0;
   bool all_have_cycles = true;
+  bool all_have_kernel_cycles = true;
+  bool all_have_kernel_instret = true;
   for (iree_host_size_t i = 0; i < stats->entry_count; ++i) {
     const iree_hal_coralnpu_stats_entry_t *entry = stats->entries[i];
-    // Only report cycles when every dispatch of the entry reported them;
+    // Only report a sum when every dispatch of the entry reported the value;
     // partial sums would be misleading.
     const bool has_cycles = entry->cycles_count == entry->dispatch_count;
-    iree_hal_coralnpu_stats_write_column(file, true, entry->dispatch_count, 10);
-    iree_hal_coralnpu_stats_write_column(file, true, entry->failure_count, 7);
+    const bool has_kernel_cycles =
+        entry->kernel_cycles_count == entry->dispatch_count;
+    const bool has_kernel_instret =
+        entry->kernel_instret_count == entry->dispatch_count;
+    iree_hal_coralnpu_stats_write_column(file, /*valid=*/true,
+                                         entry->dispatch_count, /*width=*/10);
+    iree_hal_coralnpu_stats_write_column(file, /*valid=*/true,
+                                         entry->failure_count, /*width=*/7);
     iree_hal_coralnpu_stats_write_column(file, has_cycles, entry->cycles_sum,
-                                         15);
+                                         /*width=*/15);
     iree_hal_coralnpu_stats_write_column(
         file, has_cycles,
-        has_cycles ? entry->cycles_sum / entry->dispatch_count : 0, 13);
+        has_cycles ? entry->cycles_sum / entry->dispatch_count : 0,
+        /*width=*/13);
     iree_hal_coralnpu_stats_write_column(file, has_cycles, entry->cycles_min,
-                                         13);
+                                         /*width=*/13);
     iree_hal_coralnpu_stats_write_column(file, has_cycles, entry->cycles_max,
-                                         13);
+                                         /*width=*/13);
+    iree_hal_coralnpu_stats_write_column(file, has_kernel_cycles,
+                                         entry->kernel_cycles_sum,
+                                         /*width=*/15);
+    iree_hal_coralnpu_stats_write_column(file, has_kernel_instret,
+                                         entry->kernel_instret_sum,
+                                         /*width=*/15);
     fprintf(file, "  %.*s::%.*s\n", (int)entry->executable_name.size,
             entry->executable_name.data, (int)entry->export_name.size,
             entry->export_name.data);
     total_dispatches += entry->dispatch_count;
     total_failures += entry->failure_count;
     total_cycles += entry->cycles_sum;
+    total_kernel_cycles += entry->kernel_cycles_sum;
+    total_kernel_instret += entry->kernel_instret_sum;
     all_have_cycles = all_have_cycles && has_cycles;
+    all_have_kernel_cycles = all_have_kernel_cycles && has_kernel_cycles;
+    all_have_kernel_instret = all_have_kernel_instret && has_kernel_instret;
   }
-  iree_hal_coralnpu_stats_write_column(file, true, total_dispatches, 10);
-  iree_hal_coralnpu_stats_write_column(file, true, total_failures, 7);
-  iree_hal_coralnpu_stats_write_column(file, all_have_cycles, total_cycles, 15);
+  iree_hal_coralnpu_stats_write_column(file, /*valid=*/true, total_dispatches,
+                                       /*width=*/10);
+  iree_hal_coralnpu_stats_write_column(file, /*valid=*/true, total_failures,
+                                       /*width=*/7);
+  iree_hal_coralnpu_stats_write_column(file, all_have_cycles, total_cycles,
+                                       /*width=*/15);
   // The avg, min and max columns have no total.
-  fprintf(file, " %13s %13s %13s  %s\n", "", "", "", "(total)");
+  fprintf(file, " %13s %13s %13s", "", "", "");
+  iree_hal_coralnpu_stats_write_column(file, all_have_kernel_cycles,
+                                       total_kernel_cycles, /*width=*/15);
+  iree_hal_coralnpu_stats_write_column(file, all_have_kernel_instret,
+                                       total_kernel_instret, /*width=*/15);
+  fputs("  (total)\n", file);
   fflush(file);
 }
 

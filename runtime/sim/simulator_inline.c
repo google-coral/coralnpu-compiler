@@ -29,12 +29,19 @@ static uint64_t iree_hal_coralnpu_simulator_cycle_count(void* self) {
   return coralnpu_simulator_get_cycle_count((coralnpu_simulator_t*)self);
 }
 
+// Reads the memory of the simulator |self| for the run hooks.
+static void iree_hal_coralnpu_simulator_read_mem(void* self, uint32_t address,
+                                                 void* data, size_t size) {
+  coralnpu_simulator_read_mem((coralnpu_simulator_t*)self, address, data, size);
+}
+
 // Returns the access of the run hooks to the core of |sim|.
 static iree_hal_coralnpu_core_access_t iree_hal_coralnpu_simulator_core_access(
     coralnpu_simulator_t* sim) {
   iree_hal_coralnpu_core_access_t core = {
       .self = sim,
       .cycle_count = iree_hal_coralnpu_simulator_cycle_count,
+      .read_mem = iree_hal_coralnpu_simulator_read_mem,
   };
   return core;
 }
@@ -301,11 +308,13 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
   coralnpu_simulator_write_mem(sim, elf_layout.dispatch_request_addr, &request,
                                sizeof(request));
 
-  const iree_hal_coralnpu_run_t run = {
+  iree_hal_coralnpu_run_t run = {
       .core = iree_hal_coralnpu_simulator_core_access(sim),
+      .dispatch_request_addr = elf_layout.dispatch_request_addr,
   };
   if (hooks && hooks->before_run) hooks->before_run(hooks->self, &run);
   const bool halted = coralnpu_simulator_run(sim, elf_layout.start_pc);
+  run.halted = halted;
   if (hooks && hooks->after_run) hooks->after_run(hooks->self, &run);
   if (!halted) {
     return iree_make_status(IREE_STATUS_INTERNAL, "CoralNPU core did not halt");

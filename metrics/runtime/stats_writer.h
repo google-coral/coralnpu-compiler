@@ -33,7 +33,8 @@ extern "C" {
 //   dispatch       {executable, name, ordinal}: the export that ran
 //   backend        {simulator}: mpact, spike, verilator or fpga
 //   status         {code}: the IREE status code, "OK" on success
-//   cycles         {total}: cycles_total
+//   cycles         {total, kernel}: cycles_total and cycles_kernel
+//   instret        {kernel}: instret_kernel
 #define IREE_HAL_CORALNPU_STATS_SCHEMA "coralnpu.stats.v1"
 
 // Output format of per-dispatch execution statistics.

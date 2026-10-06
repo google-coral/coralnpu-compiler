@@ -32,6 +32,10 @@ enum iree_hal_coralnpu_dispatch_stats_field_bits_e {
   IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_NONE = 0u,
   // |cycles_total| is valid.
   IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_CYCLES_TOTAL = 1u << 0,
+  // |cycles_kernel| is valid.
+  IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_CYCLES_KERNEL = 1u << 1,
+  // |instret_kernel| is valid.
+  IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_INSTRET_KERNEL = 1u << 2,
 };
 
 // Statistics of a single dispatch. Fields whose bit is not set in
@@ -42,6 +46,10 @@ typedef struct iree_hal_coralnpu_dispatch_stats_t {
   // Cycles from the start of the dispatch program until it terminated,
   // including the firmware startup and teardown code.
   uint64_t cycles_total;
+  // Cycles (mcycle) and retired instructions (minstret) of the workgroup
+  // loop, measured by the firmware.
+  uint64_t cycles_kernel;
+  uint64_t instret_kernel;
 } iree_hal_coralnpu_dispatch_stats_t;
 
 #ifdef __cplusplus
