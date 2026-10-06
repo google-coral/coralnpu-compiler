@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//build_tools/bazel:bytecode_module.bzl", "coralnpu_bytecode_module")
 
@@ -44,6 +45,47 @@ py_test(
         "driver=coralnpu",
         "simulator=mpact",
         "target=coralnpu",
+    ],
+)
+
+coralnpu_bytecode_module(
+    name = "memory_test_module",
+    src = "memory_test.mlir",
+    flags = ["--iree-hal-target-device=coralnpu"],
+)
+
+# The footprint is computed on the host, so one simulator is enough.
+py_test(
+    name = "memory_test",
+    timeout = "moderate",
+    srcs = ["memory_test.py"],
+    args = [
+        "--run-module=$(rootpath @iree_core//tools:iree-run-module)",
+        "--module=$(rootpath :memory_test_module.vmfb)",
+    ],
+    data = [
+        ":memory_test_module.vmfb",
+        "@iree_core//tools:iree-run-module",
+    ],
+    main = "memory_test.py",
+    tags = [
+        "ci",
+        "driver=coralnpu",
+        "simulator=mpact",
+        "target=coralnpu",
+    ],
+)
+
+cc_test(
+    name = "stack_peak_test",
+    srcs = ["stack_peak_test.c"],
+    # --config=release hides the symbols of the shared libraries.
+    linkstatic = True,
+    tags = ["ci"],
+    deps = [
+        "//metrics/runtime:dispatch_stats",
+        "//metrics/runtime:stack_peak",
+        "//runtime/driver:run_hooks",
     ],
 )
 

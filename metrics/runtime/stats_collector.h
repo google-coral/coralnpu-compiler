@@ -21,9 +21,11 @@
 #ifndef METRICS_RUNTIME_STATS_COLLECTOR_H_
 #define METRICS_RUNTIME_STATS_COLLECTOR_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "metrics/runtime/dispatch_stats.h"
+#include "metrics/runtime/stack_peak.h"
 #include "runtime/driver/coralnpu_run_hooks.h"
 
 #ifdef __cplusplus
@@ -35,10 +37,22 @@ typedef struct iree_hal_coralnpu_stats_collector_t {
   iree_hal_coralnpu_dispatch_stats_t stats;
   // The cycle counter of the core when the run started.
   uint64_t cycle_start;
+  // Whether |stats.memory| has the layout of the firmware ELF.
+  bool has_memory;
+  // Whether the peak stack use is requested, whether the stack was painted to
+  // measure it, and the painted memory.
+  bool measure_stack;
+  bool stack_painted;
+  iree_hal_coralnpu_stack_paint_t stack_paint;
 } iree_hal_coralnpu_stats_collector_t;
 
-// Initializes |out_collector| with no statistics.
+// Initializes |out_collector| with no statistics. |collect_fields| has the
+// opt-in IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_* bits to collect besides the
+// fields that the collector always collects; only
+// IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_STACK_PEAK is opt-in. |memory| is the
+// memory layout of the firmware ELF, or NULL if the ELF has none.
 void iree_hal_coralnpu_stats_collector_initialize(
+    uint32_t collect_fields, const iree_hal_coralnpu_memory_stats_t *memory,
     iree_hal_coralnpu_stats_collector_t *out_collector);
 
 // Returns the run hooks that collect the statistics of a dispatch into

@@ -38,6 +38,10 @@ typedef struct iree_hal_coralnpu_core_access_t {
   // Reads |size| bytes at |address| of the memory of the core into |data|.
   // The read may advance the cycle counter (e.g. on Verilator).
   void (*read_mem)(void *self, uint32_t address, void *data, size_t size);
+  // Writes |size| bytes of |data| to |address| of the memory of the core.
+  // The write may advance the cycle counter (e.g. on Verilator).
+  void (*write_mem)(void *self, uint32_t address, const void *data,
+                    size_t size);
 } iree_hal_coralnpu_core_access_t;
 
 // The run of a dispatch: the core runs the program of the dispatch from its
@@ -48,6 +52,9 @@ typedef struct iree_hal_coralnpu_run_t {
   // Address of the dispatch request of the firmware
   // (crt/coralnpu_dispatch.h).
   uint32_t dispatch_request_addr;
+  // End of the dispatch data that the host placed in the heap of the
+  // firmware, which starts at `__heap_start`.
+  uint32_t heap_cursor;
   // Whether the core halted; set before after_run.
   bool halted;
 } iree_hal_coralnpu_run_t;
@@ -58,6 +65,9 @@ typedef struct iree_hal_coralnpu_run_hooks_t {
   // Passed to the hooks below.
   void *self;
   // Called right before the run, once the program and its data are loaded.
+  // May only write unallocated memory that the firmware does not read before
+  // writing (the free heap [heap_cursor, __heap_end) and the stack
+  // [__stack_start, __stack_start + __stack_size)).
   void (*before_run)(void *self, const iree_hal_coralnpu_run_t *run);
   // Called right after the run, also when the core did not halt. Not called
   // when the dispatch fails before the run.

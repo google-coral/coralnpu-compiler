@@ -24,11 +24,19 @@
 
 #include "iree/base/threading/mutex.h"
 #include "metrics/runtime/dispatch_stats.h"
+#include "metrics/runtime/firmware_memory.h"
 #include "metrics/runtime/stats_collector.h"
 
 // Writes the statistics of the dispatches of one device: the per-device
 // context of the observer. Thread-safe.
 typedef struct iree_hal_coralnpu_stats_t iree_hal_coralnpu_stats_t;
+
+// Cached memory layout of one firmware ELF image.
+typedef struct iree_hal_coralnpu_stats_image_t {
+  iree_const_byte_span_t image;
+  bool has_memory;
+  iree_hal_coralnpu_memory_stats_t memory;
+} iree_hal_coralnpu_stats_image_t;
 
 // Aggregated statistics of one exported function, used by the pretty format.
 typedef struct iree_hal_coralnpu_stats_entry_t {
@@ -49,11 +57,24 @@ typedef struct iree_hal_coralnpu_stats_entry_t {
   uint64_t kernel_cycles_sum;
   uint64_t kernel_instret_count;
   uint64_t kernel_instret_sum;
+  // Number of dispatches that reported their memory footprint, and the
+  // largest ITCM, static DTCM data, and heap use.
+  uint64_t memory_count;
+  uint32_t itcm_used_max;
+  uint32_t dtcm_used_max;
+  uint32_t heap_used_max;
+  // Number of dispatches that reported their stack peak, the largest one,
+  // and whether any of them overflowed the stack.
+  uint64_t stack_peak_count;
+  uint32_t stack_peak_max;
+  bool stack_overflow;
 } iree_hal_coralnpu_stats_entry_t;
 
 struct iree_hal_coralnpu_stats_t {
   iree_allocator_t host_allocator;
   iree_hal_coralnpu_stats_format_t format;
+  // Opt-in IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_* bits to collect.
+  uint32_t collect_fields;
   // Name of the execution backend; its storage trails the struct.
   iree_string_view_t backend_name;
   FILE *file;
@@ -61,6 +82,9 @@ struct iree_hal_coralnpu_stats_t {
   bool owns_file;
   iree_slim_mutex_t mutex;
   // Guarded by |mutex|.
+  iree_host_size_t image_count;
+  iree_host_size_t image_capacity;
+  iree_hal_coralnpu_stats_image_t *images;
   iree_host_size_t entry_count;
   iree_host_size_t entry_capacity;
   iree_hal_coralnpu_stats_entry_t **entries;
@@ -85,6 +109,28 @@ iree_status_t iree_hal_coralnpu_stats_format_parse(
                           "unknown CoralNPU stats format '%.*s' (expected "
                           "'none', 'pretty' or 'json')",
                           (int)value.size, value.data);
+}
+
+iree_status_t iree_hal_coralnpu_stats_collect_parse(iree_string_view_t value,
+                                                    uint32_t *out_fields) {
+  *out_fields = 0;
+  // Parse the comma-separated names one at a time.
+  while (!iree_string_view_is_empty(value)) {
+    iree_string_view_t name = iree_string_view_empty();
+    iree_string_view_split(value, ',', &name, &value);
+    name = iree_string_view_trim(name);
+    // Ignore empty names, e.g. from a trailing comma.
+    if (iree_string_view_is_empty(name)) continue;
+    if (iree_string_view_equal(name, IREE_SV("stack"))) {
+      *out_fields |= IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_STACK_PEAK;
+      continue;
+    }
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "unknown CoralNPU stats collector '%.*s' "
+                            "(expected 'stack')",
+                            (int)name.size, name.data);
+  }
+  return iree_ok_status();
 }
 
 // Sets |out_file| to the stats output: stderr for an empty |file_path|,
@@ -158,6 +204,7 @@ static iree_status_t iree_hal_coralnpu_stats_create(
   }
   stats->host_allocator = host_allocator;
   stats->format = options->format;
+  stats->collect_fields = options->collect_fields;
   iree_string_view_append_to_buffer(backend_name, &stats->backend_name,
                                     (char *)(stats + 1));
   stats->file = file;
@@ -186,6 +233,37 @@ static void iree_hal_coralnpu_stats_write_json_string(
     fputc(byte, file);
   }
   fputc('"', file);
+}
+
+// Writes `"<name>":{"start":N,"size":N,"used":N}` for a memory region.
+static void iree_hal_coralnpu_stats_write_json_region(
+    FILE *file, const char *name,
+    const iree_hal_coralnpu_memory_region_t *region) {
+  fprintf(file,
+          "\"%s\":{\"start\":%" PRIu32 ",\"size\":%" PRIu32 ",\"used\":%" PRIu32
+          "}",
+          name, region->start, region->size, region->used);
+}
+
+// Writes the `memory` object of a JSON record; |has_stack_peak| tells whether
+// the stack peak was measured.
+static void iree_hal_coralnpu_stats_write_json_memory(
+    FILE *file, const iree_hal_coralnpu_memory_stats_t *memory,
+    bool has_stack_peak) {
+  fputs(",\"memory\":{", file);
+  iree_hal_coralnpu_stats_write_json_region(file, "itcm", &memory->itcm);
+  fputc(',', file);
+  iree_hal_coralnpu_stats_write_json_region(file, "dtcm", &memory->dtcm);
+  fputc(',', file);
+  iree_hal_coralnpu_stats_write_json_region(file, "heap", &memory->heap);
+  fprintf(file, ",\"stack\":{\"start\":%" PRIu32 ",\"size\":%" PRIu32,
+          memory->stack.start, memory->stack.size);
+  // The stack peak is opt-in.
+  if (has_stack_peak) {
+    fprintf(file, ",\"peak\":%" PRIu32 ",\"overflow\":%s", memory->stack.used,
+            memory->stack_overflow ? "true" : "false");
+  }
+  fputs("}}", file);
 }
 
 // Writes one JSON record (a single line) describing a dispatch.
@@ -227,6 +305,12 @@ static void iree_hal_coralnpu_stats_write_json_record(
           valid, IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_INSTRET_KERNEL)) {
     fprintf(file, ",\"instret\":{\"kernel\":%" PRIu64 "}",
             dispatch_stats->instret_kernel);
+  }
+  if (iree_all_bits_set(valid, IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_MEMORY)) {
+    iree_hal_coralnpu_stats_write_json_memory(
+        file, &dispatch_stats->memory,
+        iree_all_bits_set(valid,
+                          IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_STACK_PEAK));
   }
   fputs("}\n", file);
   fflush(file);
@@ -321,10 +405,62 @@ static iree_status_t iree_hal_coralnpu_stats_record(
       ++entry->kernel_instret_count;
       entry->kernel_instret_sum += dispatch_stats->instret_kernel;
     }
+    const iree_hal_coralnpu_memory_stats_t *memory = &dispatch_stats->memory;
+    if (iree_all_bits_set(dispatch_stats->valid_fields,
+                          IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_MEMORY)) {
+      ++entry->memory_count;
+      entry->itcm_used_max = iree_max(entry->itcm_used_max, memory->itcm.used);
+      entry->dtcm_used_max = iree_max(entry->dtcm_used_max, memory->dtcm.used);
+      entry->heap_used_max = iree_max(entry->heap_used_max, memory->heap.used);
+    }
+    if (iree_all_bits_set(dispatch_stats->valid_fields,
+                          IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_STACK_PEAK)) {
+      ++entry->stack_peak_count;
+      entry->stack_peak_max =
+          iree_max(entry->stack_peak_max, memory->stack.used);
+      entry->stack_overflow = entry->stack_overflow || memory->stack_overflow;
+    }
   }
 
   iree_slim_mutex_unlock(&stats->mutex);
   return status;
+}
+
+// Looks up the memory layout of |image| in |stats|, reading and caching it on
+// first use. Sets |*out_has_memory| to whether |image| has a valid layout and,
+// if so, |*out_memory| to it.
+static iree_status_t iree_hal_coralnpu_stats_find_or_read_memory(
+    iree_hal_coralnpu_stats_t *stats, iree_const_byte_span_t image,
+    iree_hal_coralnpu_memory_stats_t *out_memory, bool *out_has_memory) {
+  iree_slim_mutex_lock(&stats->mutex);
+  for (iree_host_size_t i = 0; i < stats->image_count; ++i) {
+    const iree_hal_coralnpu_stats_image_t *cached = &stats->images[i];
+    if (cached->image.data == image.data &&
+        cached->image.data_length == image.data_length) {
+      *out_memory = cached->memory;
+      *out_has_memory = cached->has_memory;
+      iree_slim_mutex_unlock(&stats->mutex);
+      return iree_ok_status();
+    }
+  }
+  if (stats->image_count == stats->image_capacity) {
+    iree_status_t status = iree_allocator_grow_array(
+        stats->host_allocator, /*minimum_capacity=*/4, sizeof(stats->images[0]),
+        &stats->image_capacity, (void **)&stats->images);
+    if (!iree_status_is_ok(status)) {
+      iree_slim_mutex_unlock(&stats->mutex);
+      return status;
+    }
+  }
+  iree_hal_coralnpu_stats_image_t *cached =
+      &stats->images[stats->image_count++];
+  cached->image = image;
+  cached->has_memory =
+      iree_hal_coralnpu_firmware_memory_read(image, &cached->memory);
+  *out_memory = cached->memory;
+  *out_has_memory = cached->has_memory;
+  iree_slim_mutex_unlock(&stats->mutex);
+  return iree_ok_status();
 }
 
 // Starts observing a dispatch: sets |out_hooks| to the hooks of a new
@@ -333,14 +469,19 @@ static iree_status_t iree_hal_coralnpu_stats_begin_dispatch(
     void *self, void *context, const iree_hal_coralnpu_dispatch_info_t *info,
     iree_hal_coralnpu_run_hooks_t *out_hooks) {
   (void)self;
-  (void)info;
   iree_hal_coralnpu_stats_t *stats = (iree_hal_coralnpu_stats_t *)context;
   IREE_ASSERT_ARGUMENT(stats);
+  IREE_ASSERT_ARGUMENT(info);
   IREE_ASSERT_ARGUMENT(out_hooks);
+  iree_hal_coralnpu_memory_stats_t memory;
+  bool has_memory = false;
+  IREE_RETURN_IF_ERROR(iree_hal_coralnpu_stats_find_or_read_memory(
+      stats, info->dispatch_image, &memory, &has_memory));
   iree_hal_coralnpu_stats_collector_t *collector = NULL;
   IREE_RETURN_IF_ERROR(iree_allocator_malloc(
       stats->host_allocator, sizeof(*collector), (void **)&collector));
-  iree_hal_coralnpu_stats_collector_initialize(collector);
+  iree_hal_coralnpu_stats_collector_initialize(
+      stats->collect_fields, has_memory ? &memory : NULL, collector);
   *out_hooks = iree_hal_coralnpu_stats_collector_hooks(collector);
   return iree_ok_status();
 }
@@ -375,6 +516,20 @@ static void iree_hal_coralnpu_stats_write_column(FILE *file, bool valid,
   fprintf(file, " %*" PRIu64, width, value);
 }
 
+// Width of the stack column.
+#define IREE_HAL_CORALNPU_STATS_STACK_WIDTH 10
+
+// Writes the peak stack use, followed by "!" if the stack overflowed, or "-"
+// if |valid| is false.
+static void iree_hal_coralnpu_stats_write_stack_column(FILE *file, bool valid,
+                                                       uint32_t peak,
+                                                       bool overflow) {
+  iree_hal_coralnpu_stats_write_column(
+      file, valid, peak,
+      IREE_HAL_CORALNPU_STATS_STACK_WIDTH - (valid && overflow ? 1 : 0));
+  if (valid && overflow) fputc('!', file);
+}
+
 // Writes the summary table of the pretty format.
 static void iree_hal_coralnpu_stats_write_summary(
     iree_hal_coralnpu_stats_t *stats) {
@@ -387,10 +542,13 @@ static void iree_hal_coralnpu_stats_write_summary(
     return;
   }
 
-  fprintf(file, " %10s %7s %15s %13s %13s %13s %15s %15s  %s\n", "dispatches",
-          "failed", "cycles(total)", "cycles(avg)", "cycles(min)",
-          "cycles(max)", "kcycles(total)", "kinstret(total)",
-          "executable::export");
+  fprintf(file,
+          " %10s %7s %15s %13s %13s %13s %15s %15s"
+          " %9s %9s %9s %*s  %s\n",
+          "dispatches", "failed", "cycles(total)", "cycles(avg)", "cycles(min)",
+          "cycles(max)", "kcycles(total)", "kinstret(total)", "itcm(max)",
+          "data(max)", "heap(max)", IREE_HAL_CORALNPU_STATS_STACK_WIDTH,
+          "stack(max)", "executable::export");
   uint64_t total_dispatches = 0;
   uint64_t total_failures = 0;
   uint64_t total_cycles = 0;
@@ -399,6 +557,13 @@ static void iree_hal_coralnpu_stats_write_summary(
   bool all_have_cycles = true;
   bool all_have_kernel_cycles = true;
   bool all_have_kernel_instret = true;
+  bool any_has_memory = false;
+  uint32_t all_itcm_used_max = 0;
+  uint32_t all_dtcm_used_max = 0;
+  uint32_t all_heap_used_max = 0;
+  bool any_has_stack_peak = false;
+  uint32_t all_stack_peak_max = 0;
+  bool any_stack_overflow = false;
   for (iree_host_size_t i = 0; i < stats->entry_count; ++i) {
     const iree_hal_coralnpu_stats_entry_t *entry = stats->entries[i];
     // Only report a sum when every dispatch of the entry reported the value;
@@ -408,6 +573,9 @@ static void iree_hal_coralnpu_stats_write_summary(
         entry->kernel_cycles_count == entry->dispatch_count;
     const bool has_kernel_instret =
         entry->kernel_instret_count == entry->dispatch_count;
+    // Unlike sums, maxima of some dispatches are meaningful.
+    const bool has_memory = entry->memory_count != 0;
+    const bool has_stack_peak = entry->stack_peak_count != 0;
     iree_hal_coralnpu_stats_write_column(file, /*valid=*/true,
                                          entry->dispatch_count, /*width=*/10);
     iree_hal_coralnpu_stats_write_column(file, /*valid=*/true,
@@ -428,6 +596,14 @@ static void iree_hal_coralnpu_stats_write_summary(
     iree_hal_coralnpu_stats_write_column(file, has_kernel_instret,
                                          entry->kernel_instret_sum,
                                          /*width=*/15);
+    iree_hal_coralnpu_stats_write_column(file, has_memory, entry->itcm_used_max,
+                                         /*width=*/9);
+    iree_hal_coralnpu_stats_write_column(file, has_memory, entry->dtcm_used_max,
+                                         /*width=*/9);
+    iree_hal_coralnpu_stats_write_column(file, has_memory, entry->heap_used_max,
+                                         /*width=*/9);
+    iree_hal_coralnpu_stats_write_stack_column(
+        file, has_stack_peak, entry->stack_peak_max, entry->stack_overflow);
     fprintf(file, "  %.*s::%.*s\n", (int)entry->executable_name.size,
             entry->executable_name.data, (int)entry->export_name.size,
             entry->export_name.data);
@@ -439,6 +615,13 @@ static void iree_hal_coralnpu_stats_write_summary(
     all_have_cycles = all_have_cycles && has_cycles;
     all_have_kernel_cycles = all_have_kernel_cycles && has_kernel_cycles;
     all_have_kernel_instret = all_have_kernel_instret && has_kernel_instret;
+    any_has_memory = any_has_memory || has_memory;
+    all_itcm_used_max = iree_max(all_itcm_used_max, entry->itcm_used_max);
+    all_dtcm_used_max = iree_max(all_dtcm_used_max, entry->dtcm_used_max);
+    all_heap_used_max = iree_max(all_heap_used_max, entry->heap_used_max);
+    any_has_stack_peak = any_has_stack_peak || has_stack_peak;
+    all_stack_peak_max = iree_max(all_stack_peak_max, entry->stack_peak_max);
+    any_stack_overflow = any_stack_overflow || entry->stack_overflow;
   }
   iree_hal_coralnpu_stats_write_column(file, /*valid=*/true, total_dispatches,
                                        /*width=*/10);
@@ -452,6 +635,14 @@ static void iree_hal_coralnpu_stats_write_summary(
                                        total_kernel_cycles, /*width=*/15);
   iree_hal_coralnpu_stats_write_column(file, all_have_kernel_instret,
                                        total_kernel_instret, /*width=*/15);
+  iree_hal_coralnpu_stats_write_column(file, any_has_memory, all_itcm_used_max,
+                                       /*width=*/9);
+  iree_hal_coralnpu_stats_write_column(file, any_has_memory, all_dtcm_used_max,
+                                       /*width=*/9);
+  iree_hal_coralnpu_stats_write_column(file, any_has_memory, all_heap_used_max,
+                                       /*width=*/9);
+  iree_hal_coralnpu_stats_write_stack_column(
+      file, any_has_stack_peak, all_stack_peak_max, any_stack_overflow);
   fputs("  (total)\n", file);
   fflush(file);
 }
@@ -475,6 +666,7 @@ static void iree_hal_coralnpu_stats_destroy(void *self,
     iree_allocator_free(stats->host_allocator, stats->entries[i]);
   }
   iree_allocator_free(stats->host_allocator, stats->entries);
+  iree_allocator_free(stats->host_allocator, stats->images);
   iree_slim_mutex_deinitialize(&stats->mutex);
   iree_allocator_free(stats->host_allocator, stats);
 }

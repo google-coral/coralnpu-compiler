@@ -15,8 +15,8 @@
 # Per-dispatch execution statistics of the CoralNPU HAL driver: the record,
 # the collector that fills it through the run hooks of the execution backends
 # (//runtime/driver:run_hooks), and the writer that the driver calls as its
-# dispatch observer (//runtime/driver:dispatch_observer). Depends only on these
-# hook interfaces of the driver, not on the driver or the simulators.
+# dispatch observer (//runtime/driver:dispatch_observer). Depends on these
+# hook interfaces and on the ELF reader of the driver, not on the simulators.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -32,6 +32,31 @@ cc_library(
     hdrs = ["dispatch_stats.h"],
 )
 
+# Reads the memory layout of the firmware of a dispatch from its ELF.
+cc_library(
+    name = "firmware_memory",
+    srcs = ["firmware_memory.c"],
+    hdrs = ["firmware_memory.h"],
+    deps = [
+        ":dispatch_stats",
+        "//runtime/driver:coralnpu",
+        "@iree_core//runtime/src/iree/base",
+        "@iree_core//runtime/src/iree/hal/local/elf:elf_module",
+    ],
+)
+
+# Measures the peak stack use of a run through the run hooks.
+cc_library(
+    name = "stack_peak",
+    srcs = ["stack_peak.c"],
+    hdrs = ["stack_peak.h"],
+    deps = [
+        ":dispatch_stats",
+        "//runtime/driver:run_hooks",
+        "@iree_core//runtime/src/iree/base",
+    ],
+)
+
 # Collects the statistics of a dispatch through the run hooks.
 cc_library(
     name = "stats_collector",
@@ -39,8 +64,10 @@ cc_library(
     hdrs = ["stats_collector.h"],
     deps = [
         ":dispatch_stats",
+        ":stack_peak",
         "//crt:coralnpu_dispatch_hdrs",
         "//runtime/driver:run_hooks",
+        "@iree_core//runtime/src/iree/base",
     ],
 )
 
@@ -52,6 +79,7 @@ cc_library(
     hdrs = ["stats_writer.h"],
     deps = [
         ":dispatch_stats",
+        ":firmware_memory",
         ":stats_collector",
         "//runtime/driver:dispatch_observer",
         "@iree_core//runtime/src/iree/base",

@@ -421,8 +421,9 @@ For the CMake build, configure with `-DCORALNPU_ENABLE_SPIKE=ON`, `-DCORALNPU_EN
 
 - `--coralnpu_stats_format={none|pretty|json}` (default: `none`): `pretty` writes a table for each exported function when the device is released; `json` writes one `coralnpu.stats.v1` JSON object per dispatch, one per line.
 - `--coralnpu_stats_file=<path>`: the output file; the statistics are appended to it. Empty (the default) writes to stderr, and `-` writes to stdout.
+- `--coralnpu_stats_collect=<list>`: comma-separated opt-in collectors. `stack` measures the peak stack use of each dispatch by painting the firmware stack before the run and scanning it after; this is slow on Verilator.
 
-Where the flags cannot be passed (e.g. the Python bindings), set `CORALNPU_STATS_FORMAT` and `CORALNPU_STATS_FILE` instead; each applies unless its flag is set to a non-default value.
+Where the flags cannot be passed (e.g. the Python bindings), set `CORALNPU_STATS_FORMAT`, `CORALNPU_STATS_FILE` and `CORALNPU_STATS_COLLECT` instead; each applies unless its flag is set to a non-default value.
 
 The statistics code is in [`metrics/`](metrics/README.md).
 

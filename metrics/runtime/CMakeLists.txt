@@ -17,8 +17,8 @@
 # the collector that fills it through the run hooks of the execution backends
 # (coralnpu_runtime::driver::run_hooks), and the writer that the driver calls
 # as its dispatch observer (coralnpu_runtime::driver::dispatch_observer).
-# Depends only on these hook interfaces of the driver, not on the driver or the
-# simulators.
+# Depends on these hook interfaces and on the ELF reader of the driver, not on
+# the simulators.
 
 iree_setup_c_src_root(
   PACKAGE_ROOT_PREFIX
@@ -46,6 +46,41 @@ iree_cc_library(
   PUBLIC
 )
 
+# Reads the memory layout of the firmware of a dispatch from its ELF.
+iree_cc_library(
+  NAME
+    firmware_memory
+  HDRS
+    "firmware_memory.h"
+  SRCS
+    "firmware_memory.c"
+  INCLUDES
+    "${CMAKE_SOURCE_DIR}"
+  DEPS
+    ::dispatch_stats
+    coralnpu_runtime::driver::coralnpu
+    iree::base
+    iree::hal::local::elf::elf_module
+  PUBLIC
+)
+
+# Measures the peak stack use of a run through the run hooks.
+iree_cc_library(
+  NAME
+    stack_peak
+  HDRS
+    "stack_peak.h"
+  SRCS
+    "stack_peak.c"
+  INCLUDES
+    "${CMAKE_SOURCE_DIR}"
+  DEPS
+    ::dispatch_stats
+    coralnpu_runtime::driver::run_hooks
+    iree::base
+  PUBLIC
+)
+
 # Collects the statistics of a dispatch through the run hooks.
 iree_cc_library(
   NAME
@@ -58,7 +93,9 @@ iree_cc_library(
     "${CMAKE_SOURCE_DIR}"
   DEPS
     ::dispatch_stats
+    ::stack_peak
     coralnpu_runtime::driver::run_hooks
+    iree::base
   PUBLIC
 )
 
@@ -75,6 +112,7 @@ iree_cc_library(
     "${CMAKE_SOURCE_DIR}"
   DEPS
     ::dispatch_stats
+    ::firmware_memory
     ::stats_collector
     coralnpu_runtime::driver::dispatch_observer
     iree::base

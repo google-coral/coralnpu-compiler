@@ -21,6 +21,7 @@
 #ifndef METRICS_RUNTIME_DISPATCH_STATS_H_
 #define METRICS_RUNTIME_DISPATCH_STATS_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -36,7 +37,40 @@ enum iree_hal_coralnpu_dispatch_stats_field_bits_e {
   IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_CYCLES_KERNEL = 1u << 1,
   // |instret_kernel| is valid.
   IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_INSTRET_KERNEL = 1u << 2,
+  // |memory| is valid, except for |memory.stack.used| and
+  // |memory.stack_overflow|.
+  IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_MEMORY = 1u << 3,
+  // |memory.stack.used| and |memory.stack_overflow| are valid. Opt-in: the
+  // collector measures them only on request.
+  IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_STACK_PEAK = 1u << 4,
 };
+
+// A memory region of the core and the number of bytes of it in use.
+typedef struct iree_hal_coralnpu_memory_region_t {
+  uint32_t start;
+  uint32_t size;
+  uint32_t used;
+} iree_hal_coralnpu_memory_region_t;
+
+// The memory footprint of a dispatch in the TCMs of the core: where the
+// firmware of the dispatch and its data are, and how much of each region they
+// use.
+typedef struct iree_hal_coralnpu_memory_stats_t {
+  // ITCM; |used| is the size of the PT_LOAD segments of the firmware in it.
+  iree_hal_coralnpu_memory_region_t itcm;
+  // DTCM; |used| is the size of the PT_LOAD segments of the firmware in it,
+  // without the heap and the stack, which are reported separately.
+  iree_hal_coralnpu_memory_region_t dtcm;
+  // Heap of the firmware in DTCM, which holds the dispatch data; |used| is
+  // the size of the dispatch data, with its alignment padding.
+  iree_hal_coralnpu_memory_region_t heap;
+  // Stack of the firmware in DTCM; |used| is the peak stack use. It exceeds
+  // |size| when the stack overflowed into the guard area below it.
+  iree_hal_coralnpu_memory_region_t stack;
+  // The stack overflowed: a word below the stack was overwritten or, without
+  // a guard area, the whole stack was used.
+  bool stack_overflow;
+} iree_hal_coralnpu_memory_stats_t;
 
 // Statistics of a single dispatch. Fields whose bit is not set in
 // |valid_fields| were not collected and must be ignored.
@@ -50,6 +84,8 @@ typedef struct iree_hal_coralnpu_dispatch_stats_t {
   // loop, measured by the firmware.
   uint64_t cycles_kernel;
   uint64_t instret_kernel;
+  // Memory footprint of the firmware and the dispatch data.
+  iree_hal_coralnpu_memory_stats_t memory;
 } iree_hal_coralnpu_dispatch_stats_t;
 
 #ifdef __cplusplus

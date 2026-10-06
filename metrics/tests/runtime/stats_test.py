@@ -80,6 +80,42 @@ def _halt_at_entry(module_bytes):
   return bytes(data)
 
 
+def _shrink_stack(module_bytes, stack_size):
+  """Shrinks the declared stack of each embedded ELF to |stack_size| bytes."""
+  data = bytearray(module_bytes)
+  offset = data.find(b"\x7fELF")
+  while offset != -1:
+    if data[offset + 4:offset + 6] == b"\x01\x01":
+      (e_shoff,) = struct.unpack_from("<I", data, offset + 0x20)
+      e_shentsize, e_shnum = struct.unpack_from("<HH", data, offset + 0x2E)
+      for i in range(e_shnum):
+        shdr = offset + e_shoff + i * e_shentsize
+        _, sh_type, _, _, sh_offset, sh_size, sh_link = struct.unpack_from(
+            "<IIIIIII", data, shdr)
+        if sh_type != 2:  # SHT_SYMTAB
+          continue
+        strtab = offset + e_shoff + sh_link * e_shentsize
+        strtab_off = offset + struct.unpack_from("<I", data, strtab + 16)[0]
+        sym_offsets = {}
+        sym_values = {}
+        for sym in range(offset + sh_offset, offset + sh_offset + sh_size, 16):
+          st_name, st_value = struct.unpack_from("<II", data, sym)
+          end = data.index(b"\0", strtab_off + st_name)
+          name = data[strtab_off + st_name:end].decode()
+          sym_offsets[name] = sym
+          sym_values[name] = st_value
+        if "__stack_start" in sym_offsets and "__stack_size" in sym_offsets:
+          stack_end = sym_values["__stack_start"] + sym_values["__stack_size"]
+          new_start = stack_end - stack_size
+          struct.pack_into("<I", data, sym_offsets["__heap_end"] + 4, new_start)
+          struct.pack_into("<I", data, sym_offsets["__stack_start"] + 4,
+                           new_start)
+          struct.pack_into("<I", data, sym_offsets["__stack_size"] + 4,
+                           stack_size)
+    offset = data.find(b"\x7fELF", offset + 1)
+  return bytes(data)
+
+
 def json_records(text):
   """Returns the stats records in |text|, skipping unrelated lines."""
   prefix = '{"schema":"%s"' % _SCHEMA
@@ -90,7 +126,7 @@ def json_records(text):
 
 class StatsTest(unittest.TestCase):
 
-  def assert_valid_record(self, record):
+  def assert_valid_record(self, record, stack):
     self.assertEqual(record["schema"], _SCHEMA)
     self.assertTrue(record["dispatch"]["executable"])
     self.assertTrue(record["dispatch"]["name"])
@@ -102,6 +138,21 @@ class StatsTest(unittest.TestCase):
     self.assertGreater(record["cycles"]["kernel"], 0)
     self.assertLess(record["cycles"]["kernel"], record["cycles"]["total"])
     self.assertGreater(record["instret"]["kernel"], 0)
+    # The memory footprint comes from the host (memory_test checks it in
+    # detail).
+    memory = record["memory"]
+    self.assertGreater(memory["itcm"]["used"], 0)
+    self.assertLessEqual(memory["itcm"]["used"], memory["itcm"]["size"])
+    self.assertGreater(memory["heap"]["used"], 0)
+    self.assertLessEqual(memory["heap"]["used"], memory["heap"]["size"])
+    # Opt-in, measured by the host (stack_peak_test checks the measurement).
+    if stack:
+      self.assertGreater(memory["stack"]["peak"], 0)
+      self.assertLess(memory["stack"]["peak"], memory["stack"]["size"])
+      self.assertIs(memory["stack"]["overflow"], False)
+    else:
+      self.assertNotIn("peak", memory["stack"])
+      self.assertNotIn("overflow", memory["stack"])
 
   def test_json_file(self):
     with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMPDIR")) as tmp:
@@ -116,18 +167,21 @@ class StatsTest(unittest.TestCase):
     # though each function runs on its own device.
     self.assertEqual(len(records), len(lines))
     for record in records:
-      self.assert_valid_record(record)
+      self.assert_valid_record(record, stack=False)
     names = {record["dispatch"]["name"] for record in records}
     self.assertGreaterEqual(len(names), 2, records)
 
   def test_json_stdout(self):
-    result = run_check_module("--coralnpu_stats_format=json",
-                              "--coralnpu_stats_file=-")
+    result = run_check_module(
+        "--coralnpu_stats_format=json",
+        "--coralnpu_stats_file=-",
+        "--coralnpu_stats_collect=stack",
+    )
     self.assertEqual(result.returncode, 0, result.stderr)
     records = json_records(result.stdout)
     self.assertGreaterEqual(len(records), 2, result.stdout)
     for record in records:
-      self.assert_valid_record(record)
+      self.assert_valid_record(record, stack=True)
 
   def test_pretty(self):
     result = run_check_module("--coralnpu_stats_format=pretty")
@@ -137,6 +191,10 @@ class StatsTest(unittest.TestCase):
     self.assertIn("(total)", result.stderr)
     self.assertIn("kcycles(total)", result.stderr)
     self.assertIn("kinstret(total)", result.stderr)
+    self.assertIn("itcm(max)", result.stderr)
+    self.assertIn("data(max)", result.stderr)
+    self.assertIn("heap(max)", result.stderr)
+    self.assertIn("stack(max)", result.stderr)
     totals = [
         line.split()
         for line in result.stderr.splitlines()
@@ -144,10 +202,58 @@ class StatsTest(unittest.TestCase):
     ]
     self.assertTrue(totals, result.stderr)
     for row in totals:
-      _, _, cycles, kcycles, kinstret = (int(x) for x in row[:5])
+      _, _, cycles, kcycles, kinstret, itcm, data, heap = (
+          int(x) for x in row[:8])
       self.assertGreater(kcycles, 0)
       self.assertLess(kcycles, cycles)
       self.assertGreater(kinstret, 0)
+      self.assertGreater(itcm, 0)
+      self.assertGreater(data, 0)
+      self.assertGreater(heap, 0)
+      self.assertEqual(row[8], "-")
+    result = run_check_module("--coralnpu_stats_format=pretty",
+                              "--coralnpu_stats_collect=stack")
+    self.assertEqual(result.returncode, 0, result.stderr)
+    for line in result.stderr.splitlines():
+      if line.endswith("  (total)"):
+        self.assertGreater(int(line.split()[8]), 0)
+
+  def test_stack_overflow(self):
+    with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMPDIR")) as tmp:
+      small_stack = os.path.join(tmp, "small_stack.vmfb")
+      with open(_MODULE, "rb") as f:
+        patched = _shrink_stack(f.read(), stack_size=4)
+      with open(small_stack, "wb") as f:
+        f.write(patched)
+      result = run_check_module(
+          "--coralnpu_stats_format=json",
+          "--coralnpu_stats_file=-",
+          "--coralnpu_stats_collect=stack",
+          module=small_stack,
+      )
+      self.assertEqual(result.returncode, 0, result.stderr)
+      records = json_records(result.stdout)
+      self.assertTrue(records, result.stdout)
+      for record in records:
+        stack = record["memory"]["stack"]
+        self.assertEqual(stack["size"], 4)
+        self.assertGreater(stack["peak"], 4)
+        self.assertIs(stack["overflow"], True)
+      pretty = run_check_module(
+          "--coralnpu_stats_format=pretty",
+          "--coralnpu_stats_collect=stack",
+          module=small_stack,
+      )
+      self.assertEqual(pretty.returncode, 0, pretty.stderr)
+      totals = [
+          line.split()
+          for line in pretty.stderr.splitlines()
+          if line.endswith("  (total)")
+      ]
+      self.assertTrue(totals, pretty.stderr)
+      for row in totals:
+        self.assertTrue(row[8].endswith("!"), row)
+        self.assertGreater(int(row[8][:-1]), 4)
 
   def test_disabled_by_default(self):
     result = run_check_module()
@@ -193,9 +299,13 @@ class StatsTest(unittest.TestCase):
   def test_env_fallback(self):
     # The environment applies unless the flags are set.
     result = run_check_module(CORALNPU_STATS_FORMAT="json",
-                              CORALNPU_STATS_FILE="-")
+                              CORALNPU_STATS_FILE="-",
+                              CORALNPU_STATS_COLLECT="stack")
     self.assertEqual(result.returncode, 0, result.stderr)
-    self.assertGreaterEqual(len(json_records(result.stdout)), 2, result.stdout)
+    records = json_records(result.stdout)
+    self.assertGreaterEqual(len(records), 2, result.stdout)
+    for record in records:
+      self.assert_valid_record(record, stack=True)
     result = run_check_module("--coralnpu_stats_format=pretty",
                               CORALNPU_STATS_FORMAT="json")
     self.assertEqual(result.returncode, 0, result.stderr)
@@ -206,6 +316,16 @@ class StatsTest(unittest.TestCase):
     self.assertNotEqual(result.returncode, 0)
     self.assertIn("unknown CoralNPU stats format 'xml'",
                   result.stdout + result.stderr)
+
+  def test_unknown_collector(self):
+    for flags in (
+        ("--coralnpu_stats_format=json", "--coralnpu_stats_collect=stack,heap"),
+        ("--coralnpu_stats_collect=stack,heap",),
+    ):
+      result = run_check_module(*flags)
+      self.assertNotEqual(result.returncode, 0)
+      self.assertIn("unknown CoralNPU stats collector 'heap'",
+                    result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

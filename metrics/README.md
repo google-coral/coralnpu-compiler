@@ -23,7 +23,14 @@ The HAL device passes every dispatch to its dispatch observer
 creates a collector (`metrics/runtime/stats_collector.h`) whose run hooks
 (`runtime/driver/coralnpu_run_hooks.h`) the execution backend calls around the
 run of the dispatch. The writer then writes the statistics that the collector
-collected.
+collected:
+
+-   the cycles of the run, and the cycles and retired instructions of the
+    kernel, which the firmware measures and reports in its dispatch request
+    (`crt/coralnpu_dispatch.h`);
+-   the memory footprint: the ITCM and DTCM that the firmware ELF uses
+    (`firmware_memory.h`), the heap that the dispatch data uses and, as an
+    opt-in, the peak stack use (`stack_peak.h`).
 
 The `--coralnpu_stats_*` flags in the top-level `README.md` select the output
-format and file.
+format, the output file and the opt-in collectors.

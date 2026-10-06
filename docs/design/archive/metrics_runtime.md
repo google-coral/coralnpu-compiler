@@ -131,7 +131,7 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
   unset, and verify default-disabled and invalid `--coralnpu_stats_format` runs.
 
 ### CL 2c: Add Per-Dispatch ELF Memory Footprint and Stack Peak to Stats
-- [ ] **Step 4 (`runtime/driver/coralnpu_dispatch_observer.h`,
+- [x] **Step 4 (`runtime/driver/coralnpu_dispatch_observer.h`,
   `runtime/driver/coralnpu_command_buffer.c`,
   `runtime/driver/coralnpu_run_hooks.h`, `runtime/sim/simulator_inline.c`,
   `metrics/runtime/*`)**: Expose `dispatch_image` on
@@ -139,13 +139,13 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
   `iree_hal_coralnpu_run_t`, implement `firmware_memory.{c,h}` (cached per image
   in `stats_writer.c`) and `stack_peak.{c,h}`, and wire opt-in
   `--coralnpu_stats_collect=stack`.
-- [ ] **Tests (`metrics/tests/runtime/*`)**: *Positive*: Verify TCM/heap/stack
+- [x] **Tests (`metrics/tests/runtime/*`)**: *Positive*: Verify TCM/heap/stack
   against `.vmfb` ELF32 sections (`memory_test`), 9 paint/scan cases
   (`stack_peak_test`), and `stack` opt-in and overflow (`bazel test --config=dev
   //metrics/tests/runtime:ci`). *Negative*: Verify unknown
   `--coralnpu_stats_collect` values fail fast and guard overwrites report
   `overflow = true`.
-- [ ] **Build, Doc & Archive Sync (`metrics/runtime/CMakeLists.txt`,
+- [x] **Build, Doc & Archive Sync (`metrics/runtime/CMakeLists.txt`,
   `metrics/README.md`, `README.md`, `docs/design/{metrics,INDEX}.md`)**: Sync
   CMake and user docs, verify `metrics.md` and `INDEX.md`, `git mv` this doc to
   `docs/design/archive/metrics_runtime.md`, and run `./scripts/format-code.sh`.
@@ -163,6 +163,10 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
   reads), placed the zero-initialized 80-byte `environment` struct in `.bss`
   (`DTCM`) instead of `.rodata` (`ITCM`), and cached `workgroup_count_{x,y,z}`
   in locals to fit the 8 KiB ITCM budget.
+- **CL 2c (`metrics/runtime/stats_writer.c`)**: Cached parsed
+  `iree_hal_coralnpu_memory_stats_t` per `dispatch_image` on
+  `iree_hal_coralnpu_stats_t` under `stats->mutex` in `begin_dispatch` and split
+  the `pretty` summary table's DTCM column into `data(max)` and `heap(max)`.
 
 ---
 

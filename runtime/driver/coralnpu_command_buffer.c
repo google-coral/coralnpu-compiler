@@ -429,15 +429,17 @@ static iree_status_t iree_hal_coralnpu_command_buffer_dispatch(
       attrs->local_memory_pages *
           IREE_HAL_EXECUTABLE_WORKGROUP_LOCAL_MEMORY_PAGE_SIZE +
       config.dynamic_workgroup_local_memory;
+  const iree_const_byte_span_t dispatch_image =
+      iree_hal_coralnpu_executable_dispatch_image(executable);
   const iree_hal_coralnpu_dispatch_info_t dispatch_info = {
       .executable_name = iree_hal_coralnpu_executable_name(executable),
       .export_name = iree_hal_coralnpu_executable_function_name(executable,
                                                                 export_ordinal),
       .export_ordinal = export_ordinal,
+      .dispatch_image = dispatch_image,
   };
   return iree_hal_coralnpu_device_dispatch(
-      command_buffer->device, &dispatch_info,
-      iree_hal_coralnpu_executable_dispatch_image(executable), &dispatch_state,
+      command_buffer->device, &dispatch_info, dispatch_image, &dispatch_state,
       binding_writeable, export_ordinal, local_memory_size);
 }
 

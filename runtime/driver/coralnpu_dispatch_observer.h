@@ -26,8 +26,9 @@
 extern "C" {
 #endif  // __cplusplus
 
-// Identifies a dispatch to a dispatch observer. The strings are borrowed and
-// only need to remain valid for the duration of the call they are passed to.
+// Identifies a dispatch to a dispatch observer. The strings and the image are
+// borrowed and only need to remain valid for the duration of the call they are
+// passed to.
 typedef struct iree_hal_coralnpu_dispatch_info_t {
   // Name of the executable (the hal.executable in the compiled program).
   iree_string_view_t executable_name;
@@ -35,6 +36,8 @@ typedef struct iree_hal_coralnpu_dispatch_info_t {
   iree_string_view_t export_name;
   // Ordinal of the dispatched exported function within the executable.
   uint32_t export_ordinal;
+  // The firmware ELF of the executable.
+  iree_const_byte_span_t dispatch_image;
 } iree_hal_coralnpu_dispatch_info_t;
 
 // Vtable of an observer of the dispatches of CoralNPU devices (e.g. the

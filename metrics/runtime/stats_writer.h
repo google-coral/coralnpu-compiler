@@ -35,6 +35,10 @@ extern "C" {
 //   status         {code}: the IREE status code, "OK" on success
 //   cycles         {total, kernel}: cycles_total and cycles_kernel
 //   instret        {kernel}: instret_kernel
+//   memory         {itcm, dtcm, heap, stack}: memory; each region is
+//                  {start, size, used}, except for the stack, which is
+//                  {start, size, peak, overflow}: peak and overflow need the
+//                  stack collector (iree_hal_coralnpu_stats_collect_parse).
 #define IREE_HAL_CORALNPU_STATS_SCHEMA "coralnpu.stats.v1"
 
 // Output format of per-dispatch execution statistics.
@@ -53,6 +57,13 @@ typedef enum iree_hal_coralnpu_stats_format_e {
 iree_status_t iree_hal_coralnpu_stats_format_parse(
     iree_string_view_t value, iree_hal_coralnpu_stats_format_t *out_format);
 
+// Parses |value|, a comma-separated list of opt-in (costly) collectors, into
+// the IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_* bits they enable. Collectors:
+//   stack: peak stack use (IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_STACK_PEAK).
+// An empty list enables none; unknown collectors are rejected.
+iree_status_t iree_hal_coralnpu_stats_collect_parse(iree_string_view_t value,
+                                                    uint32_t *out_fields);
+
 // Options of a statistics writer.
 typedef struct iree_hal_coralnpu_stats_writer_options_t {
   // Output format; must not be IREE_HAL_CORALNPU_STATS_FORMAT_NONE.
@@ -60,6 +71,9 @@ typedef struct iree_hal_coralnpu_stats_writer_options_t {
   // Output file path. Empty writes to stderr and "-" writes to stdout. Output
   // is appended to an existing file.
   iree_string_view_t file_path;
+  // Opt-in IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_* bits to collect (see
+  // iree_hal_coralnpu_stats_collect_parse).
+  uint32_t collect_fields;
 } iree_hal_coralnpu_stats_writer_options_t;
 
 // Returns a dispatch observer that writes the statistics of the dispatches as
