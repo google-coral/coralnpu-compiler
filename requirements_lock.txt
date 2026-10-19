@@ -776,9 +776,9 @@ executing==2.2.1 \
     --hash=sha256:3632cc370565f6648cc328b32435bd120a1e4ebb20c77e3fdde9a13cd1e533c4 \
     --hash=sha256:760643d3452b4d777d295bb167ccc74c64a81df23fb5e08eff250c425a4b2017
     # via stack-data
-fastmcp==2.12.5 \
-    --hash=sha256:2dfd02e255705a4afe43d26caddbc864563036e233dbc6870f389ee523b39a6a \
-    --hash=sha256:b1e542f9b83dbae7cecfdc9c73b062f77074785abda9f2306799116121344133
+fastmcp==3.2.0 \
+    --hash=sha256:d4830b8ffc3592d3d9c76dc0f398904cf41f04910e41a0de38cc1004e0903bef \
+    --hash=sha256:e71aba3df16f86f546a4a9e513261d3233bcc92bef0dfa647bac3fa33623f681
     # via gemma
 filelock==3.32.4 \
     --hash=sha256:22e58ca3b1ae3b98993b762d7338367ae64fe50252bf78d59da3bfebcdf1cedd \
