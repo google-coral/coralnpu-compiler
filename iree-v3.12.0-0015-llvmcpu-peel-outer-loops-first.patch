@@ -1,0 +1,118 @@
+From 0eaf7b54c4541ddc8c5f9fb916851feabf88b7d4 Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Thu, 15 Oct 2026 16:25:25 +0200
+Subject: [PATCH] [llvmcpu] peel the outer loops first
+
+LLVMCPUPeel gathers the loops around each op with a lowering config from
+inner to outer, and reverses the list to peel the outer loops first. But an
+op that comes first can gather an outer loop of a later op, for example a
+linalg.copy before a loop nest in the same loop body. Then the pass peeled
+the inner loop first, and the partial iteration of the outer loop got a copy
+of both the main loop and the remainder loop of the inner loop, which makes
+the code larger.
+
+Sort the loops by depth before peeling. For one loop nest, the order does
+not change.
+---
+ .../compiler/Codegen/LLVMCPU/LLVMCPUPeel.cpp  | 19 +++++++-
+ .../compiler/Codegen/LLVMCPU/test/peel.mlir   | 48 +++++++++++++++++++
+ 2 files changed, 66 insertions(+), 1 deletion(-)
+
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUPeel.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUPeel.cpp
+index 7a2c5eb..da2578e 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUPeel.cpp
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUPeel.cpp
+@@ -6,6 +6,8 @@
+ 
+ #include "iree/compiler/Codegen/LLVMCPU/Passes.h"
+ #include "iree/compiler/Codegen/Utils/Utils.h"
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/ADT/STLExtras.h"
+ #include "llvm/Support/DebugLog.h"
+ #include "mlir/Dialect/Affine/IR/AffineOps.h"
+ #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
+@@ -75,9 +77,24 @@ void LLVMCPUPeelPass::runOnOperation() {
+ 
+   LDBG() << "Peeling loops";
+   // Visiting the loops in outer-to-inner order will prevent loops nested in
+-  // partial iterations to be peeled again.
++  // partial iterations to be peeled again. The loops of each op are gathered
++  // from inner to outer, but an op that comes first can gather an outer loop
++  // of a later op (e.g. an op before a loop nest in the same loop body), so
++  // sort the loops by depth.
+   SmallVector<scf::ForOp, 8> outerToInnerLoopsToPeel(uniqueLoopsToPeel.rbegin(),
+                                                      uniqueLoopsToPeel.rend());
++  llvm::DenseMap<Operation *, int64_t> loopDepths;
++  for (scf::ForOp loop : outerToInnerLoopsToPeel) {
++    int64_t depth = 0;
++    for (Operation *parent = loop->getParentOp(); parent;
++         parent = parent->getParentOp()) {
++      ++depth;
++    }
++    loopDepths[loop] = depth;
++  }
++  llvm::stable_sort(outerToInnerLoopsToPeel, [&](scf::ForOp a, scf::ForOp b) {
++    return loopDepths[a] < loopDepths[b];
++  });
+   IRRewriter rewriter(context);
+   linalg::peelLoops(rewriter, outerToInnerLoopsToPeel);
+ 
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/peel.mlir b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/peel.mlir
+index b611e8a..391710a 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/peel.mlir
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/peel.mlir
+@@ -106,3 +106,51 @@ module {
+ // CHECK:             linalg.pack {{.*}} : tensor<16x16xf32> -> tensor<1x16x16x1xf32>
+ // CHECK:           scf.for
+ // CHECK:             linalg.pack {{.*}} : tensor<16x?xf32> -> tensor<1x?x16x1xf32>
++
++// -----
++
++// The copy comes before the inner loop, so the pass gathers the outer loop
++// before the inner loop. It must still peel the outer loop first: then the
++// inner loop of the full iteration has static bounds, and the partial
++// iteration keeps one inner loop.
++#config = #iree_cpu.lowering_config<vector_common_parallel = [16]>
++#config1 = #iree_cpu.lowering_config<vector_common_parallel = [4]>
++func.func @peel_outer_loop_first(%arg0: tensor<?xf32>, %arg1: tensor<?xf32>, %n: index) -> tensor<?xf32> {
++  %c0 = arith.constant 0 : index
++  %c4 = arith.constant 4 : index
++  %c16 = arith.constant 16 : index
++  %0 = scf.for %i = %c0 to %n step %c16 iter_args(%acc = %arg1) -> (tensor<?xf32>) {
++    %size = affine.min affine_map<(d0)[s0] -> (-d0 + s0, 16)>(%i)[%n]
++    %in = tensor.extract_slice %arg0[%i] [%size] [1] : tensor<?xf32> to tensor<?xf32>
++    %out = tensor.extract_slice %acc[%i] [%size] [1] : tensor<?xf32> to tensor<?xf32>
++    %copy = linalg.copy {lowering_config = #config} ins(%in : tensor<?xf32>) outs(%out : tensor<?xf32>) -> tensor<?xf32>
++    %1 = scf.for %j = %c0 to %size step %c4 iter_args(%t = %copy) -> (tensor<?xf32>) {
++      %size2 = affine.min affine_map<(d0)[s0] -> (-d0 + s0, 4)>(%j)[%size]
++      %x = tensor.extract_slice %t[%j] [%size2] [1] : tensor<?xf32> to tensor<?xf32>
++      %y = linalg.generic {indexing_maps = [affine_map<(d0) -> (d0)>], iterator_types = ["parallel"]} outs(%x : tensor<?xf32>) attrs = {lowering_config = #config1} {
++      ^bb0(%o: f32):
++        %neg = arith.negf %o : f32
++        linalg.yield %neg : f32
++      } -> tensor<?xf32>
++      %inserted = tensor.insert_slice %y into %t[%j] [%size2] [1] : tensor<?xf32> into tensor<?xf32>
++      scf.yield %inserted : tensor<?xf32>
++    }
++    %inserted = tensor.insert_slice %1 into %acc[%i] [%size] [1] : tensor<?xf32> into tensor<?xf32>
++    scf.yield %inserted : tensor<?xf32>
++  }
++  return %0 : tensor<?xf32>
++}
++// CHECK-LABEL: func.func @peel_outer_loop_first
++// CHECK:         scf.for
++// CHECK:           linalg.copy {{.*}} -> tensor<16xf32>
++// CHECK:           scf.for
++// CHECK:             linalg.generic {{.*}} outs({{.*}} : tensor<4xf32>)
++// CHECK:           scf.yield
++// CHECK-NEXT:    }
++// CHECK:         scf.for
++// CHECK:           linalg.copy {{.*}} -> tensor<?xf32>
++// CHECK:           scf.for
++// CHECK-NOT:         tensor<4xf32>
++// CHECK:             linalg.generic {{.*}} outs({{.*}} : tensor<?xf32>)
++// CHECK-NOT:       scf.for
++// CHECK:         return
+-- 
+2.56.0.385.gd3acb90ef8-goog
+

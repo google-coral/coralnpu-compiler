@@ -9,10 +9,13 @@ The tile sizes are selected in two steps during the configuration phase of the c
   - **`CoralNPUTileSizeSelectionDTCMPass`** ([CoralNPUTileSizeSelectionDTCM.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp)): Computes DTCM-level tile sizes (and the vector tile sizes of Zvt contractions and convolutions).
   - **`CoralNPUTileSizeSelectionWorkgroupPass`** ([CoralNPUTileSizeSelectionWorkgroup.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionWorkgroup.cpp)): Propagates DTCM-level tile sizes to the workgroup/distribution level.
 
+In the translation phase, **`CoralNPUPromoteOperandsPass`** ([CoralNPUPromoteOperands.cpp](../../compiler/Transforms/CoralNPUPromoteOperands.cpp)) copies the DTCM tiles to DTCM (see [DTCM Promotion](#dtcm-promotion)).
+
 
 ## Table of Contents
 - [Multi-Level Tiling](#multi-level-tiling)
 - [Alignment of DTCM Tiles](#alignment-of-dtcm-tiles)
+- [DTCM Promotion](#dtcm-promotion)
 - [Guided Tiling Example](#guided-tiling-example)
 
 ##  Multi-Level Tiling
@@ -100,6 +103,7 @@ This level is crucial for memory-constrained accelerators like the Coral NPU.
     *   `CacheParallelTiles` is lowered by `createLLVMCPUTileAndFuseProducerConsumerPass`, which generates `scf.forall` loops.
     *   `CacheReductionTiles` is lowered by `createLLVMCPUTileRootAndFuseInputOperandsPass`, which generates `scf.for` loops.
     After the vector levels, `ForallToForPass` changes the `scf.forall` loops (except the workgroup loop) to `scf.for` loops.
+    After the cache levels, `CoralNPUPromoteOperandsPass` copies the tiles to DTCM (see [DTCM Promotion](#dtcm-promotion)).
 
 
 ### 3. Level 2: Vector (`VectorCommonParallelTiles` & `VectorReductionTiles`)
@@ -160,8 +164,10 @@ graph TD
     Loop -->|Level = CacheParallelTiles| Pass2[Tile & Fuse Parallel Loops]
     Loop -->|Level = CacheReductionTiles| Pass3[Tile & Fuse Reduction Loops]
 
-    Loop -->|Level = VectorCommonParallelTiles| Pass4[Tile Parallel Loops to Vector Size]
-    Loop -->|Level = VectorReductionTiles| Pass5[Tile Reduction Loops to Vector Size]
+    Pass2 & Pass3 --> Promote["CoralNPUPromoteOperandsPass (if promote_operands)"]
+
+    Promote -->|Level = VectorCommonParallelTiles| Pass4[Tile Parallel Loops to Vector Size]
+    Promote -->|Level = VectorReductionTiles| Pass5[Tile Reduction Loops to Vector Size]
 
     Pass4 & Pass5 --> Pass6[LLVMCPUTileToVectorSizePass]
     Pass6 --> Pass7[GenericVectorizationPass]
@@ -176,6 +182,27 @@ graph TD
 1.  **Parallel loops** are aligned to `vector_common_parallel`, and **reduction loops** to `vector_reduction`. A vector tile size of 0 means that the loop has no alignment at first.
 2.  The search starts from the full loop ranges, so a loop that fits stays untiled. When it shrinks a tile, it halves the tile and aligns it down to a multiple of the alignment. Then it takes the largest multiple of the alignment that divides the loop range, so that there is no partial DTCM tile. If the range is not a multiple of the alignment, it takes the largest divisor of the range that is at least the alignment, if there is one (but not for the N loop of a Zvt contraction, which Zvt cannot lower with all column remainders). The loops whose ranges are multiples of their alignments shrink first, and the outermost loop first. The search does not shrink the streamed reduction loops of a Zvt contraction or of a convolution. If the footprint still does not fit, the search relaxes the alignments (see [Graceful Degradation](#graceful-degradation-alignment-fallback)).
 3.  After the search, a vector tile that is larger than its DTCM tile is clamped to the DTCM tile size.
+
+
+## DTCM Promotion
+
+For an RVV contraction (not a Zvt contraction), `CoralNPUTileSizeSelectionDTCMPass` adds `promote_operands` to the lowering config of the root operation. In the translation phase, IREE patch 0014 calls a CoralNPU hook (`afterCacheTilingHook`) after the cache-level tiling. The hook adds `CoralNPUPromoteOperandsPass` if the root operation has `promote_operands`. The pass makes the buffers of the footprint model (see [Level 1](#2-level-1-cache-cacheparalleltiles--cachereductiontiles)) real:
+
+*   **Input slices**: The pass copies each tile that the fused operations read from memory (a slice of a binding, or a whole binding) to a DTCM buffer, with a `bufferization.materialize_in_destination` operation. If a fused producer reads the tile, the copy comes before the producer (e.g. the `i8` tile before a fused `arith.sitofp`). IREE fuses a producer into the tile loop only through a slice of its result, and the tiling makes no slice of an input that no tiled loop indexes (e.g. the RHS when only M is tiled). So the pass first clones such elementwise producers into the tile loop, and their inputs get DTCM copies too.
+*   **Accumulator**: If the tile splits K, or if the root result is stored directly, the root operation accumulates in a DTCM buffer (its `linalg.fill` writes into DTCM).
+*   **Output staging**: The operation that computes a stored result (the root operation or a fused consumer) writes it into a DTCM buffer. The store operation (`tensor.parallel_insert_slice` or `iree_codegen.store_to_buffer`) copies it to memory when it bufferizes.
+
+`materialize_in_destination` is not a linalg operation: the vector-level tiling does not tile it or fuse it into the loops of its users, and the vectorization does not fold it away. It is a destination-style operation, so the sizes of its result are the sizes of the DTCM tensor (peeling can make them static).
+
+After bufferization, the copies of both kinds are `linalg.generic` copies of whole tiles between memory and DTCM. In the pre-LLVM hook of the CoralNPU target, `CoralNPULowerDTCMCopiesPass` ([CoralNPULowerDTCMCopies.cpp](../../compiler/Transforms/CoralNPULowerDTCMCopies.cpp)) lowers each copy to and from DTCM to loops of vector loads and stores along the rows (the last vector of a row has a mask if necessary). Without it, the pre-LLVM hook makes a copy of fewer than 1024 elements one vector (`GenericVectorizationPass`), and IREE lowers the other copies to scalar loops. TODO(DMA): this pass is the place where the copies must become DMA transfers (one descriptor for each row), with the vector loops as the fallback.
+
+The DTCM buffers are static `bufferization.alloc_tensor` operations in the `#iree_codegen.workgroup_local` memory space. Their sizes are the upper bounds of the tile sizes. They are at the start of the workgroup loop body (or of the function if there is no workgroup loop). A tile with dynamic sizes (a partial tile at the boundary) uses a slice of its buffer. Thus:
+
+*   Loop peeling clones the inner loops, but not the buffers, and the DTCM use does not increase.
+*   The canonicalizer does not change the buffers. (When it makes a dynamic `bufferization.alloc_tensor` static, it drops the memory space.)
+*   After bufferization, the buffers are `memref.alloc` operations (IREE patch 0013) in the entry block of the function. `iree-llvmcpu-assign-workgroup-local-memory` packs them into one buffer, and sets its size in the `workgroup_local_memory` attribute of the export. The runtime gives each workgroup a DTCM buffer of this size.
+
+The input copies come before the compute loops in the same loop body. IREE patch 0015 makes `LLVMCPUPeel` peel the outer loops first in this case too; without it, a partial tile gets two copies of the compute loops, which uses much more ITCM.
 
 
 ## Guided Tiling Example
@@ -232,13 +259,14 @@ This degradation preserves memory correctness (avoiding DTCM overflow) but will 
 *   **Resulting Attribute**: `distribution = [4, 24, 0]`.
 
 ### Final Lowering Configuration
-The root operation (`linalg.matmul`) gets this lowering config. The function keeps the translation info that the strategy pass set.
+The root operation (`linalg.matmul`) gets this lowering config. The function keeps the translation info that the strategy pass set. The matmul is an RVV contraction, so `promote_operands` asks for the [DTCM promotion](#dtcm-promotion) of its operands.
 ```mlir
 // On the linalg.matmul operation:
 lowering_config = #iree_cpu.lowering_config<
   cache_parallel = [4, 24, 0],
   cache_reduction = [0, 0, 64],
   distribution = [4, 24, 0],
+  promote_operands = [0, 1, 2],
   vector_common_parallel = [4, 24, 0],
   vector_reduction = [0, 0, 1]
 >

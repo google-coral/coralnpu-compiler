@@ -130,6 +130,68 @@ def CoralNPUTileSizeSelectionWorkgroup : InterfacePass<"coralnpu-tile-size-selec
   }];
 }
 
+def CoralNPUPromoteOperands : InterfacePass<"coralnpu-promote-operands", "mlir::FunctionOpInterface"> {
+  let summary = "Copies the tiles of the operands of a root op to DTCM";
+  let description = [{
+    Runs after the cache-level tiling, on a root op whose lowering config has
+    a `promote_operands` entry (set by CoralNPUTileSizeSelectionDTCM). In the
+    workgroup tile (DTCM tile), it copies each binding tile that the root op
+    and the ops fused with it read into a DTCM tensor, with a
+    `bufferization.materialize_in_destination` op. The root op accumulates in
+    DTCM if the tile splits K or if its result is stored, and each stored
+    result goes through an output staging buffer in DTCM: the store op copies
+    it to memory when it bufferizes. After bufferization,
+    CoralNPULowerDTCMCopies lowers the copies.
+
+    First, the pass clones into the tile loop the elementwise producers (e.g.
+    dequantizations) that IREE left out of it, because no tiled loop indexes
+    their result. Thus their binding inputs get DTCM copies like the inputs of
+    the producers that IREE fuses (the footprint model of
+    CoralNPUTileSizeSelectionDTCM counts them too).
+
+    The DTCM buffers are static `bufferization.alloc_tensor` ops in
+    `#iree_codegen.workgroup_local`, with the upper bounds of the tile sizes,
+    at the start of the workgroup loop body (or of the function if there is
+    no workgroup loop). Each tile with dynamic sizes uses a slice of its
+    buffer. Thus loop peeling does not clone the buffers, and the buffers
+    become `memref.alloc` ops in the entry block of the function.
+  }];
+  let constructor = [{
+    ::mlir::coralnpu_compiler::createCoralNPUPromoteOperandsPass()
+  }];
+  let dependentDialects = [
+    "::mlir::bufferization::BufferizationDialect",
+    "::mlir::linalg::LinalgDialect",
+    "::mlir::tensor::TensorDialect",
+  ];
+}
+
+def CoralNPULowerDTCMCopies : InterfacePass<"coralnpu-lower-dtcm-copies", "mlir::FunctionOpInterface"> {
+  let summary = "Lowers the copies between memory and DTCM to vector loads and stores";
+  let description = [{
+    Runs after bufferization and the vector lowering (in the pre-LLVM hook of
+    the CoralNPU target). It lowers each copy (a `memref.copy`, or a linalg
+    copy on memrefs) whose source or target is in DTCM
+    (`#iree_codegen.workgroup_local`) and whose rows are contiguous to loops
+    of vector loads and stores along the rows. The last vector of a row has a
+    mask if the length of the rows is not a multiple of the vector size.
+    These copies are the tile copies of CoralNPUPromoteOperands; without this
+    pass, the pre-LLVM hook makes a copy of fewer than 1024 elements one
+    vector (GenericVectorizationPass), and IREE lowers the other copies to
+    scalar loops.
+    TODO(DMA): lower the copies to DMA transfers here, and keep the vector
+    loops as the fallback.
+  }];
+  let constructor = [{
+    ::mlir::coralnpu_compiler::createCoralNPULowerDTCMCopiesPass()
+  }];
+  let dependentDialects = [
+    "::mlir::arith::ArithDialect",
+    "::mlir::scf::SCFDialect",
+    "::mlir::vector::VectorDialect",
+  ];
+}
+
 def CoralNPULimitLoopUnrolling : Pass<"coralnpu-limit-loop-unrolling", "mlir::func::FuncOp"> {
   let summary = "Limit loop unrolling by annotating loops";
   let description = [{

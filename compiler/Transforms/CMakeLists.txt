@@ -37,10 +37,12 @@ iree_cc_library(
     "CoralNPUApproximateMath.cpp"
     "CoralNPUDumpAffinityExecutionProfile.cpp"
     "CoralNPULimitLoopUnrolling.cpp"
+    "CoralNPULowerDTCMCopies.cpp"
     "CoralNPUMaterializeDeviceTopology.cpp"
     "CoralNPUMatrixCodegen.cpp"
     "CoralNPUOptimizeVectorLoops.cpp"
     "CoralNPUPromoteBF16Accumulator.cpp"
+    "CoralNPUPromoteOperands.cpp"
     "CoralNPURaiseApplyScale.cpp"
     "CoralNPURestoreConvInputChannel.cpp"
     "CoralNPUTileSizeSelectionAnalysis.cpp"
@@ -69,6 +71,8 @@ iree_cc_library(
     LLVMSupport
     MLIRAffineDialect
     MLIRArithDialect
+    MLIRArithUtils
+    MLIRBufferizationDialect
     MLIRCastInterfaces
     MLIRDestinationStyleOpInterface
     MLIRFuncDialect
@@ -88,6 +92,7 @@ iree_cc_library(
     MLIRTilingInterface
     MLIRTosaDialect
     MLIRTransformUtils
+    MLIRValueBoundsOpInterface
     MLIRVectorDialect
     MLIRVectorTransforms
     MLIRViewLikeInterface

@@ -42,6 +42,23 @@ Attribute getTilingLevelAttr(MLIRContext *context, ArrayRef<int64_t> sizes);
 int64_t getDTCMTileBudgetBytes(int64_t dtcmSizeKb, int64_t stackSizeKb,
                                int64_t reserveKb);
 
+// The lowering config entry of a root op that asks CoralNPUPromoteOperandsPass
+// to copy the tiles of the operands to DTCM. Its value is the list of the
+// operand numbers of the root op (as the promote_operands of the IREE GPU
+// configs). The DTCM pass lists all the operands, and the promotion pass only
+// checks that the list is not empty: it copies the tiles of all operands of
+// the root op and of the ops fused with it.
+inline constexpr llvm::StringLiteral kPromoteOperandsName = "promote_operands";
+
+// Returns true if `loweringConfig` is a CPU lowering config with a
+// kPromoteOperandsName entry that is a list with at least one operand.
+bool hasPromoteOperands(Attribute loweringConfig);
+
+// Returns the native vector size in bytes of the HAL executable target of `op`
+// (the "native_vector_size" entry of the target config), or 16 bytes if the
+// target does not give it.
+int64_t getNativeVectorBytes(Operation *op);
+
 // Returns true if the enclosing HAL executable targets CoralNPU with +zvtbase.
 bool hasZvtTargetFeature(Operation *op);
 

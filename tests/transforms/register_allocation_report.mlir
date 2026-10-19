@@ -15,6 +15,10 @@
 // RUN: %iree_compile --coralnpu-dump-register-allocation-report-format=pretty --coralnpu-dump-register-allocation-report-dir=- %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=CHECK-PRETTY
 // RUN: %iree_compile --coralnpu-dump-register-allocation-report-format=json --coralnpu-dump-register-allocation-report-dir=- %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=CHECK-JSON
 
+// With the DTCM promotion, the first loops (%bb.1 to %bb.6) copy the tiles of
+// the operands to DTCM with vectors (V8M2), the loop at %bb.9 computes the
+// tile, and the last loops copy the result to memory.
+
 // CHECK-PRETTY: ========================================================================
 // CHECK-PRETTY: Register Allocation Report:
 // CHECK-PRETTY: ========================================================================
@@ -22,8 +26,11 @@
 // CHECK-PRETTY:   Vec Spills: 0, Vec Reloads: 0, Has Scalar Spills: No
 // CHECK-PRETTY:   Function-level (non-loop):
 // CHECK-PRETTY:     Location: {{.*}}
-// CHECK-PRETTY:     Vector Registers Used: 24 [V16M8, V24M8, V8M8]
+// CHECK-PRETTY:     Vector Registers Used: 26 [V16M8, V24M8, V8M2, V8M8]
 // CHECK-PRETTY:   Loop (depth 1) at %bb.1 ({{.*}}):
+// CHECK-PRETTY:     Vector Registers Used: 2 [V8M2]
+// CHECK-PRETTY:     Vec Spills: 0, Vec Reloads: 0, Has Scalar Spills: No
+// CHECK-PRETTY:   Loop (depth 1) at %bb.9 ({{.*}}):
 // CHECK-PRETTY:     Vector Registers Used: 24 [V16M8, V24M8, V8M8]
 // CHECK-PRETTY:     Vec Spills: 0, Vec Reloads: 0, Has Scalar Spills: No
 
@@ -35,15 +42,28 @@
 // CHECK-JSON:       "vec_reloads": 0,
 // CHECK-JSON:       "has_scalar_spills": false,
 // CHECK-JSON:       "global_location": "{{.*}}",
-// CHECK-JSON:       "global_vector_registers_count": 24,
+// CHECK-JSON:       "global_vector_registers_count": 26,
 // CHECK-JSON:       "global_vector_registers": [
 // CHECK-JSON:         "V16M8",
 // CHECK-JSON:         "V24M8",
+// CHECK-JSON:         "V8M2",
 // CHECK-JSON:         "V8M8"
 // CHECK-JSON:       ],
 // CHECK-JSON:       "loops": [
 // CHECK-JSON:         {
 // CHECK-JSON:           "header": "%bb.1",
+// CHECK-JSON:           "location": "{{.*}}",
+// CHECK-JSON:           "depth": 1,
+// CHECK-JSON:           "vector_registers_used_count": 2,
+// CHECK-JSON:           "vector_registers_used": [
+// CHECK-JSON:             "V8M2"
+// CHECK-JSON:           ],
+// CHECK-JSON:           "vec_spills": 0,
+// CHECK-JSON:           "vec_reloads": 0,
+// CHECK-JSON:           "has_scalar_spills": false
+// CHECK-JSON:         },
+// The other copy loops (%bb.3 to %bb.6) come before the compute loop.
+// CHECK-JSON:           "header": "%bb.9",
 // CHECK-JSON:           "location": "{{.*}}",
 // CHECK-JSON:           "depth": 1,
 // CHECK-JSON:           "vector_registers_used_count": 24,

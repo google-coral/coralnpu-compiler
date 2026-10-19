@@ -39,6 +39,13 @@ def linalg_op_tests_f32(name = "linalg_op_f32_tests", check_mlir_files = None, g
     op_tests_f32(name = "generic_add_rank3_f32", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "generic_add_rank3_f32.mlir")
     op_tests_f32(name = "generic_add_rank4_f32", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "generic_add_rank4_f32.mlir")
     op_tests_f32(name = "matmul_f32", instances = ["(4,8)(8,4)", "(120,256)(256,300)", "(300,100)(100,450)"], test = "matmul_f32.mlir")
+
+    # DTCM promotion of narrow tiles: the i8 tiles are copied before the fused
+    # dequantizations. In the first instance, the tile splits M and N, and has
+    # partial tiles. In the second, N is not tiled, so IREE leaves the RHS
+    # dequantization out of the tile loop, and the promotion clones it into the
+    # loop.
+    op_tests_f32(name = "dequant_matmul_f32", instances = ["(22,256)(256,200)", "(40,48)(48,200)"], test = "dequant_matmul_f32.mlir")
     op_tests_f32(name = "batch_matmul_f32", instances = ["(2,4,8)(2,8,4)", "(3,12,25)(3,25,30)"], test = "batch_matmul_f32.mlir")
     op_tests_f32(name = "mmt4d_f32", instances = ["(1,2,4,4)(2,2,4,4)", "(10,12,4,4)(12,12,4,4)", "(24,25,4,4)(25,25,4,4)"], test = "mmt4d_f32.mlir")
     op_tests_f32(name = "conv_2d_nhwc_hwcf_f32", instances = ["(1,6,6,4)(3,3,4,4)", "(1,8,8,8)(3,3,8,16)", "(1,65,67,33)(3,3,33,17)"], test = "conv_2d_nhwc_hwcf_f32.mlir")

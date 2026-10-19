@@ -1,0 +1,270 @@
+From 987a9874c880ad68d1a6c562fecc86071af521e7 Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Thu, 15 Oct 2026 14:03:20 +0200
+Subject: [PATCH] [codegen] allocate workgroup local memory with memref.alloc
+ on CPU
+
+cpuAllocationFn always created a memref.alloca, also for a buffer in
+workgroup local memory. LLVMCPUAssignWorkgroupLocalMemoryPass rejects such
+an alloca: it needs a memref.alloc with a static size in the entry block of
+the function. So no path led from tensors (e.g. a
+bufferization.alloc_tensor in workgroup local memory) to workgroup local
+memory.
+
+For workgroup local memory, hoist a memref.alloc with a static upper bound to
+the entry block (hoistOneStaticallyBoundAllocation), and emit an error if the
+size has no static upper bound. The other allocations do not change. This is
+the same idea as gpuRequireMemSpaceAllocationFn, which picks alloca or alloc
+from the memory space.
+
+For a dynamic size, hoistOneStaticallyBoundAllocation<memref::AllocOp> moved
+the insertion point of the builder to the function terminator to create the
+dealloc, and did not restore it. Bufferization creates the copy of an
+out-of-place buffer at this insertion point, so the copy went to the end of
+the function and did not verify. The helper now keeps the insertion point of
+the caller, as it already does for a static size.
+---
+ .../compiler/Codegen/Common/CPU/Passes.cpp    |  17 +++
+ .../compiler/Codegen/LLVMCPU/test/BUILD.bazel |   1 +
+ .../Codegen/LLVMCPU/test/CMakeLists.txt       |   1 +
+ .../bufferize_workgroup_local_memory.mlir     | 141 ++++++++++++++++++
+ .../Codegen/Transforms/Transforms.cpp         |   7 +-
+ 5 files changed, 165 insertions(+), 2 deletions(-)
+ create mode 100644 compiler/src/iree/compiler/Codegen/LLVMCPU/test/bufferize_workgroup_local_memory.mlir
+
+diff --git a/compiler/src/iree/compiler/Codegen/Common/CPU/Passes.cpp b/compiler/src/iree/compiler/Codegen/Common/CPU/Passes.cpp
+index 8bd7fa5..5e08888 100644
+--- a/compiler/src/iree/compiler/Codegen/Common/CPU/Passes.cpp
++++ b/compiler/src/iree/compiler/Codegen/Common/CPU/Passes.cpp
+@@ -6,6 +6,7 @@
+ 
+ #include "iree/compiler/Codegen/Common/CPU/Passes.h"
+ #include "iree/compiler/Codegen/Common/Passes.h"
++#include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenAttrs.h"
+ #include "iree/compiler/Codegen/Transforms/Transforms.h"
+ #include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
+ #include "mlir/Dialect/MemRef/IR/MemRef.h"
+@@ -24,6 +25,22 @@ static FailureOr<Value> cpuAllocationFn(OpBuilder &builder, Location loc,
+                                         unsigned alignment) {
+   auto funcOp =
+       builder.getInsertionPoint()->getParentOfType<mlir::FunctionOpInterface>();
++  // Workgroup local memory is not on the stack: the runtime supplies it.
++  // LLVMCPUAssignWorkgroupLocalMemoryPass needs a memref.alloc with a static
++  // size in the entry block of the function.
++  if (isa_and_nonnull<IREE::Codegen::WorkgroupLocalMemoryAttr>(
++          memRefType.getMemorySpace())) {
++    std::optional<Value> hoistedAllocation;
++    if (funcOp) {
++      hoistedAllocation = hoistOneStaticallyBoundAllocation<memref::AllocOp>(
++          funcOp, builder, loc, memRefType, dynamicSizes, alignment);
++    }
++    if (!hoistedAllocation) {
++      return emitError(loc, "workgroup local memory allocations need a static "
++                            "upper bound on their size");
++    }
++    return hoistedAllocation.value();
++  }
+   if (funcOp) {
+     std::optional<Value> hoistedAllocation =
+         hoistOneStaticallyBoundAllocation<memref::AllocaOp>(
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/BUILD.bazel b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/BUILD.bazel
+index 837115d..cf3f360 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/BUILD.bazel
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/BUILD.bazel
+@@ -26,6 +26,7 @@ iree_lit_test_suite(
+             "assign_constant_ordinals.mlir",
+             "assign_import_ordinals.mlir",
+             "assign_workgroup_local_memory.mlir",
++            "bufferize_workgroup_local_memory.mlir",
+             "check_ir_before_llvm_conversion.mlir",
+             "check_ir_before_llvm_conversion_not_fail_unbound.mlir",
+             "convert_to_llvm.mlir",
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/CMakeLists.txt b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/CMakeLists.txt
+index 8d75ee9..efa62d3 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/CMakeLists.txt
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/CMakeLists.txt
+@@ -21,6 +21,7 @@ iree_lit_test_suite(
+     "assign_constant_ordinals.mlir"
+     "assign_import_ordinals.mlir"
+     "assign_workgroup_local_memory.mlir"
++    "bufferize_workgroup_local_memory.mlir"
+     "check_ir_before_llvm_conversion.mlir"
+     "check_ir_before_llvm_conversion_not_fail_unbound.mlir"
+     "convert_to_llvm.mlir"
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/bufferize_workgroup_local_memory.mlir b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/bufferize_workgroup_local_memory.mlir
+new file mode 100644
+index 0000000..39d4494
+--- /dev/null
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/bufferize_workgroup_local_memory.mlir
+@@ -0,0 +1,141 @@
++// RUN: iree-opt --pass-pipeline="builtin.module(func.func(iree-codegen-llvmcpu-bufferization-pipeline))" --split-input-file --verify-diagnostics %s | FileCheck %s
++
++// The CPU bufferization allocates #iree_codegen.workgroup_local buffers with a
++// memref.alloc in the entry block, as LLVMCPUAssignWorkgroupLocalMemoryPass
++// requires. Other buffers stay on the stack (memref.alloca).
++
++#pipeline_layout = #hal.pipeline.layout<bindings = [
++  #hal.pipeline.binding<storage_buffer>,
++  #hal.pipeline.binding<storage_buffer>
++]>
++// CHECK-LABEL: func.func @static_local_alloc
++//   CHECK-NOT:   memref.alloca
++//       CHECK:   %[[ALLOC:.+]] = memref.alloc() alignment = 64 : memref<16x16xf32, #iree_codegen.workgroup_local>
++//       CHECK:   scf.for
++//       CHECK:     linalg.copy {{.*}} outs(%[[ALLOC]] : memref<16x16xf32, #iree_codegen.workgroup_local>)
++//       CHECK:   memref.dealloc %[[ALLOC]]
++func.func @static_local_alloc() {
++  %c0 = arith.constant 0 : index
++  %c16 = arith.constant 16 : index
++  %c64 = arith.constant 64 : index
++  %0 = hal.interface.binding.subspan layout(#pipeline_layout) binding(0) alignment(64) offset(%c0) flags(ReadOnly) : !iree_tensor_ext.dispatch.tensor<readonly:tensor<64x16xf32>>
++  %1 = hal.interface.binding.subspan layout(#pipeline_layout) binding(1) alignment(64) offset(%c0) : !iree_tensor_ext.dispatch.tensor<writeonly:tensor<64x16xf32>>
++  scf.for %iv = %c0 to %c64 step %c16 {
++    %in = iree_tensor_ext.dispatch.tensor.load %0, offsets = [%iv, 0], sizes = [16, 16], strides = [1, 1] : !iree_tensor_ext.dispatch.tensor<readonly:tensor<64x16xf32>> -> tensor<16x16xf32>
++    %buf = bufferization.alloc_tensor() <{memory_space = #iree_codegen.workgroup_local}> : tensor<16x16xf32>
++    %copy = linalg.copy ins(%in : tensor<16x16xf32>) outs(%buf : tensor<16x16xf32>) -> tensor<16x16xf32>
++    iree_tensor_ext.dispatch.tensor.store %copy, %1, offsets = [%iv, 0], sizes = [16, 16], strides = [1, 1] : tensor<16x16xf32> -> !iree_tensor_ext.dispatch.tensor<writeonly:tensor<64x16xf32>>
++  }
++  return
++}
++
++// -----
++
++// A dynamic size with a static upper bound: the entry block allocates the
++// upper bound, and a subview gives the dynamic size.
++#pipeline_layout = #hal.pipeline.layout<bindings = [
++  #hal.pipeline.binding<storage_buffer>,
++  #hal.pipeline.binding<storage_buffer>
++]>
++// CHECK-LABEL: func.func @bounded_dynamic_local_alloc
++//   CHECK-NOT:   memref.alloca
++//       CHECK:   %[[ALLOC:.+]] = memref.alloc() alignment = 64 : memref<16x16xf32, #iree_codegen.workgroup_local>
++//       CHECK:   scf.for
++//       CHECK:     %[[SIZE:.+]] = affine.min
++//       CHECK:     %[[VIEW:.+]] = memref.subview %[[ALLOC]][0, 0] [%[[SIZE]], 16] [1, 1]
++//       CHECK:     linalg.copy {{.*}} outs(%[[VIEW]] :
++func.func @bounded_dynamic_local_alloc() {
++  %c0 = arith.constant 0 : index
++  %c16 = arith.constant 16 : index
++  %c60 = arith.constant 60 : index
++  %0 = hal.interface.binding.subspan layout(#pipeline_layout) binding(0) alignment(64) offset(%c0) flags(ReadOnly) : !iree_tensor_ext.dispatch.tensor<readonly:tensor<60x16xf32>>
++  %1 = hal.interface.binding.subspan layout(#pipeline_layout) binding(1) alignment(64) offset(%c0) : !iree_tensor_ext.dispatch.tensor<writeonly:tensor<60x16xf32>>
++  scf.for %iv = %c0 to %c60 step %c16 {
++    %size = affine.min affine_map<(d0) -> (16, -d0 + 60)>(%iv)
++    %in = iree_tensor_ext.dispatch.tensor.load %0, offsets = [%iv, 0], sizes = [%size, 16], strides = [1, 1] : !iree_tensor_ext.dispatch.tensor<readonly:tensor<60x16xf32>> -> tensor<?x16xf32>
++    %buf = bufferization.alloc_tensor(%size) <{memory_space = #iree_codegen.workgroup_local}> : tensor<?x16xf32>
++    %copy = linalg.copy ins(%in : tensor<?x16xf32>) outs(%buf : tensor<?x16xf32>) -> tensor<?x16xf32>
++    iree_tensor_ext.dispatch.tensor.store %copy, %1, offsets = [%iv, 0], sizes = [%size, 16], strides = [1, 1] : tensor<?x16xf32> -> !iree_tensor_ext.dispatch.tensor<writeonly:tensor<60x16xf32>>
++  }
++  return
++}
++
++// -----
++
++// A copy into a buffer with a dynamic size: the copy stays at the place of the
++// buffer (in the loop), after the subview.
++#pipeline_layout = #hal.pipeline.layout<bindings = [
++  #hal.pipeline.binding<storage_buffer>,
++  #hal.pipeline.binding<storage_buffer>
++]>
++// CHECK-LABEL: func.func @bounded_dynamic_local_copy
++//   CHECK-NOT:   memref.alloca
++//       CHECK:   %[[ALLOC:.+]] = memref.alloc() alignment = 64 : memref<16x16xf32, #iree_codegen.workgroup_local>
++//       CHECK:   scf.for
++//       CHECK:     %[[SIZE:.+]] = affine.min
++//       CHECK:     %[[VIEW:.+]] = memref.subview %[[ALLOC]][0, 0] [%[[SIZE]], 16] [1, 1]
++//       CHECK:     linalg.generic {{.*}} outs(%[[VIEW]] :
++//       CHECK:   }
++//       CHECK:   memref.dealloc %[[ALLOC]]
++func.func @bounded_dynamic_local_copy() {
++  %c0 = arith.constant 0 : index
++  %c16 = arith.constant 16 : index
++  %c60 = arith.constant 60 : index
++  %0 = hal.interface.binding.subspan layout(#pipeline_layout) binding(0) alignment(64) offset(%c0) flags(ReadOnly) : !iree_tensor_ext.dispatch.tensor<readonly:tensor<60x16xf32>>
++  %1 = hal.interface.binding.subspan layout(#pipeline_layout) binding(1) alignment(64) offset(%c0) : !iree_tensor_ext.dispatch.tensor<writeonly:tensor<60x16xf32>>
++  scf.for %iv = %c0 to %c60 step %c16 {
++    %size = affine.min affine_map<(d0) -> (16, -d0 + 60)>(%iv)
++    %in = iree_tensor_ext.dispatch.tensor.load %0, offsets = [%iv, 0], sizes = [%size, 16], strides = [1, 1] : !iree_tensor_ext.dispatch.tensor<readonly:tensor<60x16xf32>> -> tensor<?x16xf32>
++    %buf = bufferization.alloc_tensor() copy(%in) <{memory_space = #iree_codegen.workgroup_local}> : tensor<?x16xf32>
++    iree_tensor_ext.dispatch.tensor.store %buf, %1, offsets = [%iv, 0], sizes = [%size, 16], strides = [1, 1] : tensor<?x16xf32> -> !iree_tensor_ext.dispatch.tensor<writeonly:tensor<60x16xf32>>
++  }
++  return
++}
++
++// -----
++
++// A buffer without a memory space stays on the stack.
++#pipeline_layout = #hal.pipeline.layout<bindings = [
++  #hal.pipeline.binding<storage_buffer>,
++  #hal.pipeline.binding<storage_buffer>
++]>
++// CHECK-LABEL: func.func @default_alloc
++//   CHECK-NOT:   memref.alloc()
++//       CHECK:   memref.alloca() alignment = 64 : memref<16x16xf32>
++//   CHECK-NOT:   memref.alloc()
++//       CHECK:   return
++func.func @default_alloc() {
++  %c0 = arith.constant 0 : index
++  %c16 = arith.constant 16 : index
++  %c64 = arith.constant 64 : index
++  %0 = hal.interface.binding.subspan layout(#pipeline_layout) binding(0) alignment(64) offset(%c0) flags(ReadOnly) : !iree_tensor_ext.dispatch.tensor<readonly:tensor<64x16xf32>>
++  %1 = hal.interface.binding.subspan layout(#pipeline_layout) binding(1) alignment(64) offset(%c0) : !iree_tensor_ext.dispatch.tensor<writeonly:tensor<64x16xf32>>
++  scf.for %iv = %c0 to %c64 step %c16 {
++    %in = iree_tensor_ext.dispatch.tensor.load %0, offsets = [%iv, 0], sizes = [16, 16], strides = [1, 1] : !iree_tensor_ext.dispatch.tensor<readonly:tensor<64x16xf32>> -> tensor<16x16xf32>
++    %buf = bufferization.alloc_tensor() : tensor<16x16xf32>
++    %copy = linalg.copy ins(%in : tensor<16x16xf32>) outs(%buf : tensor<16x16xf32>) -> tensor<16x16xf32>
++    iree_tensor_ext.dispatch.tensor.store %copy, %1, offsets = [%iv, 0], sizes = [16, 16], strides = [1, 1] : tensor<16x16xf32> -> !iree_tensor_ext.dispatch.tensor<writeonly:tensor<64x16xf32>>
++  }
++  return
++}
++
++// -----
++
++// Workgroup local memory without a static upper bound is an error.
++#pipeline_layout = #hal.pipeline.layout<constants = 1, bindings = [
++  #hal.pipeline.binding<storage_buffer>,
++  #hal.pipeline.binding<storage_buffer>
++]>
++func.func @unbounded_local_alloc() {
++  %c0 = arith.constant 0 : index
++  %n = hal.interface.constant.load layout(#pipeline_layout) ordinal(0) : index
++  %0 = hal.interface.binding.subspan layout(#pipeline_layout) binding(0) alignment(64) offset(%c0) flags(ReadOnly) : !iree_tensor_ext.dispatch.tensor<readonly:tensor<?xf32>>{%n}
++  %1 = hal.interface.binding.subspan layout(#pipeline_layout) binding(1) alignment(64) offset(%c0) : !iree_tensor_ext.dispatch.tensor<writeonly:tensor<?xf32>>{%n}
++  %in = iree_tensor_ext.dispatch.tensor.load %0, offsets = [0], sizes = [%n], strides = [1] : !iree_tensor_ext.dispatch.tensor<readonly:tensor<?xf32>>{%n} -> tensor<?xf32>
++  // expected-error @+2 {{workgroup local memory allocations need a static upper bound on their size}}
++  // expected-error @+1 {{failed to bufferize op}}
++  %buf = bufferization.alloc_tensor(%n) <{memory_space = #iree_codegen.workgroup_local}> : tensor<?xf32>
++  %copy = linalg.copy ins(%in : tensor<?xf32>) outs(%buf : tensor<?xf32>) -> tensor<?xf32>
++  iree_tensor_ext.dispatch.tensor.store %copy, %1, offsets = [0], sizes = [%n], strides = [1] : tensor<?xf32> -> !iree_tensor_ext.dispatch.tensor<writeonly:tensor<?xf32>>{%n}
++  return
++}
+diff --git a/compiler/src/iree/compiler/Codegen/Transforms/Transforms.cpp b/compiler/src/iree/compiler/Codegen/Transforms/Transforms.cpp
+index cbec03f..ab0f0e0 100644
+--- a/compiler/src/iree/compiler/Codegen/Transforms/Transforms.cpp
++++ b/compiler/src/iree/compiler/Codegen/Transforms/Transforms.cpp
+@@ -148,8 +148,10 @@ std::optional<Value> hoistOneStaticallyBoundAllocation(
+ 
+   Value vscale = nullptr;
+   // Use the given vscale range (if provided); otherwise look at the target
+-  // information.
+-  if (!vscaleRange.has_value()) {
++  // information. Workgroup local memory needs a constant size at compile time.
++  if (!vscaleRange.has_value() &&
++      !isa_and_nonnull<IREE::Codegen::WorkgroupLocalMemoryAttr>(
++          allocLikeType.getMemorySpace())) {
+     auto targetAttr = IREE::HAL::ExecutableTargetAttr::lookup(funcOp);
+     vscaleRange = getDefaultVscaleRange(targetAttr);
+   }
+@@ -244,6 +246,9 @@ std::optional<Value> hoistOneStaticallyBoundAllocation(
+   }
+ 
+   if (std::is_same<AllocLikeOpType, memref::AllocOp>::value) {
++    // Keep the insertion point of the caller: the caller can create more ops
++    // there (e.g. bufferization creates the copy of an out-of-place buffer).
++    OpBuilder::InsertionGuard g(builder);
+     builder.setInsertionPoint(funcOp.getFunctionBody().front().getTerminator());
+     memref::DeallocOp::create(builder, loc, allocation);
+   }
+-- 
+2.56.0.212.g129ede20d9-goog
+

@@ -38,10 +38,7 @@ def linalg_op_tests_i8(name = "linalg_op_i8_tests", check_mlir_files = None, gen
     op_tests_i8(name = "generic_multi_output_i8", instances = ["(4,8)(4,8)", "(120,256)(120,256)", "(300,450)(300,450)"], test = "generic_multi_output_i8.mlir")
     op_tests_i8(name = "generic_add_rank3_i8", instances = ["(2,3,4)(2,3,4)", "(10,20,30)(10,20,30)", "(5,100,2)(5,100,2)"], test = "generic_add_rank3_i8.mlir")
     op_tests_i8(name = "generic_add_rank4_i8", instances = ["(2,2,3,2)(2,2,3,2)", "(2,3,4,50)(2,3,4,50)", "(1,1,5,400)(1,1,5,400)"], test = "generic_add_rank4_i8.mlir")
-
-    # (300,100)(100,450) is manual: without the DTCM promotion, its partial DTCM tile
-    # overflows the 8 KB ITCM.
-    op_tests_i8(name = "matmul_i8", instances = ["(4,8)(8,4)", "(120,256)(256,300)", ("(300,100)(100,450)", ["manual"])], test = "matmul_i8.mlir")
+    op_tests_i8(name = "matmul_i8", instances = ["(4,8)(8,4)", "(120,256)(256,300)", "(300,100)(100,450)"], test = "matmul_i8.mlir")
     op_tests_i8(name = "batch_matmul_i8", instances = ["(2,4,8)(2,8,4)", "(3,12,25)(3,25,30)"], test = "batch_matmul_i8.mlir")
     op_tests_i8(name = "mmt4d_i8", instances = ["(1,2,4,4)(2,2,4,4)", "(16,16,4,4)(16,16,4,4)", "(40,60,4,4)(50,60,4,4)"], test = "mmt4d_i8.mlir")
     op_tests_i8(name = "conv_2d_nhwc_hwcf_i8", instances = ["(1,6,6,4)(3,3,4,4)", "(1,8,8,8)(3,3,8,16)", "(1,65,67,33)(3,3,33,17)"], test = "conv_2d_nhwc_hwcf_i8.mlir")
@@ -83,12 +80,14 @@ def linalg_op_tests_i8(name = "linalg_op_i8_tests", check_mlir_files = None, gen
 
     # TODO: Enable this test when generator support for i1 tensor operands is added.
     # op_tests_i8(name = "select_i8", instances = ["(4,8)(4,8)(4,8)", "(120,256)(120,256)(120,256)", "(300,450)(300,450)(300,450)"], test = "select_i8.mlir", tags = ["manual"])
-    # (300,100)(100,450) is manual: without the DTCM promotion, its partial DTCM tile
-    # overflows the 8 KB ITCM.
-    op_tests_i8(name = "contract_matmul_i8", instances = ["(4,8)(8,4)", "(120,256)(256,300)", ("(300,100)(100,450)", ["manual"])], test = "contract_matmul_i8.mlir")
+    op_tests_i8(name = "contract_matmul_i8", instances = ["(4,8)(8,4)", "(120,256)(256,300)", "(300,100)(100,450)"], test = "contract_matmul_i8.mlir")
     op_tests_i8(name = "batch_reduce_matmul_i8", instances = ["(2,4,8)(2,8,4)", "(3,12,25)(3,25,30)"], test = "batch_reduce_matmul_i8.mlir")
     op_tests_i8(name = "quantized_matmul_i8", instances = ["(4,8)(8,4)", "(120,256)(256,300)", "(300,100)(100,450)"], test = "quantized_matmul_i8.mlir")
     op_tests_i8(name = "quantized_batch_matmul_i8", instances = ["(2,4,8)(2,8,4)", "(3,12,25)(3,25,30)"], test = "quantized_batch_matmul_i8.mlir")
+
+    # DTCM promotion: the bias tile, the output staging of a fused consumer, and
+    # a split K (the first instance).
+    op_tests_i8(name = "matmul_bias_relu_trunc_i8", instances = ["(30,1024)(1024,40)(40)", "(100,96)(96,200)(200)"], test = "matmul_bias_relu_trunc_i8.mlir")
     op_tests_i8(name = "batch_mmt4d_i8", instances = ["(2,1,2,4,4)(2,2,2,4,4)", "(2,10,12,4,4)(2,12,12,4,4)", "(2,30,36,4,4)(2,32,36,4,4)"], test = "batch_mmt4d_i8.mlir")
     op_tests_i8(name = "matvec_i8", instances = ["(4,8)(8)", "(120,256)(256)", "(300,450)(450)"], test = "matvec_i8.mlir")
     op_tests_i8(name = "vecmat_i8", instances = ["(8)(8,4)", "(256)(256,120)", "(450)(450,300)"], test = "vecmat_i8.mlir")

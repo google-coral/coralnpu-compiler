@@ -24,6 +24,8 @@
 // after LLVMCPUSelectLoweringStrategyPass. They keep the vector tile sizes of
 // the strategy pass (except for Zvt), set the DTCM tile sizes (cache_parallel,
 // cache_reduction), and set the distribution tile sizes to cache_parallel.
+// For an RVV contraction, the DTCM pass also sets promote_operands, so that
+// CoralNPUPromoteOperands copies the tiles to DTCM (promote_operands.mlir).
 //
 // The DTCM tile budget is the DTCM size minus the stack (4 KB) and the reserve
 // (4 KB), rounded down to 4 KB: 24 KB for the default 32 KB DTCM (CHECK and
@@ -33,11 +35,12 @@
 // each rounded up to 64 B.
 // On a target with Zvt (the default; NOZVT and SMALL_NOZVT have no Zvt), a
 // contraction or a convolution that the Zvt asm can take is a Zvt root: it gets
-// Zvt vector tiles. A Zvt root and a convolution stream their reduction loops:
-// the DTCM tile does not split them, and the input slices hold one vector step
-// of them. CoralNPUMatrixCodegen can also lower the vector tiles of an RVV
-// contraction with Zvt asm. The footprint then also counts the scratch tiles to
-// which the asm drains the accumulators of a result that a fused op reads.
+// Zvt vector tiles and no promotion. A Zvt root and a convolution stream their
+// reduction loops: the DTCM tile does not split them, and the input slices hold
+// one vector step of them. CoralNPUMatrixCodegen can also lower the vector
+// tiles of an RVV contraction with Zvt asm. The footprint then also counts the
+// scratch tiles to which the asm drains the accumulators of a result that a
+// fused op reads.
 
 // f32 matmul: Zvt streams K, so the 32x32 Zvt vector tile fits. The output
 // staging buffer limits the DTCM tile: C 32x128 f32 (16 KB) + A 32x1 + B 1x128
@@ -49,7 +52,7 @@
 // SMALL-LABEL: func.func @matmul_f32_dispatch_0
 // SMALL:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [16, 32, 0], cache_reduction = [0, 0, 0], distribution = [16, 32, 0], vector_common_parallel = [16, 32, 0], vector_reduction = [0, 0, 1]>}
 // SMALL_NOZVT-LABEL: func.func @matmul_f32_dispatch_0
-// SMALL_NOZVT:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [4, 16, 0], cache_reduction = [0, 0, 32], distribution = [4, 16, 0], vector_common_parallel = [4, 16, 0], vector_reduction = [0, 0, 1]>}
+// SMALL_NOZVT:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [4, 16, 0], cache_reduction = [0, 0, 32], distribution = [4, 16, 0], promote_operands = [0, 1, 2], vector_common_parallel = [4, 16, 0], vector_reduction = [0, 0, 1]>}
 func.func @matmul_f32(%a: tensor<256x256xf32>, %b: tensor<256x256xf32>) -> tensor<256x256xf32> {
   %cst = arith.constant 0.0 : f32
   %e = tensor.empty() : tensor<256x256xf32>
@@ -70,7 +73,7 @@ func.func @matmul_f32(%a: tensor<256x256xf32>, %b: tensor<256x256xf32>) -> tenso
 // SMALL-LABEL: func.func @matmul_i8_dispatch_0
 // SMALL:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [16, 32, 0], cache_reduction = [0, 0, 0], distribution = [16, 32, 0], vector_common_parallel = [16, 32, 0], vector_reduction = [0, 0, 1]>}
 // SMALL_NOZVT-LABEL: func.func @matmul_i8_dispatch_0
-// SMALL_NOZVT:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 32, 0], cache_reduction = [0, 0, 64], distribution = [2, 32, 0], vector_common_parallel = [2, 32, 0], vector_reduction = [0, 0, 1]>}
+// SMALL_NOZVT:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 32, 0], cache_reduction = [0, 0, 64], distribution = [2, 32, 0], promote_operands = [0, 1, 2], vector_common_parallel = [2, 32, 0], vector_reduction = [0, 0, 1]>}
 func.func @matmul_i8(%a: tensor<64x128xi8>, %b: tensor<128x64xi8>) -> tensor<64x64xi32> {
   %c0 = arith.constant 0 : i32
   %e = tensor.empty() : tensor<64x64xi32>
@@ -99,15 +102,15 @@ func.func @conv_2d(%0: tensor<125x256xf32>, %1: tensor<5x7xf32>) -> tensor<121x2
 }
 
 // Narrow producer: A is i8 in memory, and a fused sitofp makes it f32. The Zvt
-// asm cannot load A (isZvtReadableInputs), so the op stays on RVV. The input
-// slice of A counts as i8: untiled, A 64x128 i8 (8 KB) + B 128x8 f32 (4 KB) + C
-// 64x8 f32 (2 KB) = 14 KB fits in 24 KB. As f32, A alone would need 32 KB.
-// With 2 buffers per input (DOUBLE), 2 * (8 KB + 4 KB) + 2 KB = 26 KB exceeds
-// 24 KB, so M shrinks to 32 (17 KB).
+// asm cannot load A (isZvtReadableInputs), so the op stays on RVV, with
+// promotion. The input slice of A counts as i8: untiled, A 64x128 i8 (8 KB) + B
+// 128x8 f32 (4 KB) + C 64x8 f32 (2 KB) = 14 KB fits in 24 KB. As f32, A alone
+// would need 32 KB. With 2 buffers per input (DOUBLE), 2 * (8 KB + 4 KB) +
+// 2 KB = 26 KB exceeds 24 KB, so M shrinks to 32 (17 KB).
 // CHECK-LABEL: func.func @matmul_narrow_lhs_dispatch_0
-// CHECK:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0, 0], cache_reduction = [0, 0, 0], distribution = [0, 0, 0], vector_common_parallel = [4, 16, 0], vector_reduction = [0, 0, 1]>}
+// CHECK:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0, 0], cache_reduction = [0, 0, 0], distribution = [0, 0, 0], promote_operands = [0, 1, 2], vector_common_parallel = [4, 16, 0], vector_reduction = [0, 0, 1]>}
 // DOUBLE-LABEL: func.func @matmul_narrow_lhs_dispatch_0
-// DOUBLE:        linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [32, 0, 0], cache_reduction = [0, 0, 0], distribution = [32, 0, 0], vector_common_parallel = [4, 16, 0], vector_reduction = [0, 0, 1]>}
+// DOUBLE:        linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [32, 0, 0], cache_reduction = [0, 0, 0], distribution = [32, 0, 0], promote_operands = [0, 1, 2], vector_common_parallel = [4, 16, 0], vector_reduction = [0, 0, 1]>}
 func.func @matmul_narrow_lhs(%a: tensor<64x128xi8>, %b: tensor<128x8xf32>) -> tensor<64x8xf32> {
   %cst = arith.constant 0.0 : f32
   %ea = tensor.empty() : tensor<64x128xf32>
@@ -143,9 +146,9 @@ func.func @matmul_narrow_lhs(%a: tensor<64x128xi8>, %b: tensor<128x8xf32>) -> te
 // SMALL-LABEL: func.func @matmul_bias_trunc_dispatch_0
 // SMALL:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [16, 0, 0], cache_reduction = [0, 0, 0], distribution = [16, 0, 0], vector_common_parallel = [16, 32, 0], vector_reduction = [0, 0, 1]>}
 // NOZVT-LABEL: func.func @matmul_bias_trunc_dispatch_0
-// NOZVT:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [32, 0, 0], cache_reduction = [0, 0, 0], distribution = [32, 0, 0], vector_common_parallel = [2, 32, 0], vector_reduction = [0, 0, 1]>}
+// NOZVT:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [32, 0, 0], cache_reduction = [0, 0, 0], distribution = [32, 0, 0], promote_operands = [0, 1, 2], vector_common_parallel = [2, 32, 0], vector_reduction = [0, 0, 1]>}
 // SMALL_NOZVT-LABEL: func.func @matmul_bias_trunc_dispatch_0
-// SMALL_NOZVT:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 32, 0], cache_reduction = [0, 0, 56], distribution = [2, 32, 0], vector_common_parallel = [2, 32, 0], vector_reduction = [0, 0, 1]>}
+// SMALL_NOZVT:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 32, 0], cache_reduction = [0, 0, 56], distribution = [2, 32, 0], promote_operands = [0, 1, 2], vector_common_parallel = [2, 32, 0], vector_reduction = [0, 0, 1]>}
 func.func @matmul_bias_trunc(%a: tensor<64x224xi8>, %b: tensor<224x64xi8>, %bias: tensor<64xi32>) -> tensor<64x64xi8> {
   %c0 = arith.constant 0 : i32
   %e = tensor.empty() : tensor<64x64xi32>
@@ -164,17 +167,17 @@ func.func @matmul_bias_trunc(%a: tensor<64x224xi8>, %b: tensor<224x64xi8>, %bias
 }
 
 // Zvt scratch of an RVV root: with 2 rows, the op is not a Zvt root (Zvt needs
-// 3 rows or more), so it keeps the strategy vector tile (2x32). The Zvt asm
-// takes the 2x32 vector tiles in the K loop, and drains them to a 16x32 i32
-// scratch tile (2 KB) for the consumer. With 24 KB, the full N needs A 2x352 i8
-// (704 B) + B 352x64 i8 (22 KB) + bias 64 i32 (256 B) + output 2x64 i8 (128 B)
-// + scratch (2 KB) = 25664 B, so N is halved: A + B 352x32 i8 (11 KB) + bias
-// (128 B) + output (64 B) + scratch = 14208 B.
+// 3 rows or more), so it keeps the strategy vector tile (2x32) and gets
+// promotion. The Zvt asm takes the 2x32 vector tiles in the K loop, and drains
+// them to a 16x32 i32 scratch tile (2 KB) for the consumer. With 24 KB, the
+// full N needs A 2x352 i8 (704 B) + B 352x64 i8 (22 KB) + bias 64 i32 (256 B)
+// + output 2x64 i8 (128 B) + scratch (2 KB) = 25664 B, so N is halved: A +
+// B 352x32 i8 (11 KB) + bias (128 B) + output (64 B) + scratch = 14208 B.
 // Without Zvt (NOZVT), there is no scratch tile, and the full N (23616 B) fits.
 // CHECK-LABEL: func.func @matmul_bias_trunc_m2_dispatch_0
-// CHECK:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 32, 0], cache_reduction = [0, 0, 0], distribution = [0, 32, 0], vector_common_parallel = [2, 32, 0], vector_reduction = [0, 0, 1]>}
+// CHECK:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 32, 0], cache_reduction = [0, 0, 0], distribution = [0, 32, 0], promote_operands = [0, 1, 2], vector_common_parallel = [2, 32, 0], vector_reduction = [0, 0, 1]>}
 // NOZVT-LABEL: func.func @matmul_bias_trunc_m2_dispatch_0
-// NOZVT:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0, 0], cache_reduction = [0, 0, 0], distribution = [0, 0, 0], vector_common_parallel = [2, 32, 0], vector_reduction = [0, 0, 1]>}
+// NOZVT:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0, 0], cache_reduction = [0, 0, 0], distribution = [0, 0, 0], promote_operands = [0, 1, 2], vector_common_parallel = [2, 32, 0], vector_reduction = [0, 0, 1]>}
 func.func @matmul_bias_trunc_m2(%a: tensor<2x352xi8>, %b: tensor<352x64xi8>, %bias: tensor<64xi32>) -> tensor<2x64xi8> {
   %c0 = arith.constant 0 : i32
   %e = tensor.empty() : tensor<2x64xi32>
@@ -198,9 +201,9 @@ func.func @matmul_bias_trunc_m2(%a: tensor<2x352xi8>, %b: tensor<352x64xi8>, %bi
 // relaxes the alignments to 1, and the DTCM pass clamps the vector tile to the
 // 8x64x1 DTCM tile.
 // CHECK-LABEL: func.func @matmul_clamp_dispatch_0
-// CHECK:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [16, 64, 0], cache_reduction = [0, 0, 0], distribution = [16, 64, 0], vector_common_parallel = [16, 64, 0], vector_reduction = [0, 0, 1]>}
+// CHECK:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [16, 64, 0], cache_reduction = [0, 0, 0], distribution = [16, 64, 0], promote_operands = [0, 1, 2], vector_common_parallel = [16, 64, 0], vector_reduction = [0, 0, 1]>}
 // SMALL-LABEL: func.func @matmul_clamp_dispatch_0
-// SMALL:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [8, 64, 0], cache_reduction = [0, 0, 1], distribution = [8, 64, 0], vector_common_parallel = [8, 64, 0], vector_reduction = [0, 0, 1]>}
+// SMALL:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [8, 64, 0], cache_reduction = [0, 0, 1], distribution = [8, 64, 0], promote_operands = [0, 1, 2], vector_common_parallel = [8, 64, 0], vector_reduction = [0, 0, 1]>}
 #config = #iree_cpu.lowering_config<distribution = [32, 128, 0],
     vector_common_parallel = [16, 64, 0], vector_reduction = [0, 0, 1]>
 #translation = #iree_codegen.translation_info<pipeline = #iree_cpu.pipeline<DoubleTilingExpert>>
@@ -366,7 +369,7 @@ func.func @matmul_k8192(%a: tensor<32x8192xi8>, %b: tensor<8192x64xi8>) -> tenso
 // DOUBLE-LABEL: func.func @matmul_zvt_fallback_dispatch_0
 // DOUBLE:        linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0, 0], cache_reduction = [0, 0, 0], distribution = [0, 0, 0], vector_common_parallel = [16, 0, 0], vector_reduction = [0, 0, 1]>}
 // SMALL-LABEL: func.func @matmul_zvt_fallback_dispatch_0
-// SMALL:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [4, 16, 0], cache_reduction = [0, 0, 16], distribution = [4, 16, 0], vector_common_parallel = [4, 16, 0], vector_reduction = [0, 0, 1]>}
+// SMALL:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [4, 16, 0], cache_reduction = [0, 0, 16], distribution = [4, 16, 0], promote_operands = [0, 1, 2], vector_common_parallel = [4, 16, 0], vector_reduction = [0, 0, 1]>}
 func.func @matmul_zvt_fallback(%a: tensor<32x32xf32>, %b: tensor<32x32xf32>, %scale: tensor<32x32xf32>, %res: tensor<32x32xf32>) -> tensor<32x32xf32> {
   %cst = arith.constant 0.0 : f32
   %e = tensor.empty() : tensor<32x32xf32>

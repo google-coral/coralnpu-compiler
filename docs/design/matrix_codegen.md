@@ -47,18 +47,19 @@ Before tile-size selection in `buildConfigurationPassPipeline`, `CoralNPURestore
     *   Base fallback tile configuration (including $3 \le M < 16$), and always for `linalg.mmt4d`: `mTile = 16` ($\min(M, 16)$), `nTile = 16` when $N$ is a multiple of 16 or peeling is enabled and leaves no 4-column remainder, else 12 when $N$ is a multiple of 12 (e.g. 24 as $2 \times 12$), else 8 ($\min(N, \text{nTile})$).
 *   **DTCM Fit**: Zvt streams reduction loops one step at a time into tile accumulators (the pass sets `vector_reduction` to 1 for all reduction loops) and `CoralNPUMatrixCodegen` cannot lower a split reduction loop, so the register tile shrinks ($16 \times 64 \to 16 \times 32$, $64 \times 16 \to 32 \times 16$, $32 \times 32 \to 16 \times 32$, $16 \times 32 / 32 \times 16 \to 16 \times 16$) until a single-reduction-step tile fits the DTCM tile budget (`--coralnpu-dtcm-size-kb` minus `--coralnpu-stack-size-kb` and `--coralnpu-dtcm-reserve-kb`, rounded down to 4 KB) (otherwise the op stays on RVV), and DTCM tile shrinking stops at a single register tile per workgroup instead of splitting reduction dims. When shrinking DTCM tile sizes, aligned dimensions ($R \bmod \text{align} = 0$) shrink before unaligned ones, and each step picks an exact divisor of the loop range ($\ge \text{align}$) so workgroup tiles stay static and avoid remainder overhead; an unaligned Zvt $N$ shrinks to multiples of its register tile instead.
 *   **Loop Peeling**: Adds `enable_loop_peeling` to the `translation_info` configuration when the root op takes the Zvt tile sizes, so a dimension that is not a multiple of its tile size (e.g. $N=80$ tiled by 64, $M=196$ tiled by 16 into a $16 \times N$ main loop and a peeled $4 \times N$ tail loop, or $M=50$ tiled by 16 into a $16 \times N$ main loop and a peeled $2 \times N$ tail) yields a static remainder subview instead of a masked `affine.min` slice.
-*   **Scratch Tiles**: Pass 2 can also lower the RVV vector tiles of a contraction (e.g. $2 \times 32$ or $4 \times 16$) with Zvt asm. The scratch tiles of its drain (§2.3) are in DTCM, and the DTCM footprint model counts them.
+*   **DTCM Promotion**: A Zvt contraction does not get `promote_operands`, so its operands stay in memory (`TODO(zvt)`). An RVV contraction gets it, and `CoralNPUPromoteOperandsPass` copies its tiles to DTCM (see [DTCM Promotion](tiling_levels_explained.md#dtcm-promotion)). Pass 2 can still lower the RVV vector tiles of such a contraction (e.g. $2 \times 32$ or $4 \times 16$) with Zvt asm that reads the DTCM copies; the scratch tiles of its drain (§2.3) are in DTCM too, and the DTCM footprint model counts them (see [DTCM Tiling](dtcm_tiling.md#dtcm-budget-and-footprint)).
 
 ### 2.2. Vectorization & Pre-LLVM Lowering Hook
 This phase runs the standard IREE codegen pipeline:
 *   **Double Tiling & Vectorization**: Lowers Linalg operations into 2D `vector.contract` operations (e.g., `vector<16x16xf32>`, `vector<16x32xf32>`, or `vector<16x32xi32>`).
 *   **Pre-LLVM Lowering Hook (`beforeLowerToLLVMHook`)**: Before converting to LLVM dialect, `CoralNPUTargetBackend` invokes a callback that executes:
-    1.  `MemrefCopyToLinalgPass` and `GenericVectorizationPass`: vectorize leftover ops of fewer than 1024 elements, e.g. the `memref.copy` / `linalg.copy` ops emitted during bufferization.
-    2.  `DropVectorUnitDimsPass`: Folds unit vector dimensions.
-    3.  `CoralNPUApproximateMathPass` (`--coralnpu-fast-math`, default on) and `MathTransformPass`: replace `math.tanh`, `math.exp`, `math.erf` and the erfc expansion with cheaper approximations, then expand the remaining math ops.
-    4.  `CoralNPUOptimizeVectorLoopsPass`: accumulates loop-carried `vector.reduction` sums in vectors, and unrolls, unroll-and-jams and interchanges vectorized loops.
-    5.  `CoralNPULimitLoopUnrollingPass`: limits LLVM loop unrolling to bound ITCM code size.
-    6.  `CoralNPUMatrixCodegenPass`: Lowers supported vector contractions to Zvt inline assembly.
+    1.  `CoralNPULowerDTCMCopiesPass`: lowers the copies between memory and DTCM (the DTCM promotion) to loops of vector loads and stores (see [DTCM Promotion](tiling_levels_explained.md#dtcm-promotion)).
+    2.  `MemrefCopyToLinalgPass` and `GenericVectorizationPass`: vectorize leftover ops of fewer than 1024 elements, e.g. the `memref.copy` / `linalg.copy` ops emitted during bufferization.
+    3.  `DropVectorUnitDimsPass`: Folds unit vector dimensions.
+    4.  `CoralNPUApproximateMathPass` (`--coralnpu-fast-math`, default on) and `MathTransformPass`: replace `math.tanh`, `math.exp`, `math.erf` and the erfc expansion with cheaper approximations, then expand the remaining math ops.
+    5.  `CoralNPUOptimizeVectorLoopsPass`: accumulates loop-carried `vector.reduction` sums in vectors, and unrolls, unroll-and-jams and interchanges vectorized loops.
+    6.  `CoralNPULimitLoopUnrollingPass`: limits LLVM loop unrolling to bound ITCM code size.
+    7.  `CoralNPUMatrixCodegenPass`: Lowers supported vector contractions to Zvt inline assembly.
 
 ### 2.3. Pass 2: CoralNPUMatrixCodegen
 This pass runs on MLIR `FunctionOpInterface` within `beforeLowerToLLVMHook` and converts vector contractions into Zvt inline assembly:

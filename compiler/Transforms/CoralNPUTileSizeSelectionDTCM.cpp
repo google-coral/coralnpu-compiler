@@ -40,6 +40,7 @@
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
 #include "mlir/IR/AffineExpr.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/Remarks.h"
 #include "mlir/Pass/Pass.h"
 
@@ -47,6 +48,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DebugLog.h"
@@ -298,10 +300,10 @@ struct CoralNPUTileSizeSelectionDTCMPass
     const SmallVector<int64_t> rvvParallelSizes(vectorParallelSizes);
     const SmallVector<int64_t> rvvReductionSizes(vectorReductionSizes);
 
-    // A Zvt root and a convolution stream their reduction loops one vector step
-    // at a time, and the DTCM tile does not split them. The input slices of the
-    // other roots (e.g. an RVV contraction) span the reduction range of the
-    // DTCM tile.
+    // A root without promotion (a Zvt root or a convolution) streams its
+    // reduction loops one vector step at a time, and the DTCM tile does not
+    // split them. A promoted root copies the reduction range of its DTCM tile
+    // to DTCM.
     auto linalgOp = dyn_cast<linalg::LinalgOp>(tilingOp.getOperation());
     bool isConvolution =
         linalgOp && linalg::isaConvolutionOpInterface(linalgOp);
@@ -321,7 +323,7 @@ struct CoralNPUTileSizeSelectionDTCMPass
 
     // The Zvt asm takes vector tiles with a K of 1, and streams K. It must load
     // both inputs with Zvt element types: a root whose input a fused op
-    // computes (e.g. a dequantization) stays on RVV.
+    // computes (e.g. a dequantization) stays on RVV, with promotion.
     bool useZvt = false;
     if (isZvtMatrixContraction(tilingOp) && isZvtReadableInputs(tilingOp)) {
       for (size_t k : analysis.reductionLoops) vectorReductionSizes[k] = 1;
@@ -501,6 +503,16 @@ struct CoralNPUTileSizeSelectionDTCMPass
         if (computeOp == tilingOp.getOperation()) continue;
         eraseLoweringConfig(computeOp);
       }
+    }
+
+    // Ask CoralNPUPromoteOperandsPass to copy the tiles of all operands of an
+    // RVV contraction to DTCM (the inputs, the accumulator and the output).
+    // TODO(zvt): promote the operands of Zvt contractions too.
+    if (!useZvt && linalgOp && linalg::isaContractionOpInterface(linalgOp)) {
+      SmallVector<int64_t> operandNumbers =
+          llvm::to_vector(llvm::seq<int64_t>(0, linalgOp->getNumOperands()));
+      setConfigItem(kPromoteOperandsName,
+                    Builder(context).getI64ArrayAttr(operandNumbers));
     }
 
     setLoweringConfig(tilingOp,

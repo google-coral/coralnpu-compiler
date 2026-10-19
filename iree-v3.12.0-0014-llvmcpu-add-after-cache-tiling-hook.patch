@@ -1,0 +1,162 @@
+From dfbf2fce7cac0d95515e27a6018216a581522b4c Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Thu, 15 Oct 2026 14:03:21 +0200
+Subject: [PATCH] [llvmcpu] add afterCacheTilingHook to LLVMCPUPipelineOptions
+
+Add a hook that addMultiTilingExpertPassPipeline calls after the cache-level
+tiling passes and before the vector-level tiling passes, with the root
+lowering config. A target can use it to add passes that work on the
+cache-level tiles, e.g. copies to local memory.
+
+buildLLVMCPUCodegenPassPipeline gives the hook to
+LLVMCPULowerExecutableTargetPass (a new create function overload), which
+copies it into the options of the pipelines that it builds. When the hook is
+empty, nothing changes.
+---
+ .../LLVMCPU/LLVMCPULowerExecutableTarget.cpp   | 18 ++++++++++++++++++
+ .../iree/compiler/Codegen/LLVMCPU/Passes.cpp   | 18 +++++++++++++++++-
+ .../src/iree/compiler/Codegen/LLVMCPU/Passes.h | 18 ++++++++++++++++++
+ 3 files changed, 53 insertions(+), 1 deletion(-)
+
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPULowerExecutableTarget.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPULowerExecutableTarget.cpp
+index d445c8a..2c6f193 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPULowerExecutableTarget.cpp
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPULowerExecutableTarget.cpp
+@@ -46,6 +46,11 @@ class LLVMCPULowerExecutableTargetPass
+           LLVMCPULowerExecutableTargetPass> {
+ public:
+   using Base::Base;
++  LLVMCPULowerExecutableTargetPass(
++      const LLVMCPULowerExecutableTargetPassOptions &options,
++      LLVMCPUAfterCacheTilingHook afterCacheTilingHook)
++      : Base(options), afterCacheTilingHook(std::move(afterCacheTilingHook)) {}
++
+   void getDependentDialects(DialectRegistry &registry) const override {
+     // clang-format off
+     registry.insert<IREE::HAL::HALDialect,
+@@ -63,6 +68,11 @@ public:
+   }
+ 
+   void runOnOperation() override;
++
++private:
++  // Copied to the options of the lowering pipelines (see
++  // LLVMCPUPipelineOptions::afterCacheTilingHook).
++  LLVMCPUAfterCacheTilingHook afterCacheTilingHook;
+ };
+ } // namespace
+ 
+@@ -122,6 +132,7 @@ void LLVMCPULowerExecutableTargetPass::runOnOperation() {
+ 
+   LLVMCPUPipelineOptions pipelineOpts;
+   pipelineOpts.cpuOpts = cpuOptions.getValue();
++  pipelineOpts.afterCacheTilingHook = afterCacheTilingHook;
+ 
+   // If distribution is disabled, reset distribution tile sizes to zeros in the
+   // lowering config so the IR reflects the actual behavior.
+@@ -200,4 +211,11 @@ void LLVMCPULowerExecutableTargetPass::runOnOperation() {
+     return signalPassFailure();
+   }
+ }
++
++std::unique_ptr<Pass> createLLVMCPULowerExecutableTargetPass(
++    const LLVMCPULowerExecutableTargetPassOptions &options,
++    LLVMCPUAfterCacheTilingHook afterCacheTilingHook) {
++  return std::make_unique<LLVMCPULowerExecutableTargetPass>(
++      options, std::move(afterCacheTilingHook));
++}
+ } // namespace mlir::iree_compiler
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
+index f7238d9..9193442 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
+@@ -172,11 +172,24 @@ void addMultiTilingExpertPassPipeline(
+     IREE::Codegen::LoweringConfigAttrInterface loweringConfig,
+     const LLVMCPUPipelineOptions &pipelineOpt) {
+   addTileAndDistributePasses(funcPassManager, pipelineOpt);
++  // Adds the passes of the hook once, after the cache-level tiling.
++  bool addedAfterCacheTilingHook = false;
++  auto addAfterCacheTilingHook = [&]() {
++    if (addedAfterCacheTilingHook || !pipelineOpt.afterCacheTilingHook) {
++      return;
++    }
++    pipelineOpt.afterCacheTilingHook(funcPassManager, loweringConfig);
++    addedAfterCacheTilingHook = true;
++  };
+   for (int i : IREE::CPU::getTilingLevelsAsInts()) {
+     if (!loweringConfig.hasTilingLevel(i)) {
+       continue;
+     }
+     auto level = static_cast<IREE::CPU::TilingLevel>(i);
++    // The vector levels come after the cache levels.
++    if (level >= IREE::CPU::TilingLevel::VectorCommonParallelTiles) {
++      addAfterCacheTilingHook();
++    }
+     switch (level) {
+     case IREE::CPU::TilingLevel::CacheParallelTiles:
+     case IREE::CPU::TilingLevel::VectorCommonParallelTiles:
+@@ -210,6 +223,8 @@ void addMultiTilingExpertPassPipeline(
+     funcPassManager.addPass(createConcretizePadResultShapePass());
+     funcPassManager.addPass(createCanonicalizerPass());
+   }
++  // A lowering config without vector levels: add the hook after the loop.
++  addAfterCacheTilingHook();
+ 
+   // `VectorInnerParallelTiles` level models the tiling and fusion for the
+   // dimensions that are not captured in root op. I.e., root op may not have the
+@@ -693,7 +708,8 @@ void buildLLVMCPUCodegenPassPipeline(
+   FunctionLikeNest(modulePassManager)
+       .addPass([&]() {
+         return createLLVMCPULowerExecutableTargetPass(
+-            LLVMCPULowerExecutableTargetPassOptions{pipelineOpts.cpuOpts});
++            LLVMCPULowerExecutableTargetPassOptions{pipelineOpts.cpuOpts},
++            pipelineOpts.afterCacheTilingHook);
+       })
+       .addPass(createVerifyWorkgroupDistributionPass);
+   if (clPatchFuncOps) {
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h
+index ff3c022..3e1fe42 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h
+@@ -76,6 +76,11 @@ void populateVectorContractCustomKernelsPatterns(
+ // LLVMCPU backend Pass Pipelines.
+ //----------------------------------------------------------------------------//
+ 
++/// A hook that adds passes to the function pass manager of a lowering
++/// pipeline. It gets the lowering config of the root op.
++using LLVMCPUAfterCacheTilingHook = std::function<void(
++    OpPassManager &, IREE::Codegen::LoweringConfigAttrInterface)>;
++
+ struct LLVMCPUPipelineOptions {
+   // CPU codegen options from command-line flags.
+   CPUCodegenOptions cpuOpts;
+@@ -88,6 +93,12 @@ struct LLVMCPUPipelineOptions {
+   bool enableAArch64I8mm = false;
+   bool enableNativeBf16Converts = false;
+   bool lowerToAVX2 = false;
++
++  // If set, addMultiTilingExpertPassPipeline calls it after the cache-level
++  // tiling passes and before the vector-level tiling passes. A target can use
++  // it to add passes that work on the cache-level tiles (e.g. copies to local
++  // memory). The other pipelines do not call it.
++  LLVMCPUAfterCacheTilingHook afterCacheTilingHook;
+ };
+ 
+ /// Wraps LLVMCPUPipelineOptions and loweringConfig for passing through
+@@ -168,6 +179,13 @@ void buildLLVMCPULinkingPassPipeline(
+ #define GEN_PASS_DECL
+ #include "iree/compiler/Codegen/LLVMCPU/Passes.h.inc" // IWYU pragma: keep
+ 
++/// Creates LLVMCPULowerExecutableTargetPass with `options`. The pass sets
++/// `afterCacheTilingHook` in the options of the lowering pipelines that it
++/// builds (see LLVMCPUPipelineOptions::afterCacheTilingHook).
++std::unique_ptr<Pass> createLLVMCPULowerExecutableTargetPass(
++    const LLVMCPULowerExecutableTargetPassOptions &options,
++    LLVMCPUAfterCacheTilingHook afterCacheTilingHook);
++
+ void registerCodegenLLVMCPUPasses();
+ 
+ } // namespace mlir::iree_compiler
+-- 
+2.56.0.385.gd3acb90ef8-goog
+

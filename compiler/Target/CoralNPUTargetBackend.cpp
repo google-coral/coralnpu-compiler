@@ -447,10 +447,24 @@ void CoralNPUTargetBackend::buildTranslationPassPipeline(
   pipelineOpts.cpuOpts = codegenOptions_;
   pipelineOpts.enableNativeBf16Converts =
       hasFeature(config, "+zfbfmin") && hasFeature(config, "+zvfbfmin");
+  // After the cache-level (DTCM) tiling, copy the tiles of the operands to
+  // DTCM if the DTCM pass asked for it.
+  pipelineOpts.afterCacheTilingHook =
+      [](OpPassManager &funcPassManager,
+         IREE::Codegen::LoweringConfigAttrInterface loweringConfig) {
+        if (!hasPromoteOperands(loweringConfig)) return;
+        funcPassManager.addPass(createCoralNPUPromoteOperandsPass());
+      };
   buildLLVMCPUCodegenPassPipeline(
       passManager.nest<ModuleOp>(), pipelineOpts,
       /*includeLLVMLowering=*/true, [this](OpPassManager &pm) {
         OpPassManager &funcPassManager = pm.nest<func::FuncOp>();
+        // Lower the copies between memory and DTCM (the DTCM promotion) to
+        // vector loops, before the vectorization of the leftover ops below
+        // and before IREE lowers them to scalar loops. It comes before the
+        // loop unrolling limit, which then covers its loops.
+        // TODO(DMA): this pass is where the copies become DMA transfers.
+        funcPassManager.addPass(createCoralNPULowerDTCMCopiesPass());
         // Vectorize the leftover ops of fewer than 1024 elements, e.g. the
         // memref.copy / linalg.copy ops bufferization emits (no lowering
         // config), so a large copy is not one fully unrolled vector. The

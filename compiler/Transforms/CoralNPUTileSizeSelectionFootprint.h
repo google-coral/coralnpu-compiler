@@ -40,7 +40,8 @@ namespace mlir::coralnpu_compiler {
 //   tiles in DTCM.
 // The footprint of a root that is not a linalg op (e.g. pack or unpack) counts
 // only the operands of the root.
-// CoralNPUMatrixCodegen creates the scratch tiles: keep the two in sync.
+// CoralNPUPromoteOperands creates the input, output staging and accumulator
+// buffers, and CoralNPUMatrixCodegen the scratch tiles: keep the three in sync.
 class DTCMFootprintModel {
  public:
   // `computeOps` are the compute ops of the dispatch, which includes
@@ -55,8 +56,8 @@ class DTCMFootprintModel {
   // `vectorReductionSizes` are the vector tile sizes of the root loops (0 for
   // a loop without a vector tile); the scratch tiles, and the temporaries of an
   // unpack root, depend on them. If `streamReduction`, the root reads its
-  // inputs one vector step of the reduction loops at a time (e.g. a Zvt root),
-  // so the input slices span one step of these loops.
+  // inputs one vector step of the reduction loops at a time (e.g. a root
+  // without promotion), so the input slices span one step of these loops.
   int64_t estimate(ArrayRef<int64_t> tileSizes,
                    ArrayRef<int64_t> vectorParallelSizes,
                    ArrayRef<int64_t> vectorReductionSizes,

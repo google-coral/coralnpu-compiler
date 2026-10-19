@@ -15,6 +15,7 @@
 #include "compiler/Transforms/CoralNPUTileSizeSelectionUtils.h"
 
 // IREE:
+#include "iree/compiler/Codegen/Dialect/CPU/IR/IREECPUTypes.h"
 #include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenAttrs.h"
 #include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenOps.h"
 #include "iree/compiler/Codegen/Utils/Utils.h"
@@ -81,6 +82,24 @@ int64_t getDTCMTileBudgetBytes(int64_t dtcmSizeKb, int64_t stackSizeKb,
   // Less than one granule is left for the tile buffers.
   if (freeBytes < kBudgetGranuleBytes) return 0;
   return llvm::alignDown(freeBytes, kBudgetGranuleBytes);
+}
+
+bool hasPromoteOperands(Attribute loweringConfig) {
+  auto cpuConfig =
+      dyn_cast_or_null<IREE::CPU::LoweringConfigAttr>(loweringConfig);
+  if (!cpuConfig) return false;
+  auto operands = cpuConfig.getConfig().getAs<ArrayAttr>(kPromoteOperandsName);
+  return operands && !operands.empty();
+}
+
+int64_t getNativeVectorBytes(Operation *op) {
+  // One 128-bit register, if the target does not give the size.
+  constexpr int64_t kDefaultNativeVectorBytes = 16;
+  auto target = IREE::HAL::ExecutableTargetAttr::lookup(op);
+  if (!target || !target.getConfiguration()) return kDefaultNativeVectorBytes;
+  auto size =
+      target.getConfiguration().getAs<IntegerAttr>("native_vector_size");
+  return size ? size.getInt() : kDefaultNativeVectorBytes;
 }
 
 bool hasCoralNPUTargetFeature(Operation *op, StringRef feature) {
