@@ -22,12 +22,9 @@
 // CHECK-PRETTY:   Vec Spills: 0, Vec Reloads: 0, Has Scalar Spills: No
 // CHECK-PRETTY:   Function-level (non-loop):
 // CHECK-PRETTY:     Location: {{.*}}
-// CHECK-PRETTY:     Vector Registers Used: 20 [V10M2, V12M2, V14M2, V16M2, V18M2, V20M2, V22M2, V24M2, V26M2, V8M2]
+// CHECK-PRETTY:     Vector Registers Used: 24 [V16M8, V24M8, V8M8]
 // CHECK-PRETTY:   Loop (depth 1) at %bb.1 ({{.*}}):
-// CHECK-PRETTY:     Vector Registers Used: 20 [V10M2, V12M2, V14M2, V16M2, V18M2, V20M2, V22M2, V24M2, V26M2, V8M2]
-// CHECK-PRETTY:     Vec Spills: 0, Vec Reloads: 0, Has Scalar Spills: No
-// CHECK-PRETTY:   Loop (depth 2) at %bb.2 ({{.*}}):
-// CHECK-PRETTY:     Vector Registers Used: 18 [V10M2, V12M2, V14M2, V16M2, V18M2, V20M2, V22M2, V24M2, V26M2]
+// CHECK-PRETTY:     Vector Registers Used: 24 [V16M8, V24M8, V8M8]
 // CHECK-PRETTY:     Vec Spills: 0, Vec Reloads: 0, Has Scalar Spills: No
 
 // CHECK-JSON: {
@@ -38,56 +35,22 @@
 // CHECK-JSON:       "vec_reloads": 0,
 // CHECK-JSON:       "has_scalar_spills": false,
 // CHECK-JSON:       "global_location": "{{.*}}",
-// CHECK-JSON:       "global_vector_registers_count": 20,
+// CHECK-JSON:       "global_vector_registers_count": 24,
 // CHECK-JSON:       "global_vector_registers": [
-// CHECK-JSON:         "V10M2",
-// CHECK-JSON:         "V12M2",
-// CHECK-JSON:         "V14M2",
-// CHECK-JSON:         "V16M2",
-// CHECK-JSON:         "V18M2",
-// CHECK-JSON:         "V20M2",
-// CHECK-JSON:         "V22M2",
-// CHECK-JSON:         "V24M2",
-// CHECK-JSON:         "V26M2",
-// CHECK-JSON:         "V8M2"
+// CHECK-JSON:         "V16M8",
+// CHECK-JSON:         "V24M8",
+// CHECK-JSON:         "V8M8"
 // CHECK-JSON:       ],
 // CHECK-JSON:       "loops": [
 // CHECK-JSON:         {
 // CHECK-JSON:           "header": "%bb.1",
 // CHECK-JSON:           "location": "{{.*}}",
 // CHECK-JSON:           "depth": 1,
-// CHECK-JSON:           "vector_registers_used_count": 20,
+// CHECK-JSON:           "vector_registers_used_count": 24,
 // CHECK-JSON:           "vector_registers_used": [
-// CHECK-JSON:             "V10M2",
-// CHECK-JSON:             "V12M2",
-// CHECK-JSON:             "V14M2",
-// CHECK-JSON:             "V16M2",
-// CHECK-JSON:             "V18M2",
-// CHECK-JSON:             "V20M2",
-// CHECK-JSON:             "V22M2",
-// CHECK-JSON:             "V24M2",
-// CHECK-JSON:             "V26M2",
-// CHECK-JSON:             "V8M2"
-// CHECK-JSON:           ],
-// CHECK-JSON:           "vec_spills": 0,
-// CHECK-JSON:           "vec_reloads": 0,
-// CHECK-JSON:           "has_scalar_spills": false
-// CHECK-JSON:         },
-// CHECK-JSON:         {
-// CHECK-JSON:           "header": "%bb.2",
-// CHECK-JSON:           "location": "{{.*}}",
-// CHECK-JSON:           "depth": 2,
-// CHECK-JSON:           "vector_registers_used_count": 18,
-// CHECK-JSON:           "vector_registers_used": [
-// CHECK-JSON:             "V10M2",
-// CHECK-JSON:             "V12M2",
-// CHECK-JSON:             "V14M2",
-// CHECK-JSON:             "V16M2",
-// CHECK-JSON:             "V18M2",
-// CHECK-JSON:             "V20M2",
-// CHECK-JSON:             "V22M2",
-// CHECK-JSON:             "V24M2",
-// CHECK-JSON:             "V26M2"
+// CHECK-JSON:             "V16M8",
+// CHECK-JSON:             "V24M8",
+// CHECK-JSON:             "V8M8"
 // CHECK-JSON:           ],
 // CHECK-JSON:           "vec_spills": 0,
 // CHECK-JSON:           "vec_reloads": 0,

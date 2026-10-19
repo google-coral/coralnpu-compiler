@@ -1,0 +1,113 @@
+From 499fbdf4195873734a138f2a4157cb11355d0569 Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Thu, 15 Oct 2026 11:36:50 +0200
+Subject: [PATCH] [llvmcpu] give batch loops of matmuls the vector size 1
+
+getMatmulVectorSizes put the {M, N, K} sizes on the loops by position. So an
+op with a batch loop and fewer than 3 other loops (e.g. linalg.batch_matvec
+and linalg.batch_vecmat) got the M size on its batch loop. Give the leading
+batch loops (from linalg::inferContractionDims) the size 1, and put the
+{M, N, K} sizes on the other loops by position. Thus batch_matvec gets the
+same sizes as matvec for each batch.
+
+Similarly, use getNumLeadingBatchLoops in setContractionRootConfig instead of
+checking for linalg.batch_matmul so distribution tile sizes and vector size
+hints treat leading batch loops of all contractions uniformly.
+---
+ .../Codegen/LLVMCPU/KernelDispatch.cpp        | 59 +++++++++++++------
+ 1 file changed, 38 insertions(+), 21 deletions(-)
+
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
+index 2931781..8b0b94e 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
+@@ -1517,7 +1517,26 @@ getMatmulAArch64SMEVectorSizes(linalg::LinalgOp op,
+   // other than f32 and f64 yet).
+ }
+ 
+-/// Main utility to compute the vectorization/unrolling tile sizes.
++/// Returns the number of leading loops of `op` that are batch loops of a
++/// contraction (e.g. 1 for linalg.batch_matvec), or 0 if `op` is not a
++/// contraction.
++static unsigned getNumLeadingBatchLoops(linalg::LinalgOp op) {
++  FailureOr<linalg::ContractionDimensions> cDims =
++      linalg::inferContractionDims(op);
++  if (failed(cDims)) {
++    return 0;
++  }
++  // Count the batch loops from the outermost loop to the first other loop.
++  unsigned numLeadingBatchLoops = 0;
++  while (llvm::is_contained(cDims->batch, numLeadingBatchLoops)) {
++    ++numLeadingBatchLoops;
++  }
++  return numLeadingBatchLoops;
++}
++
++/// Main utility to compute the vectorization/unrolling tile sizes. The {M, N,
++/// K} sizes go to the inner loops of `op` by position, and the outer loops get
++/// the size 1.
+ static SizesAndScalableFlags
+ getMatmulVectorSizes(mlir::FunctionOpInterface entryPointFn,
+                      linalg::LinalgOp op, int64_t vectorSize,
+@@ -1565,21 +1584,20 @@ getMatmulVectorSizes(mlir::FunctionOpInterface entryPointFn,
+   // Pad the scalable flags with false to match the tile sizes.
+   matmulScalableFlags.resize(matmulTileSizes.size());
+ 
+-  SmallVector<int64_t> tileSizes;
+-  SmallVector<bool> scalableTileFlags;
++  // The outer loops are all loops before the inner 3 loops, and at least the
++  // leading batch loops. If the batch loops were not outer loops, an op with
++  // fewer than 3 other loops would get the M size on a batch loop (e.g. the
++  // batch loop of linalg.batch_matvec).
+   unsigned numLoops = op.getNumLoops();
+-  if (numLoops > 3) {
+-    tileSizes.append(numLoops - 3, 1);
+-    tileSizes.append(matmulTileSizes.begin(), matmulTileSizes.end());
+-    scalableTileFlags.append(numLoops - 3, false);
+-    scalableTileFlags.append(matmulScalableFlags.begin(),
+-                             matmulScalableFlags.end());
+-  } else {
+-    tileSizes.append(matmulTileSizes.begin() + (3 - numLoops),
+-                     matmulTileSizes.end());
+-    scalableTileFlags.append(matmulScalableFlags.begin() + (3 - numLoops),
+-                             matmulScalableFlags.end());
+-  }
++  unsigned numOuterLoops = std::max<unsigned>(getNumLeadingBatchLoops(op),
++                                              numLoops > 3 ? numLoops - 3 : 0);
++  unsigned numInnerLoops = numLoops - numOuterLoops;
++  SmallVector<int64_t> tileSizes(numOuterLoops, 1);
++  SmallVector<bool> scalableTileFlags(numOuterLoops, false);
++  tileSizes.append(matmulTileSizes.end() - numInnerLoops,
++                   matmulTileSizes.end());
++  scalableTileFlags.append(matmulScalableFlags.end() - numInnerLoops,
++                           matmulScalableFlags.end());
+ 
+   // RISC-V matmuls use the peeling pipeline, which does not limit the vector
+   // tile sizes to the register file (unlike setMatmulRootConfig). For a small
+@@ -1684,10 +1702,10 @@ setContractionRootConfig(mlir::FunctionOpInterface entryPointFn,
+   distConfig.allowIncompleteTile =
+       vecPreProcStrategy != VectorPreProcStrategy::None;
+   distConfig.vectorSizeHints.resize(numLoops, vectorSize);
+-  bool isBM = isa<linalg::BatchMatmulOp>(linalgOp.getOperation());
+-  if (isBM) {
+-    distConfig.maxTileSizes[0] = 1;
+-    distConfig.vectorSizeHints[0] = 1;
++  unsigned numBatchLoops = getNumLeadingBatchLoops(linalgOp);
++  for (unsigned i = 0; i < numBatchLoops; ++i) {
++    distConfig.maxTileSizes[i] = 1;
++    distConfig.vectorSizeHints[i] = 1;
+   }
+ 
+   // Compute cache-level tile sizes. Cache a dimension only if there are
+@@ -1709,8 +1727,7 @@ setContractionRootConfig(mlir::FunctionOpInterface entryPointFn,
+   if (targetAttr && isRISCV(targetAttr.getConfiguration()) &&
+       hasAnyVFeature(targetAttr.getConfiguration())) {
+     LDBG() << "RISC-V Aggressive Distribution: " << clEnableRiscvAggressiveDist;
+-    for (auto loopNum :
+-         llvm::seq<unsigned>(static_cast<unsigned>(isBM), numLoops)) {
++    for (auto loopNum : llvm::seq<unsigned>(numBatchLoops, numLoops)) {
+       if (clEnableRiscvAggressiveDist) {
+         if (distConfig.maxTileSizes[loopNum] <=
+             distConfig.minTileSizes[loopNum]) {
+-- 
+2.56.0.385.gd3acb90ef8-goog

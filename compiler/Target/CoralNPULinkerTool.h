@@ -15,6 +15,7 @@
 #ifndef COMPILER_TARGET_CORALNPULINKERTOOL_H_
 #define COMPILER_TARGET_CORALNPULINKERTOOL_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -24,10 +25,13 @@
 
 namespace mlir::coralnpu_compiler {
 
+// Creates the linker tool for CoralNPU embedded ELFs. It links with the linker
+// script `linkerScriptPath` (if empty, the script next to the compiler), and
+// sets the size of the CoralNPU stack to `stackSizeBytes`.
 std::unique_ptr<iree_compiler::IREE::HAL::LinkerTool> createCoralNPULinkerTool(
     const llvm::Triple& targetTriple,
     iree_compiler::IREE::HAL::LLVMTargetOptions& targetOptions,
-    std::string linkerScriptPath);
+    std::string linkerScriptPath, int64_t stackSizeBytes);
 
 }  // namespace mlir::coralnpu_compiler
 

@@ -78,40 +78,25 @@ def CoralNPUDumpAffinityExecutionProfile : Pass<"coralnpu-dump-affinity-executio
   ];
 }
 
-def CoralNPUTileSizeSelectionRegister : InterfacePass<"coralnpu-tile-size-selection-register", "mlir::FunctionOpInterface"> {
-  let summary = "Selects register-level tile sizes for CoralNPU operations";
-  let description = [{
-    This pass determines the optimal register-level tile sizes for CoralNPU.
-    It resolves target-specific register alignments (vector width, unroll factors)
-    and reduction alignments to ensure efficient vectorization and unrolling.
-  }];
-  let constructor = [{
-    ::mlir::coralnpu_compiler::createCoralNPUTileSizeSelectionRegisterPass()
-  }];
-  let dependentDialects = [
-    "::mlir::iree_compiler::IREE::Codegen::IREECodegenDialect",
-    "::mlir::iree_compiler::IREE::CPU::IREECPUDialect"
-  ];
-  let options = [
-    Option<"numVectorRegisters", "num-vector-registers", "int",
-           /*default=*/"32",
-           "Number of vector registers.">,
-    Option<"vectorRegisterWidthBits", "vector-register-width-bits", "int",
-           /*default=*/"0",
-           "Vector register width in bits (0 for auto-detect from target).">,
-  ];
-}
-
 def CoralNPUTileSizeSelectionDTCM : InterfacePass<"coralnpu-tile-size-selection-dtcm", "mlir::FunctionOpInterface"> {
   let summary = "Selects DTCM-level tile sizes for CoralNPU operations";
   let description = [{
-    This pass determines the optimal DTCM-level tile sizes for CoralNPU.
+    This pass determines the optimal DTCM-level tile sizes for CoralNPU. It runs
+    after LLVMCPUSelectLoweringStrategyPass and refines the lowering config of
+    the root op: it sets the cache_parallel and cache_reduction tile sizes.
     It uses a footprint estimation model to iteratively shrink the tile sizes
-    until the estimated working memory footprint fits within the DTCM budget,
-    using register tile sizes as alignment constraints, without splitting
-    the reduction loops of contractions and convolutions. For Zvt matrix
-    contractions and convolutions it sets M/N vector tiles of up to 64;
-    otherwise RVV sizes are used. Partial tiles enable loop peeling.
+    until the estimated DTCM footprint of one tile fits within the DTCM tile
+    budget, using the vector tile sizes of the strategy pass as alignment
+    constraints and preferring exact divisors of the loop ranges. The
+    footprint is the sum of the DTCM buffers of the root op and of the ops
+    fused with it (input slices, output staging buffers, an accumulator for a
+    split reduction, and the scratch tiles of the Zvt asm). The budget is the
+    DTCM size minus the stack and the reserve, rounded down to 4 KB.
+    For Zvt matrix contractions and convolutions it sets M/N vector tiles of
+    up to 64 and vector reduction tiles of 1, and enables loop peeling;
+    otherwise the RVV sizes of the strategy pass are kept. The reduction loops
+    of Zvt ops and of convolutions are not split: they stream one step at a
+    time.
   }];
   let constructor = [{
     ::mlir::coralnpu_compiler::createCoralNPUTileSizeSelectionDTCMPass()
@@ -119,15 +104,26 @@ def CoralNPUTileSizeSelectionDTCM : InterfacePass<"coralnpu-tile-size-selection-
   let options = [
     Option<"dtcmSizeKb", "dtcm-size-kb", "int",
            /*default=*/"32",
-           "Size of the DTCM in KB.">
+           "Size of the DTCM in KB.">,
+    Option<"stackSizeKb", "stack-size-kb", "int",
+           /*default=*/"4",
+           "Size of the stack in DTCM, in KB.">,
+    Option<"dtcmReserveKb", "dtcm-reserve-kb", "int",
+           /*default=*/"4",
+           "DTCM space in KB to keep free for static data.">,
+    Option<"buffersPerOperand", "buffers-per-operand", "int",
+           /*default=*/"1",
+           "Number of DTCM buffers for each input slice (2 for double "
+           "buffering).">
   ];
 }
 
 def CoralNPUTileSizeSelectionWorkgroup : InterfacePass<"coralnpu-tile-size-selection-workgroup", "mlir::FunctionOpInterface"> {
   let summary = "Selects workgroup-level tile sizes for CoralNPU operations";
   let description = [{
-    This pass determines the workgroup-level tile sizes for CoralNPU,
-    typically matching the DTCM parallel tile sizes.
+    This pass determines the workgroup-level tile sizes for CoralNPU. It runs
+    after CoralNPUTileSizeSelectionDTCM and sets the distribution tile sizes
+    of the root op to the DTCM parallel tile sizes (cache_parallel).
   }];
   let constructor = [{
     ::mlir::coralnpu_compiler::createCoralNPUTileSizeSelectionWorkgroupPass()

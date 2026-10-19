@@ -242,6 +242,15 @@ the result type. Host-only compiles keep dynamic shapes in BF16.
 Dumps a report containing vector register utilization (unique registers used, vector configuration) and register allocator remarks (spills, reloads, copies) for each loop and at the function level. If the directory is `-`, the report is written to stdout; if empty or omitted, it is written to stderr. The filter option accepts a regex pattern to only report functions matching the name (default: `.*dispatch.*|main`).
 
 
+**DTCM tiling and stack:**
+
+The DTCM tile-size selection picks tiles whose buffers fit in the DTCM tile budget. The buffers are the input slices, the output staging buffers, an accumulator if the tile splits a reduction, and the scratch tiles of the Zvt asm. The tile of a Zvt contraction or of a convolution does not split the reduction loops, and its input slices hold one step of these loops. The budget is the DTCM size minus the stack and the reserve, rounded down to 4 KB. With the defaults, the budget is 24 KB for a 32 KB DTCM, and 1016 KB for a 1 MB DTCM.
+- `--coralnpu-dtcm-size-kb=<KB>` (default: `32`): the size of the DTCM.
+- `--coralnpu-stack-size-kb=<KB>` (default: `4`, minimum: `2`): the size of the CoralNPU stack. The compiler gives it to the linker (`--defsym=__stack_size__`). The stack allocations of a dispatch can use the stack size minus 1 KB.
+- `--coralnpu-dtcm-reserve-kb=<KB>` (default: `4`): the DTCM space to keep free for the static data of the runtime.
+- `--coralnpu-dtcm-buffers-per-operand=<N>` (default: `1`): the number of DTCM buffers for each input slice (e.g. `2` for double buffering).
+
+
 **Executable linking:**
 
 `--coralnpu-link-executables={true|false}` controls whether all executable dispatches are linked into a single library or emitted as individual self-contained executables (default: `false`). Emitting separate executables per dispatch avoids overflowing tightly constrained ITCM memory (e.g., 8 KB) on multi-dispatch models.

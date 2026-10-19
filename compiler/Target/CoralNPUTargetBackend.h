@@ -47,6 +47,9 @@ class RegisterAllocationReportCollector;
 struct CoralNPUOptions {
   // CoralNPU specific options:
   int dtcmSizeKb = 32;
+  int stackSizeKb = 4;
+  int dtcmReserveKb = 4;
+  int dtcmBuffersPerOperand = 1;
   std::string linkerScriptPath = "";
   int numVectorRegisters = 32;
   int maxLoopUnrolling = 32;
@@ -112,6 +115,22 @@ struct CoralNPUOptions {
     binder.opt<int>("coralnpu-num-vector-registers", numVectorRegisters,
                     llvm::cl::cat(category),
                     llvm::cl::desc("Number of vector registers (default: 32)"));
+    binder.opt<int>(
+        "coralnpu-stack-size-kb", stackSizeKb, llvm::cl::cat(category),
+        llvm::cl::desc("Size of the stack in DTCM, in KB (default: 4). The "
+                       "stack allocations of a dispatch can use the stack "
+                       "size minus 1 KB."));
+    binder.opt<int>(
+        "coralnpu-dtcm-reserve-kb", dtcmReserveKb, llvm::cl::cat(category),
+        llvm::cl::desc("DTCM space in KB to keep free for static data "
+                       "(default: 4). The buffers of one DTCM tile can use the "
+                       "DTCM size minus the stack and this reserve, rounded "
+                       "down to 4 KB."));
+    binder.opt<int>(
+        "coralnpu-dtcm-buffers-per-operand", dtcmBuffersPerOperand,
+        llvm::cl::cat(category),
+        llvm::cl::desc("Number of DTCM buffers for each input slice of a "
+                       "tile, e.g. 2 for double buffering (default: 1)."));
 
     binder.opt<int>(
         "coralnpu-max-loop-unrolling", maxLoopUnrolling,
@@ -167,6 +186,12 @@ struct CoralNPUOptions {
   }
 
   LogicalResult validate(MLIRContext *context = nullptr) const;
+
+  // Returns the maximum size in bytes of the stack allocations of a dispatch:
+  // the stack size minus 1 KB for call frames and register spills.
+  int64_t getMaxStackAllocationBytes() const {
+    return (static_cast<int64_t>(stackSizeKb) - 1) * 1024;
+  }
 };
 
 class CoralNPUTargetBackend final

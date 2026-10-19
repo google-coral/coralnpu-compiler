@@ -26,6 +26,7 @@ iree_cc_library(
     Transforms
   HDRS
     "CoralNPUTileSizeSelectionAnalysis.h"
+    "CoralNPUTileSizeSelectionFootprint.h"
     "CoralNPUTileSizeSelectionUtils.h"
     "DeviceUtils.h"
     "Passes.h"
@@ -44,7 +45,7 @@ iree_cc_library(
     "CoralNPURestoreConvInputChannel.cpp"
     "CoralNPUTileSizeSelectionAnalysis.cpp"
     "CoralNPUTileSizeSelectionDTCM.cpp"
-    "CoralNPUTileSizeSelectionRegister.cpp"
+    "CoralNPUTileSizeSelectionFootprint.cpp"
     "CoralNPUTileSizeSelectionUtils.cpp"
     "CoralNPUTileSizeSelectionWorkgroup.cpp"
     "DeviceUtils.cpp"
@@ -69,6 +70,7 @@ iree_cc_library(
     MLIRAffineDialect
     MLIRArithDialect
     MLIRCastInterfaces
+    MLIRDestinationStyleOpInterface
     MLIRFuncDialect
     MLIRFunctionInterfaces
     MLIRIR

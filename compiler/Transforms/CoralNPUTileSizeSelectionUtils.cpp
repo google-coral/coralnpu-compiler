@@ -22,12 +22,16 @@
 #include "iree/compiler/Dialect/TensorExt/IR/TensorExtOps.h"
 
 // MLIR:
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/IR/Matchers.h"
 
 // LLVM:
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace mlir;
 using namespace mlir::iree_compiler;
@@ -68,6 +72,17 @@ Attribute getTilingLevelAttr(MLIRContext *context, ArrayRef<int64_t> sizes) {
       context, sizes, /*tileInterchange=*/{}, scalableFlags);
 }
 
+int64_t getDTCMTileBudgetBytes(int64_t dtcmSizeKb, int64_t stackSizeKb,
+                               int64_t reserveKb) {
+  constexpr int64_t kBudgetGranuleBytes = 4096;
+  // A negative stack or reserve would make the budget larger than the DTCM.
+  if (dtcmSizeKb <= 0 || stackSizeKb < 0 || reserveKb < 0) return 0;
+  int64_t freeBytes = (dtcmSizeKb - stackSizeKb - reserveKb) * 1024;
+  // Less than one granule is left for the tile buffers.
+  if (freeBytes < kBudgetGranuleBytes) return 0;
+  return llvm::alignDown(freeBytes, kBudgetGranuleBytes);
+}
+
 bool hasCoralNPUTargetFeature(Operation *op, StringRef feature) {
   auto targetAttr = IREE::HAL::ExecutableTargetAttr::lookup(op);
   return targetAttr && targetAttr.getBackend().getValue() == "coralnpu" &&
@@ -81,6 +96,67 @@ bool hasZvtTargetFeature(Operation *op) {
 bool isZvtElementTypes(Type lhs, Type rhs, Type acc) {
   return lhs == rhs && ((acc.isF32() && (lhs.isF32() || lhs.isBF16())) ||
                         (acc.isInteger(32) && lhs.isInteger(8)));
+}
+
+bool isZvtAccumulatorShape(int64_t m, int64_t n, bool rank1, bool swap) {
+  // Rows that are not a multiple of 16 fill one partial tile, and only without
+  // the swap. The asm does not support 48 rows or columns.
+  if ((m % 16 != 0 && (m > 16 || swap)) || m == 48 || n == 48) return false;
+  // Columns that are not a multiple of 16 are 8 or 12, in a 2-D accumulator
+  // without the swap.
+  if (n % 16 != 0 && ((n != 8 && n != 12) || rank1 || swap)) return false;
+  // At most four 16x16 tiles.
+  return llvm::alignTo(m, 16) * llvm::alignTo(n, 16) <= 1024;
+}
+
+namespace {
+
+// Returns the tensor that the Zvt asm loads from memory for `input`, an input
+// of a root op, or null if the asm cannot load it (see isZvtReadableInputs).
+Value getZvtLoadSource(Value input) {
+  Operation *def = input.getDefiningOp();
+  // The asm loads an input that no tileable op computes.
+  if (!isa_and_nonnull<TilingInterface>(def)) return input;
+  // Else, the producer must be an elementwise extension of one tensor: its
+  // body is one arith.extf or arith.extsi of the input element.
+  auto producer = dyn_cast<linalg::LinalgOp>(def);
+  if (!producer || producer.getNumDpsInputs() != 1 ||
+      producer->getNumResults() != 1 || !linalg::isElementwise(producer)) {
+    return nullptr;
+  }
+  Block *body = producer.getBlock();
+  auto yieldOp = dyn_cast<linalg::YieldOp>(body->getTerminator());
+  Operation *ext = yieldOp && yieldOp.getNumOperands() == 1
+                       ? yieldOp.getOperand(0).getDefiningOp()
+                       : nullptr;
+  if (!isa_and_nonnull<arith::ExtFOp, arith::ExtSIOp>(ext) ||
+      ext->getOperand(0) != body->getArgument(0) ||
+      !llvm::hasSingleElement(body->without_terminator())) {
+    return nullptr;
+  }
+  // The asm reads through one extension only: it cannot load a tensor that
+  // another tileable op computes.
+  Value source = producer.getDpsInputOperand(0)->get();
+  if (source.getDefiningOp<TilingInterface>()) return nullptr;
+  return source;
+}
+
+}  // namespace
+
+bool isZvtReadableInputs(Operation *op) {
+  auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
+  if (!linalgOp || linalgOp.getNumDpsInputs() != 2 ||
+      linalgOp.getNumDpsInits() != 1) {
+    return false;
+  }
+  Value lhs = getZvtLoadSource(linalgOp.getDpsInputOperand(0)->get());
+  Value rhs = getZvtLoadSource(linalgOp.getDpsInputOperand(1)->get());
+  // The asm checks the element types that it loads, not the types of the
+  // operands of `op` (e.g. f32 after an arith.extf of bf16).
+  return lhs && rhs &&
+         isZvtElementTypes(
+             getElementTypeOrSelf(lhs), getElementTypeOrSelf(rhs),
+             getElementTypeOrSelf(linalgOp.getDpsInitOperand(0)->get()));
 }
 
 // Keep in sync with isZvtMatrixContraction in iree-v3.12.0-0006-*.patch

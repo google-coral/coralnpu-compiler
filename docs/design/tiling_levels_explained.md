@@ -3,17 +3,16 @@
 This document provides a detailed explanation of the tiling levels and attributes used in the IREE LLVMCPU target backend, which the Coral NPU backend extends.
 It describes the purpose of each level, how they map to hardware, and where they are processed in the compiler pipeline.
 
-The dynamic selection of these tile sizes is implemented in three cooperative passes in [CoralNPUTileSizeSelection.cpp](file:///usr/local/google/home/sflur/coralnpu/coralnpu-compiler/compiler/Transforms/CoralNPUTileSizeSelection.cpp):
-- **`CoralNPUTileSizeSelectionRegisterPass`**: Computes register-level tile sizes.
-- **`CoralNPUTileSizeSelectionDTCMPass`**: Computes DTCM-level tile sizes.
-- **`CoralNPUTileSizeSelectionWorkgroupPass`**: Propagates DTCM-level tile sizes to the workgroup/distribution level.
-
-These passes run sequentially during the configuration phase of the compiler pipeline, progressively building up and refining the `iree_codegen.compilation_info` attached to the root operation of each dispatch.
+The tile sizes are selected in two steps during the configuration phase of the compiler pipeline:
+- IREE's **`LLVMCPUSelectLoweringStrategyPass`** picks the lowering pipeline and the tile sizes of all levels, including the vector (register) levels. It attaches a `lowering_config` to the compute operations and a `translation_info` to the function of each dispatch.
+- Two CoralNPU passes then refine the `lowering_config` of the root operation:
+  - **`CoralNPUTileSizeSelectionDTCMPass`** ([CoralNPUTileSizeSelectionDTCM.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp)): Computes DTCM-level tile sizes (and the vector tile sizes of Zvt contractions and convolutions).
+  - **`CoralNPUTileSizeSelectionWorkgroupPass`** ([CoralNPUTileSizeSelectionWorkgroup.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionWorkgroup.cpp)): Propagates DTCM-level tile sizes to the workgroup/distribution level.
 
 
 ## Table of Contents
 - [Multi-Level Tiling](#multi-level-tiling)
-- [Auto-Computation of Alignments](#auto-computation-of-alignments)
+- [Alignment of DTCM Tiles](#alignment-of-dtcm-tiles)
 - [Guided Tiling Example](#guided-tiling-example)
 
 ##  Multi-Level Tiling
@@ -36,7 +35,7 @@ IREE's `llvm-cpu` backend, which the CoralNPU relies on heavily, uses a structur
 [Vector Tile] (Execution Units)
 ```
 
-Each level is configured via the `iree_codegen.compilation_info` (specifically the [lowering_config](../../third_party/iree/compiler/src/iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenAttrs.td#L338) attribute) attached to the root operation of a dispatch.
+Each level is configured via the [lowering_config](../../third_party/iree/compiler/src/iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenAttrs.td#L338) attribute attached to the root operation of a dispatch.
 
 The `LoweringConfigAttr` for CPU backends defines the following attributes (keys in the dictionary):
 
@@ -51,7 +50,7 @@ The `LoweringConfigAttr` for CPU backends defines the following attributes (keys
 
 ### 1. Level 0: Distribution (`DistributionTiles`)
 
-*   **Configured by**: [CoralNPUTileSizeSelectionWorkgroupPass](file:///usr/local/google/home/sflur/coralnpu/coralnpu-compiler/compiler/Transforms/CoralNPUTileSizeSelection.cpp)
+*   **Configured by**: [CoralNPUTileSizeSelectionWorkgroupPass](../../compiler/Transforms/CoralNPUTileSizeSelectionWorkgroup.cpp)
 *   **Attribute Key**: `distribution`
 *   **Purpose**: To partition the global iteration space of the operation into independent chunks called **Workgroups**. Each workgroup can be executed concurrently by different CPU cores or NPU clusters.
 *   **Hardware Constraint**: Number of available compute cores/clusters.
@@ -73,15 +72,18 @@ The `LoweringConfigAttr` for CPU backends defines the following attributes (keys
 
 This level is crucial for memory-constrained accelerators like the Coral NPU.
 
-*   **Configured by**: [CoralNPUTileSizeSelectionDTCMPass](file:///usr/local/google/home/sflur/coralnpu/coralnpu-compiler/compiler/Transforms/CoralNPUTileSizeSelection.cpp)
+*   **Configured by**: [CoralNPUTileSizeSelectionDTCMPass](../../compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp)
 *   **Purpose**: To tile the workgroup's iteration space so that the active data working set (inputs, weights, outputs) fits entirely within a specific level of the cache hierarchy (L1/L2 cache on standard CPUs) or the local SRAM (DTCM on the Coral NPU).
 *   **Hardware Constraint**: Local memory size (DTCM / SRAM limit: e.g., 8KB to 32KB on Coral NPU).
 *   **Optimization Goal**: Maximize data reuse in local memory and minimize slow DRAM accesses.
 *   **Factors**:
-    *   **DTCM Capacity**: The combined memory footprint of all tiled operands (inputs, weights, outputs) of the fused operation group must fit within the DTCM limit:
-        $$\text{Footprint} = \left( \sum \text{Size}(\text{Tiled Inputs}) + \sum \text{Size}(\text{Tiled Outputs}) \right) \times \text{Bytes Per Element}$$
-    *   **Fusion Boundary**: We must account for the footprint of elementwise producers and consumers that will be fused into the root operation.
-    *   **Double Buffering Safety Margin**: If the runtime pipelines data transfers (DMA) with computation, we need to reserve space for the next tile's inputs while computing the current tile. This typically requires halving the effective DTCM capacity for tiling calculations (or using a 1.2x - 2.0x safety factor).
+    *   **DTCM Capacity**: The DTCM buffers of one tile must fit in the DTCM tile budget: the DTCM size minus the stack and the reserve for static data, rounded down to 4 KB (`--coralnpu-dtcm-size-kb`, `--coralnpu-stack-size-kb`, `--coralnpu-dtcm-reserve-kb`). The footprint of a tile is the sum of its buffers ([CoralNPUTileSizeSelectionFootprint.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionFootprint.cpp)), each rounded up to 64 bytes:
+        *   an input slice for each tensor that the fused operations read from memory, in its type in memory;
+        *   an output staging buffer for each result that leaves the fused operations, in the stored type;
+        *   an accumulator for the root result, if the tile splits a reduction loop and the root result is not stored directly;
+        *   the scratch tiles of the Zvt asm, if a fused operation reads the root result (see [Matrix Codegen](matrix_codegen.md)).
+    *   **Fusion Boundary**: The footprint includes the elementwise producers and consumers that are fused into the root operation. An input that a fused producer computes needs no buffer, but the inputs of the producer do (e.g. an `i8` tensor before a fused `arith.sitofp` counts as `i8`). The inputs of a fused producer of the init also count (e.g. the bias tensor of a broadcast into the init), and a result of a fused producer that leaves the fused operations (e.g. that the dispatch also stores) gets an output staging buffer.
+    *   **Double Buffering**: If the runtime pipelines data transfers (DMA) with computation, each input slice needs a second buffer for the next tile. `--coralnpu-dtcm-buffers-per-operand=2` counts each input slice twice.
     *   **Vector Alignment**: DTCM tile sizes must be multiples of Level 2 (Vector) tile sizes to avoid generating clean-up loops (peeling) which increase code size and reduce efficiency.
 *   **Attribute Keys**:
     *   `cache_parallel`: Tiles the parallel loops (e.g., M, N in Matmul).
@@ -95,14 +97,15 @@ This level is crucial for memory-constrained accelerators like the Coral NPU.
     *   `cache_reduction = [0, 0, 128]` means the reduction loop K (128) is processed in chunks of 128 (meaning no reduction tiling is needed because 128 already fits in local memory).
 *   **Lowering Passes**:
     Processed in the loop in [addMultiTilingExpertPassPipeline](../../third_party/iree/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp#L225) (in [LLVMCPU/Passes.cpp](../../third_party/iree/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp#L230)):
-    *   `CacheParallelTiles` is lowered by `createLLVMCPUTileAndFuseProducerConsumerPass`.
-    *   `CacheReductionTiles` is lowered by `createLLVMCPUTileRootAndFuseInputOperandsPass`.
-    These passes generate `scf.for` loops.
+    *   `CacheParallelTiles` is lowered by `createLLVMCPUTileAndFuseProducerConsumerPass`, which generates `scf.forall` loops.
+    *   `CacheReductionTiles` is lowered by `createLLVMCPUTileRootAndFuseInputOperandsPass`, which generates `scf.for` loops.
+    After the vector levels, `ForallToForPass` changes the `scf.forall` loops (except the workgroup loop) to `scf.for` loops.
 
 
 ### 3. Level 2: Vector (`VectorCommonParallelTiles` & `VectorReductionTiles`)
 
-*   **Configured by**: [CoralNPUTileSizeSelectionRegisterPass](file:///usr/local/google/home/sflur/coralnpu/coralnpu-compiler/compiler/Transforms/CoralNPUTileSizeSelection.cpp)
+*   **Configured by**: IREE's `LLVMCPUSelectLoweringStrategyPass`. For a Zvt contraction or convolution, `CoralNPUTileSizeSelectionDTCMPass` replaces `vector_common_parallel` with the Zvt tile sizes, and sets `vector_reduction` to 1 (the Zvt asm takes a K of 1). It also clamps any vector tile that is larger than its DTCM tile.
+*   **Note**: IREE limits the vector tile sizes so that the tiles of all operands fit in the vector register file (`limitVectorTileSizes`). For RISC-V, this needs IREE patch 0011: `getRegisterSpaceBitsIfKnown` returns 32 x VLEN, and the matmul path also applies the limit. IREE patch 0012 gives the batch loops of contractions (e.g. `linalg.batch_matvec`) the vector tile size 1.
 *   **Purpose**: To tile the cache-level tiles down to sizes that can fit directly into the processor's registers (register file). This is the final tiling step before vectorization.
 *   **Hardware Constraint**: Number of vector registers (e.g., 32 in RISC-V V extension) and vector register width (VLEN).
 *   **Optimization Goal**: Maximize register reuse (register tiling) and ensure full utilization of SIMD execution units.
@@ -133,14 +136,14 @@ This level is crucial for memory-constrained accelerators like the Coral NPU.
 
 ### Summary of Configuration Pipeline
 
-The following diagram shows how the three CoralNPU passes progressively configure the tiling attributes during the configuration phase:
+The following diagram shows how the IREE strategy pass and the two CoralNPU passes configure the tiling attributes during the configuration phase:
 
 ```mermaid
 graph TD
-    Input[Input IR] --> RegPass[CoralNPUTileSizeSelectionRegisterPass]
-    RegPass -->|Sets vector_common_parallel & vector_reduction| DTCMPass[CoralNPUTileSizeSelectionDTCMPass]
-    DTCMPass -->|Sets cache_parallel & cache_reduction| WGPass[CoralNPUTileSizeSelectionWorkgroupPass]
-    WGPass -->|Sets distribution| Output[Configured IR]
+    Input[Input IR] --> Strategy[LLVMCPUSelectLoweringStrategyPass]
+    Strategy -->|Sets the pipeline, distribution, vector_common_parallel & vector_reduction| DTCMPass[CoralNPUTileSizeSelectionDTCMPass]
+    DTCMPass -->|Sets cache_parallel & cache_reduction; Zvt vector sizes| WGPass[CoralNPUTileSizeSelectionWorkgroupPass]
+    WGPass -->|Sets distribution = cache_parallel| Output[Configured IR]
 ```
 
 ### Summary of Lowering Pipeline Flow (CPUDoubleTilingExpert)
@@ -166,42 +169,13 @@ graph TD
     Pass7 --> Output[Vectorized IR]
 ```
 
-## Auto-Computation of Alignments
+## Alignment of DTCM Tiles
 
-If the alignment options are set to `0` (default), the compiler automatically derives them from the auto-detected VLEN, the operation's element size, and the hardware register budget (`numVectorRegisters`, default 32):
+`CoralNPUTileSizeSelectionDTCMPass` aligns the DTCM tile sizes to the vector tile sizes that `LLVMCPUSelectLoweringStrategyPass` set:
 
-1.  **Element Size**: Extracted from the output type of the root operation (e.g., 4 bytes for `i32`/`f32`, 1 byte for `i8`).
-2.  **Vector Width** (elements):
-    $$\text{Vector Width} = \frac{\text{VLEN}}{8 \times \text{Element Size Bytes}}$$
-3.  **Alignments**:
-    *   **Vector Alignment**:
-        *   For operations with unroll loops (e.g., Matmul/Conv): Defaults to $\min(\text{Vector Width}, 8)$. Capping at 8 prevents exceeding the register file for large vector widths (like 32 for `i8`).
-        *   For generic parallel operations: Defaults to `Generic Parallel Alignment`.
-    *   **Unroll Alignment**: Defaults to `Vector Width` $\times U_{opt}$, where the optimal unroll factor $U_{opt}$ is dynamically computed to fit the register budget:
-        *   It uses the register footprint formula for outer-product:
-            $$\text{Registers} = 1 \text (LHS) + U \text (RHS) + \text{Vector Alignment} \times U \text (Accumulator)$$
-        *   It solves for $U$ such that $\text{Registers} \le \text{numVectorRegisters}$ (default 32):
-            $$U_{limit} = \max\left(1, \frac{\text{numVectorRegisters} - 1}{1 + \text{Vector Alignment}}\right)$$
-        *   It also considers the actual size of the unroll loop ($OC$) to avoid over-aligning:
-            $$U_{opt} = \min\left(U_{limit}, \lceil OC / \text{Vector Width} \rceil\right)$$
-    *   **Reduction Alignment** = `1` (no alignment constraint on reduction loops by default).
-    *   **Generic Parallel Alignment** = `Vector Width` (for generic parallel loops like elementwise).
-
-### Example: VLEN=128 bits (from `+zvl128b`) and 32-bit integer elements (Matmul 128x128x128):
-*   $\text{Vector Width} = \frac{128}{8 \times 4} = 4$ elements.
-*   `Vector Alignment` = $\min(4, 8) = 4$.
-*   $U_{limit} = \max(1, (32 - 1) / (1 + 4)) = 6$.
-*   $U_{opt} = \min(6, 32) = 6$.
-*   `Unroll Alignment` = $4 \times 6 = 24$.
-*   `Generic Parallel Alignment` = 4.
-
-### Example: VLEN=256 bits (from `+zvl256b`) and 32-bit integer elements (Matmul 128x128x128):
-*   $\text{Vector Width} = \frac{256}{8 \times 4} = 8$ elements.
-*   `Vector Alignment` = $\min(8, 8) = 8$.
-*   $U_{limit} = \max(1, (32 - 1) / (1 + 8)) = 3$.
-*   $U_{opt} = \min(3, 16) = 3$.
-*   `Unroll Alignment` = $8 \times 3 = 24$.
-*   `Generic Parallel Alignment` = 8.
+1.  **Parallel loops** are aligned to `vector_common_parallel`, and **reduction loops** to `vector_reduction`. A vector tile size of 0 means that the loop has no alignment at first.
+2.  The search starts from the full loop ranges, so a loop that fits stays untiled. When it shrinks a tile, it halves the tile and aligns it down to a multiple of the alignment. Then it takes the largest multiple of the alignment that divides the loop range, so that there is no partial DTCM tile. If the range is not a multiple of the alignment, it takes the largest divisor of the range that is at least the alignment, if there is one (but not for the N loop of a Zvt contraction, which Zvt cannot lower with all column remainders). The loops whose ranges are multiples of their alignments shrink first, and the outermost loop first. The search does not shrink the streamed reduction loops of a Zvt contraction or of a convolution. If the footprint still does not fit, the search relaxes the alignments (see [Graceful Degradation](#graceful-degradation-alignment-fallback)).
+3.  After the search, a vector tile that is larger than its DTCM tile is clamped to the DTCM tile size.
 
 
 ## Guided Tiling Example
@@ -217,41 +191,32 @@ Below is a step-by-step walkthrough of how a large matrix multiplication is tile
 > explanation, even if not 100% accurate.
 
 *   **Operation**: Matmul ($1024 \times 1024 \times 1024$) of 32-bit integer elements (`i32`).
-*   **Hardware Target**: CoralNPU with 8 KB DTCM, 128-bit VLEN, and 32 vector registers.
+*   **Hardware Target**: CoralNPU with 16 KB DTCM, 128-bit VLEN, and 32 vector registers.
 *   **Vector Width**: $\frac{128}{8 \times 4} = 4$ elements.
 
 ### Step 1: Level 2: Vector (Register) Tiling
-*   **Goal**: Fit active workload into the 32 vector registers and maximize register reuse.
-*   **Vector Loops (M)**: Aligned to `Vector Alignment` $\rightarrow$ Tile size = 4.
-*   **Unroll Loops (N)**: Aligned to `Unroll Alignment` (dynamically computed to 24 for UF=6) $\rightarrow$ Tile size = 24.
-*   **Reduction Loops (K)**: Aligned to 1 (vector reduction) $\rightarrow$ Tile size = 1.
-*   **Resulting Register Tile**: `[4, 24, 1]` (configured via `vector_common_parallel = [4, 24, 0]` and `vector_reduction = [0, 0, 1]`).
-*   **Register Footprint**: $1 \text{ (LHS)} + 6 \text{ (RHS)} + 24 \text{ (Acc)} = 31$ vector registers ($\le 32$, fits!).
+*   **Set by**: `LLVMCPUSelectLoweringStrategyPass` (IREE heuristics).
+*   **Assumption for this walkthrough**: the strategy pass sets `vector_common_parallel = [4, 24, 0]` and `vector_reduction = [0, 0, 1]`, which gives a register tile of `[4, 24, 1]`. The real values depend on the IREE heuristics.
 
 ### Step 2: Level 1: Cache (DTCM) Tiling
 *   **Goal**: Fit active tiles of LHS (M x K), RHS (K x N), and Out (M x N) in DTCM.
-*   **Limit**: 8 KB DTCM / 1.2 safety factor = 6826 bytes.
+*   **Budget**: 16 KB DTCM - 4 KB stack - 4 KB reserve = 8 KB (8192 bytes; already a multiple of 4 KB).
 *   **Process**:
-    1.  **Initialize**: Start with static loop ranges: `[1024, 1024, 1024]`.
-    2.  **Initial Alignments**: Align down to base alignments:
-        *   M aligned to `Vector Alignment` (4) $\rightarrow 1024$.
-        *   N aligned to `Unroll Alignment` (24) $\rightarrow 1008$ (since 1024 aligned down to 24 is 1008).
-        *   K aligned to `Reduction Alignment` (1) $\rightarrow 1024$.
-    3.  **Footprint Search**: The initial footprint is $(1024 \times 1008 \times 3) \times 4$ bytes $\approx 11.8$ MB (exceeds 8 KB). The compiler enters the shrink loop:
-        *   **Shrink Parallel Loops (M, N)**: Shrunk by halving (dividing by 2 and aligning down) first, down to their alignment limits:
-            *   M shrinks: $1024 \rightarrow 512 \rightarrow \dots \rightarrow 4$ (stops at `Vector Alignment` limit of 4).
-            *   N shrinks: $1008 \rightarrow 504 \rightarrow \dots \rightarrow 24$ (stops at `Unroll Alignment` limit of 24).
+    1.  **Initialize**: Start with the full static loop ranges: `[1024, 1024, 1024]`.
+    2.  **Footprint Search**: The initial footprint is $(1024 \times 1024 \times 3) \times 4$ bytes $= 12$ MB (exceeds 8 KB). The compiler enters the shrink loop:
+        *   **Shrink Parallel Loops (M, N)**: Shrunk by halving first (dividing by 2, aligning down to the vector tile size, and taking an exact divisor of the loop range if there is one), down to their alignment limits. M (1024 is a multiple of 4) shrinks before N (1024 is not a multiple of 24):
+            *   M shrinks: $1024 \rightarrow 512 \rightarrow \dots \rightarrow 4$ (stops at the alignment limit of 4).
+            *   N shrinks: $1024 \rightarrow 512 \rightarrow 256 \rightarrow 128 \rightarrow 64 \rightarrow 32 \rightarrow 24$ (1024 is not a multiple of 24, so the search takes divisors of 1024 that are at least 24; below 32 there is none, so it stops at the alignment limit of 24).
             *   Current tile: `[4, 24, 1024]` (Footprint: $(4\times 1024 + 1024\times 24 + 4\times 24) \times 4 \approx 115$ KB, still exceeds 8 KB).
         *   **Shrink Reduction Loops (K)**: Shrunk next:
-            *   K shrinks: $1024 \rightarrow 512 \rightarrow 256 \rightarrow 128 \rightarrow 64 \rightarrow 32$.
-            *   At `[4, 24, 32]`, the footprint is:
-                $$\text{LHS (4x32)} + \text{RHS (32x24)} + \text{Out (4x24)} = 128 + 768 + 96 = 992 \text{ elements} = 3968 \text{ bytes}$$
-                $$3968 \text{ bytes} \times 1.2 = 4761.6 \text{ bytes} \le 8192 \text{ bytes (Fits!)}$$
-*   **Resulting DTCM Tile**: `[4, 24, 32]` (configured via `cache_parallel` and `cache_reduction`).
+            *   K shrinks: $1024 \rightarrow 512 \rightarrow 256 \rightarrow 128 \rightarrow 64$.
+            *   At `[4, 24, 64]`, the footprint is (each buffer is already a multiple of 64 bytes; the output staging buffer also holds the accumulator, because the matmul result is stored directly):
+                $$\text{LHS (4x64)} + \text{RHS (64x24)} + \text{Out (4x24)} = 1024 + 6144 + 384 = 7552 \text{ bytes} \le 8192 \text{ bytes (Fits!)}$$
+*   **Resulting DTCM Tile**: `[4, 24, 64]` (configured via `cache_parallel` and `cache_reduction`).
 
 #### Graceful Degradation (Alignment Fallback)
 
-If the shrink loop reaches the alignment limits (e.g., `M` reaches 4 and `N` reaches 24) and the footprint *still* exceeds DTCM capacity, the compiler falls back to a finer granularity. It resets all loop alignments (Vector, Unroll, and Reduction) to `1` and attempts to shrink the tile sizes further (e.g., trying to fit `[2, 24, 32]`, `[1, 12, 16]`, etc.).
+If the shrink loop reaches the alignment limits (e.g., `M` reaches 4 and `N` reaches 24) and the footprint *still* exceeds DTCM capacity, the compiler falls back to a finer granularity. It resets all loop alignments to `1` and attempts to shrink the tile sizes further (e.g., trying to fit `[2, 24, 32]`, `[1, 12, 16]`, etc.). Then it clamps each vector tile size to the DTCM tile size of the same loop.
 
 This degradation preserves memory correctness (avoiding DTCM overflow) but will result in scalar or less-efficient vector code because the tile sizes are no longer multiples of the register vector widths. If the workload cannot fit even with a `[1, 1, 1]` tile size, the pass emits an error and aborts compilation.
 
@@ -260,23 +225,23 @@ This degradation preserves memory correctness (avoiding DTCM overflow) but will 
 *   **Goal**: Map the computed DTCM tile sizes to `cache_parallel` and `cache_reduction` attributes.
 *   **Resulting Attributes**:
     *   `cache_parallel` = `[4, 24, 0]` (tiling parallel loops M and N).
-    *   `cache_reduction` = `[0, 0, 32]` (tiling reduction loop K).
+    *   `cache_reduction` = `[0, 0, 64]` (tiling reduction loop K).
 
 ### Step 4: Level 0: Distribution (Workgroup) Tiling
 *   **Goal**: Distribute work across cores. We map it to DTCM tile sizes so each workgroup handles exactly one DTCM-sized tile (enabling DMA/Compute pipelining).
 *   **Resulting Attribute**: `distribution = [4, 24, 0]`.
 
 ### Final Lowering Configuration
-The compiler attaches the following compilation info to the `linalg.matmul` operation:
+The root operation (`linalg.matmul`) gets this lowering config. The function keeps the translation info that the strategy pass set.
 ```mlir
-#iree_codegen.compilation_info<
-  lowering_config = #iree_cpu.lowering_config<
-    cache_parallel = [4, 24, 0],
-    cache_reduction = [0, 0, 32],
-    distribution = [4, 24, 0],
-    vector_common_parallel = [4, 24, 0],
-    vector_reduction = [0, 0, 1]
-  >,
-  translation_info = <pipeline = CPUDoubleTilingExpert>
+// On the linalg.matmul operation:
+lowering_config = #iree_cpu.lowering_config<
+  cache_parallel = [4, 24, 0],
+  cache_reduction = [0, 0, 64],
+  distribution = [4, 24, 0],
+  vector_common_parallel = [4, 24, 0],
+  vector_reduction = [0, 0, 1]
 >
+// On the function:
+translation_info = #iree_codegen.translation_info<pipeline = #iree_cpu.pipeline<DoubleTilingExpert>>
 ```

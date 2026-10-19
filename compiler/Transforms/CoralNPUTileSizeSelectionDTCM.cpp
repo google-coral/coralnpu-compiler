@@ -19,10 +19,10 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
-#include <string>
 #include <utility>
 
 #include "compiler/Transforms/CoralNPUTileSizeSelectionAnalysis.h"
+#include "compiler/Transforms/CoralNPUTileSizeSelectionFootprint.h"
 #include "compiler/Transforms/CoralNPUTileSizeSelectionUtils.h"
 #include "compiler/Transforms/Passes.h"
 
@@ -36,17 +36,11 @@
 #include "iree/compiler/Dialect/HAL/IR/HALTypes.h"
 
 // MLIR headers
-#include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
-#include "mlir/Dialect/Math/IR/Math.h"
-#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/AffineExpr.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/Remarks.h"
 #include "mlir/Pass/Pass.h"
 
 // LLVM headers
@@ -55,6 +49,7 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/DebugLog.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -70,453 +65,21 @@ namespace mlir::coralnpu_compiler {
 
 namespace {
 
-// Estimates the tiled footprint of a single operand of a LinalgOp.
-//
-// This is not trivial because indexing maps can contain complex affine
-// expressions (e.g., `d_spatial + d_filter * dilation` in Conv2D) rather than
-// just simple loop dimensions. To estimate the footprint accurately, we must:
-// 1. Determine the active range for each loop dimension. If a loop is tiled,
-//    its range is its tile size. If it is untiled (tile size is 0), its range
-//    is the full static range of the loop.
-// 2. For each dimension of the operand's tensor type, we estimate the range of
-//    indices accessed by evaluating its indexing AffineExpr.
-// 3. We use `mlir::getBoundForAffineExpr` to compute the constant lower and
-//    upper bounds of the expression over the loop ranges. The footprint along
-//    that dimension is estimated as the span `upper_bound - lower_bound + 1`.
-// 4. If the bounds cannot be statically resolved (e.g., due to dynamic shapes
-//    or complex symbols), we fallback to the full dimension size of the tensor.
-int64_t estimateLinalgOperandFootprint(linalg::LinalgOp linalgOp,
-                                       OpOperand *operand,
-                                       ArrayRef<int64_t> tileSizes) {
-  auto rankedTensorType = dyn_cast<RankedTensorType>(operand->get().getType());
-  if (!rankedTensorType) {
-    assert(false && "expected a ranked tensor");
-    return 0;
-  }
-
-  Type elementType = rankedTensorType.getElementType();
-  unsigned elementBits;
-  if (elementType.isIntOrFloat()) {
-    elementBits = elementType.getIntOrFloatBitWidth();
-  } else {
-    assert(false && "only int/float elements are supported");
-    elementBits = 32;
-  }
-
-  AffineMap map = linalgOp.getMatchingIndexingMap(operand);
-  int64_t numElements = 1;
-
-  SmallVector<int64_t> staticLoopRanges = linalgOp.getStaticLoopRanges();
-  assert(tileSizes.size() == staticLoopRanges.size());
-
-  SmallVector<int64_t> resolvedTileSizes(tileSizes);
-  for (size_t i = 0; i < resolvedTileSizes.size(); ++i) {
-    resolvedTileSizes[i] =
-        resolvedTileSizes[i] ? resolvedTileSizes[i] : staticLoopRanges[i];
-  }
-
-  SmallVector<std::optional<int64_t>> lowerBounds(resolvedTileSizes.size(), 0);
-  SmallVector<std::optional<int64_t>> upperBounds(resolvedTileSizes.size(),
-                                                  std::nullopt);
-  for (size_t i = 0; i < resolvedTileSizes.size(); ++i) {
-    if (resolvedTileSizes[i] > 0) {
-      upperBounds[i] = resolvedTileSizes[i] - 1;
-    }
-  }
-
-  for (auto [i, expr] : llvm::enumerate(map.getResults())) {
-    auto lb =
-        getBoundForAffineExpr(expr, resolvedTileSizes.size(), 0, lowerBounds,
-                              upperBounds, /*isUpper=*/false);
-    auto ub = getBoundForAffineExpr(expr, resolvedTileSizes.size(), 0,
-                                    lowerBounds, upperBounds, /*isUpper=*/true);
-    if (lb && ub) {
-      int64_t span = *ub - *lb + 1;
-      numElements *= span;
-      continue;
-    }
-
-    std::string exprStr;
-    llvm::raw_string_ostream os(exprStr);
-    os << expr;
-    linalgOp.emitWarning() << "could not estimate bound for dimension " << i
-                           << " of operand #" << operand->getOperandNumber()
-                           << " (expression: " << os.str() << ") of '"
-                           << linalgOp->getName().getStringRef()
-                           << "', falling back to full dimension size ("
-                           << rankedTensorType.getDimSize(i)
-                           << "). Footprint estimation might be conservative.";
-    numElements *= rankedTensorType.getDimSize(i);
-  }
-
-  return llvm::divideCeil(numElements * elementBits, 8);
-}
-
-// Helper to extract constant inner tile size for a given dimension if present.
-int64_t getInnerTileSize(ArrayRef<int64_t> innerDimsPos,
-                         ArrayRef<OpFoldResult> mixedTiles, int64_t dim) {
-  auto it = llvm::find(innerDimsPos, dim);
-  if (it == innerDimsPos.end()) return 1;
-  size_t k = std::distance(innerDimsPos.begin(), it);
-  return getConstantIntValue(mixedTiles[k]).value_or(1);
-}
-
-// Estimates footprint (in elements) of a packed tensor operand (rank N + M).
-int64_t estimatePackedOperandFootprint(RankedTensorType type,
-                                       ArrayRef<int64_t> tileSizes,
-                                       ArrayRef<int64_t> outerDimsPerm,
-                                       ArrayRef<int64_t> innerDimsPos,
-                                       ArrayRef<OpFoldResult> mixedTiles,
-                                       bool isTiledByUnpackedElements) {
-  int64_t numElements = 1;
-  int64_t rank = type.getRank();
-  auto shape = type.getShape();
-  int64_t numLoops = tileSizes.size();
-
-  // 1. Outer dims (tiled)
-  for (int64_t l = 0; l < numLoops; ++l) {
-    int64_t srcDim = outerDimsPerm.empty() ? l : outerDimsPerm[l];
-
-    int64_t tileSize = tileSizes[l];
-    if (tileSize == 0) {
-      numElements *= shape[srcDim];
-      continue;
-    }
-
-    if (isTiledByUnpackedElements) {
-      int64_t innerTileSize =
-          getInnerTileSize(innerDimsPos, mixedTiles, srcDim);
-      int64_t neededTiles = llvm::divideCeil(tileSize, innerTileSize);
-      numElements *= std::min(shape[srcDim], neededTiles);
-      continue;
-    }
-
-    numElements *= std::min(shape[srcDim], tileSize);
-  }
-
-  // 2. Inner dims (untiled / full)
-  for (int64_t d = numLoops; d < rank; ++d) {
-    numElements *= shape[d];
-  }
-
-  int64_t elementBits = type.getElementType().getIntOrFloatBitWidth();
-  return llvm::divideCeil(numElements * elementBits, 8);
-}
-
-// Estimates footprint (in elements) of an unpacked tensor operand (rank N).
-int64_t estimateUnpackedOperandFootprint(RankedTensorType type,
-                                         ArrayRef<int64_t> tileSizes,
-                                         ArrayRef<int64_t> outerDimsPerm,
-                                         ArrayRef<int64_t> innerDimsPos,
-                                         ArrayRef<OpFoldResult> mixedTiles,
-                                         bool isTiledByOuterTiles) {
-  int64_t numElements = 1;
-  auto shape = type.getShape();
-  int64_t numLoops = tileSizes.size();
-
-  for (int64_t l = 0; l < numLoops; ++l) {
-    int64_t inputDim = outerDimsPerm.empty() ? l : outerDimsPerm[l];
-    int64_t tileSize = tileSizes[l];
-
-    if (tileSize == 0) {
-      numElements *= shape[inputDim];
-      continue;
-    }
-
-    if (isTiledByOuterTiles) {
-      int64_t innerTileSize =
-          getInnerTileSize(innerDimsPos, mixedTiles, inputDim);
-      numElements *= std::min(shape[inputDim], tileSize * innerTileSize);
-      continue;
-    }
-
-    numElements *= std::min(shape[inputDim], tileSize);
-  }
-
-  int64_t elementBits = type.getElementType().getIntOrFloatBitWidth();
-  return llvm::divideCeil(numElements * elementBits, 8);
-}
-
-int64_t estimatePackOperandFootprint(linalg::PackOp packOp, OpOperand *operand,
-                                     ArrayRef<int64_t> tileSizes) {
-  Value value = operand->get();
-
-  auto rankedTensorType = dyn_cast<RankedTensorType>(value.getType());
-  if (!rankedTensorType) {
-    assert(false && "expected a ranked tensor");
-    return 0;
-  }
-
-  if (value == packOp.getSource()) {
-    return estimateUnpackedOperandFootprint(
-        rankedTensorType, tileSizes, packOp.getOuterDimsPerm(),
-        packOp.getInnerDimsPos(), packOp.getMixedTiles(),
-        /*isTiledByOuterTiles=*/true);
-  }
-
-  if (value == packOp.getDest()) {
-    return estimatePackedOperandFootprint(
-        rankedTensorType, tileSizes, /*outerDimsPerm=*/{}, /*innerDimsPos=*/{},
-        /*mixedTiles=*/{}, /*isTiledByUnpackedElements=*/false);
-  }
-
-  Type elementType = rankedTensorType.getElementType();
-  unsigned elementBits;
-  if (elementType.isIntOrFloat()) {
-    elementBits = elementType.getIntOrFloatBitWidth();
-  } else {
-    assert(false && "only int/float elements are supported");
-    elementBits = 32;
-  }
-
-  return llvm::divideCeil(rankedTensorType.getNumElements() * elementBits, 8);
-}
-
-int64_t estimateUnpackOperandFootprint(linalg::UnPackOp unpackOp,
-                                       OpOperand *operand,
-                                       ArrayRef<int64_t> tileSizes) {
-  Value value = operand->get();
-
-  auto rankedTensorType = dyn_cast<RankedTensorType>(value.getType());
-  if (!rankedTensorType) {
-    assert(false && "expected a ranked tensor");
-    return 0;
-  }
-
-  if (value == unpackOp.getDest()) {
-    return estimateUnpackedOperandFootprint(
-        rankedTensorType, tileSizes, /*outerDimsPerm=*/{}, /*innerDimsPos=*/{},
-        /*mixedTiles=*/{}, /*isTiledByOuterTiles=*/false);
-  }
-
-  if (value == unpackOp.getSource()) {
-    return estimatePackedOperandFootprint(
-        rankedTensorType, tileSizes, unpackOp.getOuterDimsPerm(),
-        unpackOp.getInnerDimsPos(), unpackOp.getMixedTiles(),
-        /*isTiledByUnpackedElements=*/true);
-  }
-
-  Type elementType = rankedTensorType.getElementType();
-  unsigned elementBits;
-  if (elementType.isIntOrFloat()) {
-    elementBits = elementType.getIntOrFloatBitWidth();
-  } else {
-    assert(false && "only int/float elements are supported");
-    elementBits = 32;
-  }
-
-  return llvm::divideCeil(rankedTensorType.getNumElements() * elementBits, 8);
-}
-
-// Estimates the tiled footprint of a single operand of a TilingInterface op.
-int64_t estimateOperandFootprint(TilingInterface tilingOp, OpOperand *operand,
-                                 ArrayRef<int64_t> tileSizes) {
-  Value value = operand->get();
-
-  // Handle scalar operands
-  Type type = value.getType();
-  if (type.isIntOrFloat()) {
-    return llvm::divideCeil(type.getIntOrFloatBitWidth(), 8);
-  }
-
-  if (auto linalgOp = dyn_cast<linalg::LinalgOp>(tilingOp.getOperation())) {
-    return estimateLinalgOperandFootprint(linalgOp, operand, tileSizes);
-  }
-  if (auto packOp = dyn_cast<linalg::PackOp>(tilingOp.getOperation())) {
-    return estimatePackOperandFootprint(packOp, operand, tileSizes);
-  }
-  if (auto unpackOp = dyn_cast<linalg::UnPackOp>(tilingOp.getOperation())) {
-    return estimateUnpackOperandFootprint(unpackOp, operand, tileSizes);
-  }
-
-  // Fallback for non-Linalg operations
-  auto rankedTensorType = dyn_cast<RankedTensorType>(value.getType());
-  if (!rankedTensorType) {
-    assert(false && "expected a ranked tensor");
-    return 0;
-  }
-
-  int64_t numElements = 1;
-  if (rankedTensorType.getRank() == tileSizes.size()) {
-    for (auto [dimIdx, dimSize] :
-         llvm::enumerate(rankedTensorType.getShape())) {
-      int64_t tileSize = tileSizes[dimIdx];
-      if (tileSize == 0 || ShapedType::isDynamic(dimSize)) {
-        numElements *= ShapedType::isDynamic(dimSize) ? 1 : dimSize;
-      } else {
-        numElements *= std::min(dimSize, tileSize);
-      }
-    }
-  } else {
-    numElements = rankedTensorType.getNumElements();
-  }
-
-  Type elementType = rankedTensorType.getElementType();
-  unsigned elementBits;
-  if (elementType.isIntOrFloat()) {
-    elementBits = elementType.getIntOrFloatBitWidth();
-  } else {
-    assert(false && "only int/float elements are supported");
-    elementBits = 32;
-  }
-
-  return llvm::divideCeil(numElements * elementBits, 8);
-}
-
-// Estimates the footprint of the temporary buffers allocated during unpack
-// lowering.
-//
-// Unpack lowering uses temporary stack buffers in DTCM to perform the transpose
-// and unpacking operations. The size and number of these buffers depend on:
-// 1. Whether the register-level transpose reuse optimization succeeds (which
-//    requires register tile size N to be a multiple of inner tile size N).
-//    - If it succeeds, the footprint is small and constant (proportional to
-//      register tile sizes).
-//    - If it fails, the footprint is larger and proportional to DTCM tile
-//    sizes,
-//      often requiring 3 separate buffers.
-// 2. Vectorization padding (e.g., +2, +10) added to handle unaligned vector
-//    accesses.
-//
-// This function estimates the footprint by resolving the tile sizes to register
-// tile sizes (if available) or falling back to DTCM tile sizes, ensuring a safe
-// and accurate estimate in both cases.
-int64_t estimateUnpackTemporariesFootprint(
-    linalg::UnPackOp unpackOp, ArrayRef<int64_t> tileSizes,
-    ArrayRef<int64_t> registerTileSizes) {
-  auto destType = dyn_cast<RankedTensorType>(unpackOp.getDest().getType());
-  if (!destType) return 0;
-
-  int64_t elementBits = destType.getElementType().getIntOrFloatBitWidth();
-  int64_t elemSize = llvm::divideCeil(elementBits, 8);
-
-  auto innerDimsPos = unpackOp.getInnerDimsPos();
-  auto mixedTiles = unpackOp.getMixedTiles();
-
-  if (innerDimsPos.size() != 2) {
-    // Fallback if not 2D unpack
-    int64_t totalElements = 1;
-    for (size_t i = 0; i < innerDimsPos.size(); ++i) {
-      int64_t dim = innerDimsPos[i];
-      int64_t tileSize = tileSizes[dim];
-      if (dim < registerTileSizes.size() && registerTileSizes[dim] > 0) {
-        tileSize = registerTileSizes[dim];
-      }
-      int64_t innerTileSize = getConstantIntValue(mixedTiles[i]).value_or(1);
-      int64_t numTiles = llvm::divideCeil(tileSize, innerTileSize);
-      if (tileSize % innerTileSize != 0) numTiles += 1;
-      totalElements *= numTiles * innerTileSize;
-    }
-    return 2 * totalElements * elemSize;
-  }
-
-  int64_t dimM = innerDimsPos[0];
-  int64_t dimN = innerDimsPos[1];
-
-  int64_t tileM = tileSizes[dimM];
-  int64_t tileN = tileSizes[dimN];
-
-  int64_t regM = 0;
-  int64_t regN = 0;
-  if (dimM < registerTileSizes.size()) {
-    regM = registerTileSizes[dimM];
-  }
-  if (dimN < registerTileSizes.size()) {
-    regN = registerTileSizes[dimN];
-  }
-
-  // We use register tile sizes (if available) instead of DTCM tile sizes for
-  // footprint estimation. In the optimized codegen pipeline, the transpose
-  // temporary is bufferized to a register-tile-sized stack allocation that is
-  // reused.
-  // However, if the register tile size N (regN) is smaller than the inner tile
-  // size N (innerN), this reuse optimization fails, and the compiler allocates
-  // 3 separate buffers of sizes proportional to the DTCM tile size.
-  // Using resolvedTileM/N (which fallback to DTCM tile sizes if register sizes
-  // are not yet selected) handles both cases: it correctly estimates the large
-  // footprint when reuse fails, and significantly reduces the estimate (making
-  // it constant based on register tile size) when reuse succeeds.
-  // See unpack_footprint_analysis.md for details.
-  int64_t resolvedTileM = regM > 0 ? regM : tileM;
-  int64_t resolvedTileN = regN > 0 ? regN : tileN;
-
-  int64_t innerM = getConstantIntValue(mixedTiles[0]).value_or(1);
-  int64_t innerN = getConstantIntValue(mixedTiles[1]).value_or(1);
-
-  auto getMaxOuterTiles = [](int64_t tile, int64_t inner) -> int64_t {
-    if (tile == 0)
-      return int64_t(1);  // If not tiled, we might still need 1 tile?
-    if (tile % inner == 0) return tile / inner;
-    return llvm::divideCeil(tile, inner) + 1;
-  };
-
-  int64_t maxOuterM = getMaxOuterTiles(resolvedTileM, innerM);
-  int64_t maxOuterN = getMaxOuterTiles(resolvedTileN, innerN);
-
-  // The magic numbers `+ 2` and `paddingN = 10` (and the `+ 1` in
-  // getMaxOuterTiles when not a multiple) represent safety padding added by the
-  // compiler for vectorization (to handle boundary conditions and unaligned
-  // vector accesses).
-  // The 3-buffer structure `buffer1 + 2 * buffer2` represents the worst-case
-  // allocations when reuse optimization fails.
-  int64_t paddingN = 0;
-  if (resolvedTileN > 0 && resolvedTileN % innerN != 0) {
-    paddingN = 10;
-  }
-
-  int64_t sizeM = maxOuterM * innerM;
-  int64_t sizeN = maxOuterN * innerN;
-
-  int64_t buffer1 = innerM * (sizeN + 2) * elemSize;
-  int64_t buffer2 = (sizeM + 2) * (sizeN + paddingN) * elemSize;
-
-  return buffer1 + 2 * buffer2;
-}
-
-// Estimates the combined footprint of the root and non-root ops' operands.
-int64_t estimateFootprint(const CoralNPUTileSizeSelectionAnalysis &analysis,
-                          ArrayRef<int64_t> tileSizes) {
-  int64_t totalBytes = 0;
-
-  TilingInterface tilingOp = analysis.rootTilingOp;
-  llvm::SmallPtrSet<Value, 8> seenValues;
-  for (OpOperand &operand : tilingOp->getOpOperands()) {
-    seenValues.insert(operand.get());
-    totalBytes += estimateOperandFootprint(tilingOp, &operand, tileSizes);
-  }
-  for (TilingInterface nonRootOp : analysis.nonRootTilingOps) {
-    for (OpOperand &operand : nonRootOp->getOpOperands()) {
-      if (seenValues.insert(operand.get()).second)
-        totalBytes += estimateOperandFootprint(nonRootOp, &operand, tileSizes);
-    }
-  }
-
-  if (auto unpackOp = dyn_cast<linalg::UnPackOp>(tilingOp.getOperation())) {
-    SmallVector<int64_t> registerTileSizes;
-    IREE::Codegen::LoweringConfigAttrInterface loweringConfig;
-    if (auto compilationInfo = getCompilationInfo(tilingOp)) {
-      loweringConfig = compilationInfo.getLoweringConfig();
-    } else {
-      loweringConfig = getLoweringConfig(tilingOp);
-    }
-    if (loweringConfig) {
-      auto regLevel = IREE::CPU::TilingLevel::VectorCommonParallelTiles;
-      registerTileSizes = loweringConfig.getStaticTilingLevelSizes(
-          static_cast<unsigned>(regLevel), tilingOp);
-    }
-    totalBytes += estimateUnpackTemporariesFootprint(unpackOp, tileSizes,
-                                                     registerTileSizes);
-  }
-
-  return totalBytes;
-}
-
+// Shrinks the DTCM tile of one loop of `loopIndices` (which lists the
+// innermost loop first), the outermost loop first, and returns true. Returns
+// false if no loop can shrink. A tile shrinks to about half, aligned down to
+// the alignment of its loop in `alignments` (a loop without an alignment does
+// not shrink), and to an exact divisor of the loop range in `ranges` if there
+// is one. The loops whose range is a multiple of the alignment shrink first.
+// `zvtNLoop` is the N loop of a Zvt root, if any.
 bool shrinkLoops(ArrayRef<size_t> loopIndices, ArrayRef<int64_t> alignments,
                  ArrayRef<int64_t> ranges, std::optional<size_t> zvtNLoop,
                  MutableArrayRef<int64_t> dtcmTileSizes) {
+  // Shrink the aligned loops first: they can shrink to exact divisors.
   for (bool onlyAligned : {true, false}) {
     for (size_t loopIdx : llvm::reverse(loopIndices)) {
       int64_t align = alignments[loopIdx], range = ranges[loopIdx];
+      // Skip the loops without an alignment, and the tiles at the alignment.
       if (align <= 0 || dtcmTileSizes[loopIdx] <= align) continue;
       if (onlyAligned && range % align != 0) continue;
       int64_t next = std::max<int64_t>(
@@ -525,8 +88,11 @@ bool shrinkLoops(ArrayRef<size_t> loopIndices, ArrayRef<int64_t> alignments,
       // unaligned Zvt N shrinks to multiples of `align` instead, as Zvt cannot
       // lower all column remainders.
       if (range % align == 0) {
+        // Find the largest multiple of `align` that divides the range.
         while (next > align && range % next != 0) next -= align;
       } else if (loopIdx != zvtNLoop) {
+        // Find the largest divisor of the range that is at least `align`, if
+        // there is one.
         int64_t div = dtcmTileSizes[loopIdx] / 2;
         while (div >= align && range % div != 0) --div;
         if (div >= align) next = div;
@@ -538,6 +104,21 @@ bool shrinkLoops(ArrayRef<size_t> loopIndices, ArrayRef<int64_t> alignments,
   return false;
 }
 
+// Clamps each size in `vectorSizes` to the tile size of the same loop in
+// `tileSizes` (0 means that the loop is not tiled). Returns true if a size
+// changed.
+bool clampToTileSizes(ArrayRef<int64_t> tileSizes,
+                      MutableArrayRef<int64_t> vectorSizes) {
+  bool changed = false;
+  for (auto [tileSize, vectorSize] : llvm::zip_equal(tileSizes, vectorSizes)) {
+    // Skip loops that are not tiled, and vector tiles that already fit.
+    if (tileSize <= 0 || vectorSize <= tileSize) continue;
+    vectorSize = tileSize;
+    changed = true;
+  }
+  return changed;
+}
+
 // Returns the loops of the Zvt accumulator's rows (M) and columns (N).
 std::pair<size_t, size_t> getZvtMNLoops(linalg::LinalgOp op) {
   auto c = op.getIndexingMapsArray()[2].getResults().take_back(2);
@@ -547,10 +128,12 @@ std::pair<size_t, size_t> getZvtMNLoops(linalg::LinalgOp op) {
 
 // Sets the largest Zvt tile (up to 4 16x16 tiles as 2x2, 1x4 or 4x1) whose
 // DTCM tile fits (Zvt codegen cannot lower a split K). Returns false, keeping
-// the RVV sizes, if none does.
-bool setZvtVectorSizes(const CoralNPUTileSizeSelectionAnalysis &analysis,
-                       llvm::function_ref<bool(ArrayRef<int64_t>)> fits,
-                       MutableArrayRef<int64_t> vectorParallelSizes) {
+// the RVV sizes, if none does. `fits` takes the DTCM tile sizes and the vector
+// tile sizes of the parallel loops.
+bool setZvtVectorSizes(
+    const CoralNPUTileSizeSelectionAnalysis &analysis,
+    llvm::function_ref<bool(ArrayRef<int64_t>, ArrayRef<int64_t>)> fits,
+    MutableArrayRef<int64_t> vectorParallelSizes) {
   const auto &ranges = analysis.staticLoopRanges;
   auto linalgOp = cast<linalg::LinalgOp>(*analysis.rootTilingOp);
   auto [m, n] = getZvtMNLoops(linalgOp);
@@ -559,6 +142,9 @@ bool setZvtVectorSizes(const CoralNPUTileSizeSelectionAnalysis &analysis,
   bool canPeel = analysis.reductionLoops.size() == 1 ||
                  (succeeded(convDims) && convDims->filterLoop.size() == 1);
   int64_t mTile = ranges[m] % 32 == 0 ? 32 : 16;
+  // If M is not a multiple of 16, take an M-divisor tile (3 to 15 rows) if M
+  // needs whole tiles, or if it is not more work than 16-row tiles and a
+  // peeled remainder.
   if (ranges[m] % mTile != 0) {
     bool needExactM = (analysis.reductionLoops.size() > 1 &&
                        (!canPeel || ranges[m] % 16 < 3)) ||
@@ -572,6 +158,7 @@ bool setZvtVectorSizes(const CoralNPUTileSizeSelectionAnalysis &analysis,
     int64_t work16 =
         llvm::divideCeil(ranges[m], 16) * (ranges[n] / nTile16 + bTiles);
     int64_t nItersT = llvm::divideCeil(ranges[n], nTileT);
+    // Take the largest such divisor.
     for (int64_t t = 15; t >= 3; --t) {
       if (ranges[m] % t == 0 &&
           (needExactM || (ranges[m] / t) * (nItersT + bTiles) <= work16)) {
@@ -593,20 +180,27 @@ bool setZvtVectorSizes(const CoralNPUTileSizeSelectionAnalysis &analysis,
       : ranges[n] % 12 == 0                                       ? 12
                                                                   : 8;
   if (nTile == 16 && ranges[m] % 64 == 0) mTile = 64;
-  // The smallest DTCM tile this pass reaches (K is streamed, not split).
-  SmallVector<int64_t> dtcmTileSizes(ranges.size(), 1);
+  // The smallest DTCM tile that the search reaches with these vector tiles: it
+  // does not split K (Zvt streams it), and it does not shrink the parallel
+  // loops without a vector tile.
+  SmallVector<int64_t> dtcmTileSizes(ranges);
   for (size_t i : analysis.parallelLoops) {
     if (vectorParallelSizes[i] > 0) dtcmTileSizes[i] = vectorParallelSizes[i];
   }
+  SmallVector<int64_t> zvtSizes(vectorParallelSizes);
+  // Halve the Zvt tile until its DTCM tile fits: N first down to 32 columns,
+  // then M down to 16 rows, then N down to 16 columns.
   while (true) {
+    zvtSizes[n] = nTile < ranges[n] ? nTile : 0;
+    zvtSizes[m] = mTile < ranges[m] ? mTile : 0;
     dtcmTileSizes[n] = std::min(nTile, ranges[n]);
     dtcmTileSizes[m] = std::min(mTile, ranges[m]);
-    if (fits(dtcmTileSizes)) break;
+    if (fits(dtcmTileSizes, zvtSizes)) break;
     if (mTile <= 16 && nTile <= 16) return false;
     (nTile > 32 || (mTile <= 16 && nTile == 32) ? nTile : mTile) /= 2;
   }
-  vectorParallelSizes[n] = nTile < ranges[n] ? nTile : 0;
-  vectorParallelSizes[m] = mTile < ranges[m] ? mTile : 0;
+  vectorParallelSizes[n] = zvtSizes[n];
+  vectorParallelSizes[m] = zvtSizes[m];
   return true;
 }
 
@@ -624,34 +218,57 @@ struct CoralNPUTileSizeSelectionDTCMPass
       return;
     }
 
-    LLVM_DEBUG(llvm::dbgs()
-               << "Running CoralNPUTileSizeSelectionDTCMPass (DTCM Size: "
-               << dtcmSizeKb << " KB) on function: " << funcOp.getName()
-               << "\n");
+    // The DTCM space for the buffers of one tile: DTCM minus the stack and the
+    // reserve for static data.
+    int64_t budgetBytes =
+        getDTCMTileBudgetBytes(dtcmSizeKb, stackSizeKb, dtcmReserveKb);
 
-    if (dtcmSizeKb <= 0) {
-      funcOp.emitError("dtcm-size-kb must be positive, got ") << dtcmSizeKb;
+    LLVM_DEBUG(
+        llvm::dbgs()
+        << "Running CoralNPUTileSizeSelectionDTCMPass (DTCM tile budget: "
+        << budgetBytes << " bytes) on function: " << funcOp.getName() << "\n");
+
+    // Invalid pass options: no budget is left, or no input buffer.
+    if (budgetBytes <= 0 || buffersPerOperand < 1) {
+      funcOp.emitError("invalid DTCM options: dtcm-size-kb=")
+          << dtcmSizeKb << ", stack-size-kb=" << stackSizeKb
+          << ", dtcm-reserve-kb=" << dtcmReserveKb
+          << " leave a DTCM tile budget of " << budgetBytes
+          << " bytes, and buffers-per-operand=" << buffersPerOperand
+          << "; the budget must be positive and buffers-per-operand at least 1";
       signalPassFailure();
       return;
     }
 
     auto &analysis = getAnalysis<CoralNPUTileSizeSelectionAnalysis>();
+    // The analysis does not support the dispatch. The IR does not change, so
+    // the Workgroup pass reuses the analysis.
     if (failed(analysis.status)) {
+      markAllAnalysesPreserved();
       return;
     }
 
     auto tilingOp = analysis.rootTilingOp;
 
-    auto compilationInfo = getCompilationInfo(tilingOp);
-    if (!compilationInfo) {
-      return;
-    }
-
-    auto cpuLoweringConfig = dyn_cast<IREE::CPU::LoweringConfigAttr>(
-        compilationInfo.getLoweringConfig());
-    if (!cpuLoweringConfig) {
-      tilingOp->emitOpError("expected CPU lowering config");
-      signalPassFailure();
+    // LLVMCPUSelectLoweringStrategyPass sets the lowering config of the root op
+    // and the translation info of the function; this pass refines them. Skip
+    // the dispatch if the root op has no CPU lowering config with distribution
+    // tile sizes.
+    auto cpuLoweringConfig =
+        getLoweringConfig<IREE::CPU::LoweringConfigAttr>(tilingOp);
+    IREE::Codegen::TranslationInfoAttr translationInfo =
+        getTranslationInfo(funcOp);
+    if (!cpuLoweringConfig || !cpuLoweringConfig.hasWorkgroupTilingLevel() ||
+        !translationInfo) {
+      LDBG() << "skip " << tilingOp->getName()
+             << ": no CPU lowering config with distribution tile sizes";
+      remark::missed(
+          tilingOp->getLoc(),
+          remark::RemarkOpts::name("DTCMTileSizes").category(DEBUG_TYPE))
+          << remark::reason(
+                 "the root op has no CPU lowering config with distribution "
+                 "tile sizes; the DTCM tile-size selection skips the dispatch");
+      markAllAnalysesPreserved();
       return;
     }
 
@@ -676,58 +293,87 @@ struct CoralNPUTileSizeSelectionDTCMPass
       assert(vectorReductionSizes.size() == numLoops);
     }
 
-    // TODO(sflur): tune the safetyMultiplier (do we want a commandline option
-    // for it?).
-    const double safetyMultiplier = 1.2;
-    // Contractions and convolutions stream reduction loops one step at a time.
+    // The RVV vector tile sizes of the strategy pass, for a root that does not
+    // use Zvt.
+    const SmallVector<int64_t> rvvParallelSizes(vectorParallelSizes);
+    const SmallVector<int64_t> rvvReductionSizes(vectorReductionSizes);
+
+    // A Zvt root and a convolution stream their reduction loops one vector step
+    // at a time, and the DTCM tile does not split them. The input slices of the
+    // other roots (e.g. an RVV contraction) span the reduction range of the
+    // DTCM tile.
     auto linalgOp = dyn_cast<linalg::LinalgOp>(tilingOp.getOperation());
-    bool streamReduction =
-        linalgOp && (linalg::isaContractionOpInterface(linalgOp) ||
-                     linalg::isaConvolutionOpInterface(linalgOp));
-    auto fits = [&](ArrayRef<int64_t> tileSizes) {
-      SmallVector<int64_t> stepSizes(tileSizes);
-      if (streamReduction) {
-        for (size_t k : analysis.reductionLoops)
-          stepSizes[k] = std::max<int64_t>(1, vectorReductionSizes[k]);
-      }
-      return estimateFootprint(analysis, stepSizes) * safetyMultiplier <=
-             dtcmSizeKb * 1024;
+    bool isConvolution =
+        linalgOp && linalg::isaConvolutionOpInterface(linalgOp);
+    bool streamReduction = isConvolution;
+
+    // A tile fits if the DTCM buffers of the root op and of the ops fused with
+    // it, and the scratch tiles of the Zvt asm for the vector tile sizes
+    // `parallelSizes` and vectorReductionSizes, fit in the budget.
+    DTCMFootprintModel footprintModel(tilingOp, getComputeOps(funcOp),
+                                      buffersPerOperand);
+    auto fits = [&](ArrayRef<int64_t> tileSizes,
+                    ArrayRef<int64_t> parallelSizes) {
+      return footprintModel.estimate(tileSizes, parallelSizes,
+                                     vectorReductionSizes,
+                                     streamReduction) <= budgetBytes;
     };
 
-    bool peelLoops = llvm::any_of(analysis.parallelLoops, [&](size_t i) {
-      return vectorParallelSizes[i] > 0 &&
-             analysis.staticLoopRanges[i] % vectorParallelSizes[i] != 0;
-    });
-    bool useZvt = isZvtMatrixContraction(tilingOp) &&
-                  setZvtVectorSizes(analysis, fits, vectorParallelSizes);
+    // The Zvt asm takes vector tiles with a K of 1, and streams K. It must load
+    // both inputs with Zvt element types: a root whose input a fused op
+    // computes (e.g. a dequantization) stays on RVV.
+    bool useZvt = false;
+    if (isZvtMatrixContraction(tilingOp) && isZvtReadableInputs(tilingOp)) {
+      for (size_t k : analysis.reductionLoops) vectorReductionSizes[k] = 1;
+      streamReduction = true;
+      useZvt = setZvtVectorSizes(analysis, fits, vectorParallelSizes);
+    }
+    if (!useZvt) {
+      vectorParallelSizes = rvvParallelSizes;
+      vectorReductionSizes = rvvReductionSizes;
+      streamReduction = isConvolution;
+    }
     std::optional<size_t> zvtNLoop;
     if (useZvt) zvtNLoop = getZvtMNLoops(linalgOp).second;
 
+    // When the search shrinks a DTCM tile, it aligns the tile to a multiple of
+    // these alignments, which start as the vector tile sizes. The search can
+    // relax the alignments, so it uses copies and keeps the vector tile sizes.
+    SmallVector<int64_t> parallelAlignments(vectorParallelSizes);
+    SmallVector<int64_t> reductionAlignments(vectorReductionSizes);
+
+    // Start from the full loop ranges, so that a loop that fits stays untiled.
+    // Aligning a full loop down would split it for no gain; a split reduction
+    // also changes the order of floating-point sums.
+    // TODO(search): the search halves the parallel loops down to the vector
+    // tile sizes before it splits a reduction loop, so a large matmul gets a
+    // thin tile with full K and little reuse in DTCM. Search for the tile with
+    // the best reuse for the budget.
     SmallVector<int64_t> dtcmTileSizes(analysis.staticLoopRanges);
 
     bool fallback = false;
-    while (!fits(dtcmTileSizes)) {
-      if (shrinkLoops(analysis.parallelLoops, vectorParallelSizes,
+    while (!fits(dtcmTileSizes, vectorParallelSizes)) {
+      if (shrinkLoops(analysis.parallelLoops, parallelAlignments,
                       analysis.staticLoopRanges, zvtNLoop, dtcmTileSizes))
         continue;
 
+      // The DTCM tile does not split streamed reduction loops.
       if (!streamReduction &&
-          shrinkLoops(analysis.reductionLoops, vectorReductionSizes,
-                      analysis.staticLoopRanges, std::nullopt, dtcmTileSizes))
+          shrinkLoops(analysis.reductionLoops, reductionAlignments,
+                      analysis.staticLoopRanges, /*zvtNLoop=*/std::nullopt,
+                      dtcmTileSizes))
         continue;
 
-      useZvt = false;
-      zvtNLoop.reset();
       // If any of the align sizes are 0, their dimensions were not shrunken;
       // set these alignments to 1, and try to shrink again.
       bool unalignedFallback = false;
-      for (auto &size : vectorParallelSizes) {
+      for (auto &size : parallelAlignments) {
         if (size <= 0) {
           size = 1;
           unalignedFallback = true;
         }
       }
-      for (auto &size : vectorReductionSizes) {
+      for (auto &size : reductionAlignments) {
         if (size <= 0) {
           size = 1;
           unalignedFallback = true;
@@ -741,8 +387,8 @@ struct CoralNPUTileSizeSelectionDTCMPass
             "workload cannot fit in DTCM with resolved alignments; falling "
             "back to alignment 1");
 
-        vectorParallelSizes.assign(vectorParallelSizes.size(), 1);
-        vectorReductionSizes.assign(vectorReductionSizes.size(), 1);
+        parallelAlignments.assign(parallelAlignments.size(), 1);
+        reductionAlignments.assign(reductionAlignments.size(), 1);
 
         fallback = true;
         continue;
@@ -762,12 +408,22 @@ struct CoralNPUTileSizeSelectionDTCMPass
                              : dtcmTileSizes[i];
     }
 
+    // A vector tile must fit in the DTCM tile that contains it. The search
+    // above can pick a DTCM tile that is smaller than the vector tile when it
+    // relaxes the alignments.
+    bool parallelClamped = clampToTileSizes(dtcmTileSizes, vectorParallelSizes);
+    bool reductionClamped =
+        clampToTileSizes(dtcmTileSizes, vectorReductionSizes);
+
     LLVM_DEBUG({
       llvm::dbgs() << "    Selected DTCM tile sizes: [";
       for (auto size : dtcmTileSizes) llvm::dbgs() << size << " ";
       llvm::dbgs() << "]\n";
       llvm::dbgs() << "    Estimated footprint: "
-                   << estimateFootprint(analysis, dtcmTileSizes) << " bytes\n";
+                   << footprintModel.estimate(
+                          dtcmTileSizes, vectorParallelSizes,
+                          vectorReductionSizes, streamReduction)
+                   << " bytes\n";
     });
 
     SmallVector<int64_t> distParallelSizes(numLoops, 0);
@@ -784,16 +440,20 @@ struct CoralNPUTileSizeSelectionDTCMPass
     SmallVector<NamedAttribute> configItems(
         cpuLoweringConfig.getConfig().getValue());
 
-    auto updateConfigItem = [&](IREE::CPU::TilingLevel level, Attribute attr) {
-      auto name =
-          StringAttr::get(context, IREE::CPU::getTilingLevelName(level));
+    // Sets the config entry `name` to `attr`.
+    auto setConfigItem = [&](StringRef name, Attribute attr) {
+      auto nameAttr = StringAttr::get(context, name);
       for (auto &item : configItems) {
-        if (item.getName() == name) {
+        // Replace the existing entry.
+        if (item.getName() == nameAttr) {
           item.setValue(attr);
           return;
         }
       }
-      configItems.push_back(NamedAttribute(name, attr));
+      configItems.push_back(NamedAttribute(nameAttr, attr));
+    };
+    auto updateConfigItem = [&](IREE::CPU::TilingLevel level, Attribute attr) {
+      setConfigItem(IREE::CPU::getTilingLevelName(level), attr);
     };
 
     auto distParallelAttr = getTilingLevelAttr(context, distParallelSizes);
@@ -804,28 +464,47 @@ struct CoralNPUTileSizeSelectionDTCMPass
     updateConfigItem(IREE::CPU::TilingLevel::CacheReductionTiles,
                      cacheReductionAttr);
 
-    auto translationInfo = compilationInfo.getTranslationInfo();
-    if (useZvt) {
+    // Write back the vector tile sizes only if this pass changed them (Zvt
+    // sizes or clamped sizes), so that the other attributes of the levels stay.
+    if (useZvt || parallelClamped) {
       updateConfigItem(IREE::CPU::TilingLevel::VectorCommonParallelTiles,
                        getTilingLevelAttr(context, vectorParallelSizes));
     }
-    if (useZvt || peelLoops) {
-      // Peel partial DTCM/vector tiles (e.g. 80 by 64, 1000 by 32).
+    if (useZvt || reductionClamped) {
+      updateConfigItem(IREE::CPU::TilingLevel::VectorReductionTiles,
+                       getTilingLevelAttr(context, vectorReductionSizes));
+    }
+
+    // Zvt needs loop peeling, and the other compute ops must follow the Zvt
+    // tiles of the root op.
+    if (useZvt) {
+      // Peel partial DTCM and vector tiles (e.g. 80 by 64): Zvt needs static
+      // shapes.
       NamedAttrList config(translationInfo.getConfiguration());
       config.set(getEnableLoopPeelingStr(), UnitAttr::get(context));
       translationInfo = IREE::Codegen::TranslationInfoAttr::get(
           context, translationInfo.getPassPipeline(),
           translationInfo.getCodegenSpec(), translationInfo.getWorkgroupSize(),
           translationInfo.getSubgroupSize(), config.getDictionary(context));
+      // setTranslationInfo cannot fail today; propagate a failure anyway.
+      if (failed(setTranslationInfo(funcOp, translationInfo))) {
+        signalPassFailure();
+        return;
+      }
+
+      // The strategy pass derived the vector tile sizes of the other compute
+      // ops from the RVV tile sizes of the root op. Erase their lowering
+      // configs, so that these ops follow the Zvt tiles of the root op through
+      // fusion.
+      for (Operation *computeOp : getComputeOps(funcOp)) {
+        // Keep the lowering config of the root op.
+        if (computeOp == tilingOp.getOperation()) continue;
+        eraseLoweringConfig(computeOp);
+      }
     }
 
-    auto newLoweringConfig =
-        IREE::CPU::LoweringConfigAttr::get(context, configItems);
-
-    auto newCompilationInfo = IREE::Codegen::CompilationInfoAttr::get(
-        context, newLoweringConfig, translationInfo);
-
-    setCompilationInfo(tilingOp, newCompilationInfo);
+    setLoweringConfig(tilingOp,
+                      IREE::CPU::LoweringConfigAttr::get(context, configItems));
 
     markAnalysesPreserved<CoralNPUTileSizeSelectionAnalysis>();
   }

@@ -245,6 +245,28 @@ LogicalResult CoralNPUOptions::validate(MLIRContext *context) const {
            << "coralnpu-num-vector-registers must be positive, got "
            << numVectorRegisters;
   }
+  // The stack keeps 1 KB for call frames and register spills.
+  if (stackSizeKb < 2) {
+    return emitError(loc) << "coralnpu-stack-size-kb must be at least 2, got "
+                          << stackSizeKb;
+  }
+  if (dtcmReserveKb < 0) {
+    return emitError(loc)
+           << "coralnpu-dtcm-reserve-kb must not be negative, got "
+           << dtcmReserveKb;
+  }
+  if (dtcmBuffersPerOperand < 1) {
+    return emitError(loc)
+           << "coralnpu-dtcm-buffers-per-operand must be at least 1, got "
+           << dtcmBuffersPerOperand;
+  }
+  // The DTCM tile buffers need at least one 4 KB granule.
+  if (getDTCMTileBudgetBytes(dtcmSizeKb, stackSizeKb, dtcmReserveKb) <= 0) {
+    return emitError(loc) << "coralnpu-dtcm-size-kb (" << dtcmSizeKb
+                          << ") minus coralnpu-stack-size-kb (" << stackSizeKb
+                          << ") and coralnpu-dtcm-reserve-kb (" << dtcmReserveKb
+                          << ") must leave at least 4 KB for the DTCM tiles";
+  }
   if (registerAllocationReportFormat != "none" &&
       registerAllocationReportFormat != "pretty" &&
       registerAllocationReportFormat != "json") {
@@ -280,6 +302,10 @@ CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options)
   clOptions.keepLinkerArtifacts = options.keepLinkerArtifacts;
 
   defaultOptions_ = clOptions.getTargetOptions();
+  // The stack allocations of a dispatch must fit in the CoralNPU stack, which
+  // the linker sets to coralnpu-stack-size-kb (see CoralNPULinkerTool).
+  defaultOptions_.target.maxStackAllocSizeInBytes =
+      options.getMaxStackAllocationBytes();
   codegenOptions_ = CPUCodegenOptions::FromFlags::get();
 }
 
@@ -359,7 +385,7 @@ void CoralNPUTargetBackend::buildConfigurationPassPipeline(
   // This pipeline mirrors LLVMCPUTargetBackend::buildConfigurationPassPipeline
   // (which calls buildCodegenConfigurationPreProcessingPassPipeline followed by
   // buildLLVMCPUCodegenConfigurationPassPipeline), with CoralNPU's custom
-  // tile-size selection passes inserted immediately before
+  // tile-size selection passes inserted immediately after
   // LLVMCPUSelectLoweringStrategyPass, CoralNPURestoreConvInputChannelPass
   // right before InsertBatchDimForBatchlessConvPass, and
   // FoldReshapeIntoInterfaceTensorPass / CleanupBufferAllocViewPass around
@@ -395,27 +421,23 @@ void CoralNPUTargetBackend::buildConfigurationPassPipeline(
         return createCombineResultLayoutTransformationPass(options);
       });
 
-  // Run CoralNPU custom tile-size selection (register, DTCM, and workgroup
-  // tiling), then materialize the resulting #iree_codegen.compilation_info
-  // attributes onto the entry point function via MaterializeUserConfigsPass.
-  CoralNPUTileSizeSelectionRegisterOptions registerOptions;
-  registerOptions.numVectorRegisters = options_.numVectorRegisters;
+  // IREE picks the lowering pipeline and the tile sizes of every tiling level,
+  // including the vector (register) levels.
+  modulePassManager.addPass(createLLVMCPUSelectLoweringStrategyPass());
 
-  OpPassManager &funcPassManager = modulePassManager.nest<func::FuncOp>();
-
-  funcPassManager.addPass(
-      createCoralNPUTileSizeSelectionRegisterPass(registerOptions));
-
+  // Refine the lowering config of the root op: the DTCM pass sets the DTCM
+  // (cache-level) tile sizes, and the workgroup pass sets the distribution tile
+  // sizes to the DTCM parallel tile sizes. The vector tile sizes stay as IREE
+  // set them, except for Zvt contractions.
   CoralNPUTileSizeSelectionDTCMOptions dtcmOptions;
   dtcmOptions.dtcmSizeKb = options_.dtcmSizeKb;
+  dtcmOptions.stackSizeKb = options_.stackSizeKb;
+  dtcmOptions.dtcmReserveKb = options_.dtcmReserveKb;
+  dtcmOptions.buffersPerOperand = options_.dtcmBuffersPerOperand;
 
+  OpPassManager &funcPassManager = modulePassManager.nest<func::FuncOp>();
   funcPassManager.addPass(createCoralNPUTileSizeSelectionDTCMPass(dtcmOptions));
-
   funcPassManager.addPass(createCoralNPUTileSizeSelectionWorkgroupPass());
-
-  modulePassManager.addPass(createMaterializeUserConfigsPass());
-
-  modulePassManager.addPass(createLLVMCPUSelectLoweringStrategyPass());
 }
 
 void CoralNPUTargetBackend::buildTranslationPassPipeline(
@@ -680,8 +702,9 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
     targetOptions.target = target;
 
     if (target.getLinkEmbedded()) {
-      linkerTool = createCoralNPULinkerTool(targetTriple, targetOptions,
-                                            options_.linkerScriptPath);
+      linkerTool = createCoralNPULinkerTool(
+          targetTriple, targetOptions, options_.linkerScriptPath,
+          /*stackSizeBytes=*/static_cast<int64_t>(options_.stackSizeKb) * 1024);
     } else {
       linkerTool = iree_compiler::IREE::HAL::LinkerTool::getForTarget(
           targetTriple, targetOptions);

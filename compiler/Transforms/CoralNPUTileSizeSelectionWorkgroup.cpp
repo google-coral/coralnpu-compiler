@@ -71,55 +71,29 @@ struct CoralNPUTileSizeSelectionWorkgroupPass
 
     auto tilingOp = analysis.rootTilingOp;
 
-    auto compilationInfo = getCompilationInfo(tilingOp);
-    if (!compilationInfo) {
-      return;
-    }
-
-    auto cpuLoweringConfig = dyn_cast<IREE::CPU::LoweringConfigAttr>(
-        compilationInfo.getLoweringConfig());
-    if (!cpuLoweringConfig) {
-      tilingOp->emitOpError("expected CPU lowering config");
-      signalPassFailure();
-      return;
-    }
-
+    // Skip the dispatch if the DTCM pass skipped it (the root op has no CPU
+    // lowering config with distribution tile sizes; the DTCM pass emitted a
+    // warning), or if the root op has no DTCM parallel tile sizes
+    // (cache_parallel).
+    auto cpuLoweringConfig =
+        getLoweringConfig<IREE::CPU::LoweringConfigAttr>(tilingOp);
     auto cacheParallelLevel = IREE::CPU::TilingLevel::CacheParallelTiles;
-    if (!cpuLoweringConfig.hasTilingLevel(
+    if (!cpuLoweringConfig || !cpuLoweringConfig.hasWorkgroupTilingLevel() ||
+        !cpuLoweringConfig.hasTilingLevel(
             static_cast<unsigned>(cacheParallelLevel))) {
-      tilingOp->emitOpError("missing CacheParallelTiles config");
-      signalPassFailure();
       return;
     }
 
-    auto cacheParallelAttr = cpuLoweringConfig.getTilingLevelAttr(
-        static_cast<unsigned>(cacheParallelLevel));
-
-    SmallVector<NamedAttribute> configItems(
-        cpuLoweringConfig.getConfig().getValue());
-
-    auto name = StringAttr::get(context,
-                                IREE::CPU::getTilingLevelName(
-                                    IREE::CPU::TilingLevel::DistributionTiles));
-    bool found = false;
-    for (auto &item : configItems) {
-      if (item.getName() == name) {
-        item.setValue(cacheParallelAttr);
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      configItems.push_back(NamedAttribute(name, cacheParallelAttr));
-    }
-
-    auto newLoweringConfig =
-        IREE::CPU::LoweringConfigAttr::get(context, configItems);
-
-    auto newCompilationInfo = IREE::Codegen::CompilationInfoAttr::get(
-        context, newLoweringConfig, compilationInfo.getTranslationInfo());
-
-    setCompilationInfo(tilingOp, newCompilationInfo);
+    // Set the distribution tile sizes to the DTCM parallel tile sizes. The
+    // guard above makes sure that the distribution level exists.
+    NamedAttrList configItems(cpuLoweringConfig.getConfig());
+    configItems.set(IREE::CPU::getTilingLevelName(
+                        IREE::CPU::TilingLevel::DistributionTiles),
+                    cpuLoweringConfig.getTilingLevelAttr(
+                        static_cast<unsigned>(cacheParallelLevel)));
+    setLoweringConfig(tilingOp,
+                      IREE::CPU::LoweringConfigAttr::get(
+                          context, configItems.getDictionary(context)));
 
     markAnalysesPreserved<CoralNPUTileSizeSelectionAnalysis>();
   }

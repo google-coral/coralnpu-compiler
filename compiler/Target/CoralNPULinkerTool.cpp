@@ -50,9 +50,10 @@ class CoralNPULinkerTool final : public LinkerTool {
  public:
   CoralNPULinkerTool(const llvm::Triple& targetTriple,
                      LLVMTargetOptions targetOptions,
-                     std::string linkerScriptPath)
+                     std::string linkerScriptPath, int64_t stackSizeBytes)
       : LinkerTool(targetTriple, std::move(targetOptions)),
-        linkerScriptPath_(std::move(linkerScriptPath)) {}
+        linkerScriptPath_(std::move(linkerScriptPath)),
+        stackSizeBytes_(stackSizeBytes) {}
 
   std::string getLinkerPath() const {
     if (!targetOptions.embeddedLinkerPath.empty()) {
@@ -151,6 +152,10 @@ class CoralNPULinkerTool final : public LinkerTool {
         "--no-undefined",
         "--gc-sections",
         "--no-warn-rwx-segments",
+        // The linker script uses this symbol for the size of the stack.
+        // TODO(local-mem): Check at link time that the static DTCM sections
+        // fit within --coralnpu-dtcm-reserve-kb.
+        "--defsym=__stack_size__=" + std::to_string(stackSizeBytes_),
     };
 
     LLVM_DEBUG(llvm::SmallString<256> mapFilePath(artifacts.libraryFile.path);
@@ -204,6 +209,7 @@ class CoralNPULinkerTool final : public LinkerTool {
 
  private:
   std::string linkerScriptPath_;
+  int64_t stackSizeBytes_;
 };
 
 }  // namespace
@@ -211,9 +217,9 @@ class CoralNPULinkerTool final : public LinkerTool {
 std::unique_ptr<iree_compiler::IREE::HAL::LinkerTool> createCoralNPULinkerTool(
     const llvm::Triple& targetTriple,
     iree_compiler::IREE::HAL::LLVMTargetOptions& targetOptions,
-    std::string linkerScriptPath) {
-  return std::make_unique<CoralNPULinkerTool>(targetTriple, targetOptions,
-                                              std::move(linkerScriptPath));
+    std::string linkerScriptPath, int64_t stackSizeBytes) {
+  return std::make_unique<CoralNPULinkerTool>(
+      targetTriple, targetOptions, std::move(linkerScriptPath), stackSizeBytes);
 }
 
 }  // namespace mlir::coralnpu_compiler

@@ -49,12 +49,6 @@ createCoralNPUDumpAffinityExecutionProfilePass(
     CoralNPUDumpAffinityExecutionProfileOptions options);
 
 std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
-createCoralNPUTileSizeSelectionRegisterPass();
-std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
-createCoralNPUTileSizeSelectionRegisterPass(
-    CoralNPUTileSizeSelectionRegisterOptions options);
-
-std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
 createCoralNPUTileSizeSelectionDTCMPass();
 std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
 createCoralNPUTileSizeSelectionDTCMPass(

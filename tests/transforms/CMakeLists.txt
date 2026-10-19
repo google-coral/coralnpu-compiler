@@ -29,7 +29,7 @@ iree_lit_test_suite(
     "restore_conv_input_channel.mlir"
     "target_options.mlir"
     "tile_size_selection_dtcm.mlir"
-    "tile_size_selection_register.mlir"
+    "tile_size_selection_footprint.mlir"
   TOOLS
     FileCheck
     iree-compile

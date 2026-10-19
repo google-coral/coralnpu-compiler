@@ -19,25 +19,29 @@
 #include "iree/compiler/Codegen/Utils/CPUUtils.h"
 #include "iree/compiler/Codegen/Utils/Utils.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/DebugLog.h"
 #include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
-#include "mlir/IR/TypeUtilities.h"
+#include "mlir/IR/Remarks.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
+
+#define DEBUG_TYPE "coralnpu-tile-size-selection"
 
 using namespace mlir;
 using namespace mlir::iree_compiler;
 
 namespace mlir::coralnpu_compiler {
 
+namespace {
+
+// Classifies loops of a TilingInterface op into parallel and reduction loops.
 void classifyLoops(TilingInterface tilingOp,
                    SmallVectorImpl<size_t> &parallelLoops,
                    SmallVectorImpl<size_t> &reductionLoops) {
   auto iterTypes = tilingOp.getLoopIteratorTypes();
 
-  parallelLoops.clear();
-  reductionLoops.clear();
   for (auto [index, iterType] : llvm::enumerate(iterTypes)) {
     switch (iterType) {
       case utils::IteratorType::parallel:
@@ -51,8 +55,6 @@ void classifyLoops(TilingInterface tilingOp,
   std::reverse(parallelLoops.begin(), parallelLoops.end());
   std::reverse(reductionLoops.begin(), reductionLoops.end());
 }
-
-namespace {
 
 // Helper to get static loop ranges from TilingInterface
 SmallVector<int64_t> getStaticLoopRanges(TilingInterface op) {
@@ -112,30 +114,13 @@ CoralNPUTileSizeSelectionAnalysis::CoralNPUTileSizeSelectionAnalysis(
   // Loop classification
   classifyLoops(rootTilingOp, parallelLoops, reductionLoops);
 
-  // CoralNPUTileSizeSelection relies on producer/consumer fusion along
-  // rootTilingOp's parallel loops to tile other compute ops in the dispatch.
-  // A non-root compute op with reduction loops or more parallel loops than
-  // rootTilingOp (e.g. decomposed linalg.softmax) is supported if both are
-  // same-block elementwise ops or float reductions with the same loop ranges
-  // and rootTilingOp's single innermost reduction loop (it gets its own
-  // lowering_config unless it is a pure parallel producer of rootTilingOp);
-  // otherwise skip custom tile size selection and fall back to
-  // LLVMCPUSelectLoweringStrategyPass (MultiLoweringConfigGenerator).
-  auto isSupportedOp = [](Operation *op) {
-    auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
-    if (!linalgOp || op->getNumResults() != 1 ||
-        !linalgOp.hasOnlyProjectedPermutations() ||
-        linalg::isaContractionOpInterface(linalgOp)) {
-      return false;
-    }
-    if (linalgOp.getNumReductionLoops() == 0) return true;
-    if (!getElementTypeOrSelf(op->getResult(0)).isFloat()) return false;
-    if (linalgOp.getNumDpsInputs() < 2) return true;
-    auto maps = linalgOp.getIndexingMapsArray();
-    auto dims = linalg::inferContractionDims(
-        ArrayRef<AffineMap>{maps[0], maps[1], maps.back()});
-    return failed(dims) || dims->k.empty();
-  };
+  // CoralNPUTileSizeSelection only changes the lowering_config of rootTilingOp
+  // and relies on producer/consumer fusion along rootTilingOp's parallel loops
+  // to tile other compute ops in the dispatch. If any non-root compute op has
+  // reduction loops or more parallel loops than rootTilingOp (e.g. decomposed
+  // linalg.softmax), skip custom tile size selection and keep the lowering
+  // configs of LLVMCPUSelectLoweringStrategyPass
+  // (MultiLoweringConfigGenerator).
   for (Operation *computeOp : computeOps) {
     if (computeOp == rootTilingOp) continue;
     auto tilingOp = dyn_cast<TilingInterface>(computeOp);
@@ -143,21 +128,20 @@ CoralNPUTileSizeSelectionAnalysis::CoralNPUTileSizeSelectionAnalysis(
     SmallVector<size_t> opParallelLoops;
     SmallVector<size_t> opReductionLoops;
     classifyLoops(tilingOp, opParallelLoops, opReductionLoops);
-    if (opReductionLoops.empty() &&
-        opParallelLoops.size() <= parallelLoops.size()) {
-      continue;
-    }
-    if (reductionLoops != ArrayRef<size_t>{staticLoopRanges.size() - 1} ||
-        computeOp->getBlock() != rootTilingOp->getBlock() ||
-        !isSupportedOp(rootTilingOp) || !isSupportedOp(tilingOp) ||
-        getStaticLoopRanges(tilingOp) != staticLoopRanges ||
-        (!opReductionLoops.empty() && opReductionLoops != reductionLoops)) {
-      rootTilingOp->emitWarning(
-          "non-root compute operation requires separate tiling configuration; "
-          "skipping tile size selection");
+    if (!opReductionLoops.empty() ||
+        opParallelLoops.size() > parallelLoops.size()) {
+      // A normal case (e.g. each decomposed softmax), so no warning.
+      LDBG() << "skip the tile-size selection: the non-root op "
+             << computeOp->getName() << " needs its own tiling config";
+      remark::missed(
+          rootTilingOp->getLoc(),
+          remark::RemarkOpts::name("NonRootTiling").category(DEBUG_TYPE))
+          << remark::reason(
+                 "a non-root compute op has reduction loops or more parallel "
+                 "loops than the root op; the dispatch keeps the lowering "
+                 "configs of LLVMCPUSelectLoweringStrategyPass");
       return;
     }
-    nonRootTilingOps.push_back(tilingOp);
   }
 
   status = success();

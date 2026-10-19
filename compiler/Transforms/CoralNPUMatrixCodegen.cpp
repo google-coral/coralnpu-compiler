@@ -90,7 +90,9 @@ std::pair<Value, int64_t> getStridedExtractSource(ValueRange elems) {
 }
 
 // Peels widening casts and shape/broadcast wrappers to find the underlying
-// source vector.
+// source vector. Keep the producers that this function reads through in sync
+// with isZvtReadableInputs in CoralNPUTileSizeSelectionUtils.cpp, which the
+// DTCM tile-size selection uses.
 Value traceToSourceValue(Value val) {
   while (Operation* def = val.getDefiningOp()) {
     if (auto fe = dyn_cast<vector::FromElementsOp>(def)) {
@@ -125,6 +127,9 @@ Value stripExt(Value v) {
                                                            : v;
 }
 
+// The accumulator shapes are those of isZvtAccumulatorShape, which the DTCM
+// footprint model uses too. Keep the element type check in sync with
+// isZvtReadableInputs in CoralNPUTileSizeSelectionUtils.cpp.
 bool isSupportedMatrixContraction(vector::ContractionOp op, bool& swap) {
   auto accTy = dyn_cast<VectorType>(op.getAccType());
   if (!accTy || (accTy.getRank() != 1 && accTy.getRank() != 2) ||
@@ -139,9 +144,7 @@ bool isSupportedMatrixContraction(vector::ContractionOp op, bool& swap) {
   Value lhs = swap ? op.getRhs() : op.getLhs();
   Value rhs = swap ? op.getLhs() : op.getRhs();
   int64_t m = rank1 ? 1 : accTy.getDimSize(0), n = accTy.getShape().back();
-  if ((m % 16 != 0 && (m > 16 || swap)) || m == 48 || n == 48 ||
-      (n % 16 != 0 && ((n != 8 && n != 12) || rank1 || swap)) ||
-      llvm::alignTo(m, 16) * llvm::alignTo(n, 16) > 1024 ||
+  if (!isZvtAccumulatorShape(m, n, rank1, swap) ||
       cast<VectorType>(lhs.getType()).getNumElements() != m ||
       cast<VectorType>(rhs.getType()).getNumElements() != n ||
       !isZvtElementTypes(getElementTypeOrSelf(traceToSourceValue(lhs)),
@@ -931,6 +934,9 @@ struct CoralNPUMatrixCodegenPass
     if (!hasZvtTargetFeature(funcOp)) return;
 
     IRRewriter builder(&getContext());
+    // The scratch tiles are in DTCM. The DTCM footprint model counts them
+    // (estimateZvtScratchBytes in CoralNPUTileSizeSelectionFootprint.cpp): keep
+    // the two in sync.
     DenseMap<Type, TileAddr> scratchTiles;
     auto getScratchTile = [&](VectorType ty) {
       int64_t m = ty.getRank() == 1 ? 16 : llvm::alignTo(ty.getDimSize(0), 16);

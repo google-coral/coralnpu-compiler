@@ -1,0 +1,153 @@
+From 83eea62943ab437cbe2051dd0070166bd2a1a9fc Mon Sep 17 00:00:00 2001
+From: Shaked Flur <sflur@google.com>
+Date: Thu, 15 Oct 2026 11:36:50 +0200
+Subject: [PATCH] [llvmcpu] limit vector tile sizes to the RISC-V register file
+
+getRegisterSpaceBitsIfKnown returned 0 (unknown) for RISC-V, so
+limitVectorTileSizes did nothing on RISC-V. Return 32 x VLEN, where VLEN is
+the minimum VLEN that the CPU features guarantee (the largest +zvl<N>b, else
+the minimum VLEN of +v or +zve*).
+
+RISC-V matmuls use the peeling strategy (setMatmulPeelingRootConfig), which
+does not call limitVectorTileSizes. So limit the matmul vector sizes in
+getMatmulVectorSizes for RISC-V. For a small VLEN, the default {8, 32, 1} of
+integer and widening matmuls needs more than the 32 vector registers.
+
+The limit also changes the f32 sizes of getMatmulRISCVVectorSizes from
+7 x LMUL4 to 4 x LMUL4. 7 x LMUL4 uses all 32 vector registers for the
+accumulator and the RHS, so fused consumers spill. Update the RISC-V lit
+tests that check these sizes.
+---
+ .../Codegen/LLVMCPU/KernelDispatch.cpp        | 41 +++++++++++++++++++
+ ...e_riscv_aggressive_distribution_tests.mlir |  8 +---
+ .../test/select_riscv_lowering_strategy.mlir  | 12 +++---
+ 3 files changed, 49 insertions(+), 12 deletions(-)
+
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
+index a1896ec..2931781 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
+@@ -850,6 +850,35 @@ static void limitVectorTileSizes(Operation *inputOp,
+                        op.getIndexingMapsArray());
+ }
+ 
++// Returns the minimum vector register length (VLEN) in bits that the RISC-V CPU
++// features guarantee: the largest +zvl<N>b feature, or else the minimum VLEN of
++// the vector extension (128 for +v, 64 for +zve64*, 32 for +zve32*). Returns 0
++// if the target has no vector extension.
++static int64_t getRISCVMinVLenFromCPUFeatures(DictionaryAttr targetConfig) {
++  // Use the largest +zvl<N>b feature; N is a power of two.
++  for (int64_t vlen = 65536; vlen >= 32; vlen /= 2) {
++    if (hasFeature(targetConfig, ("+zvl" + Twine(vlen) + "b").str())) {
++      return vlen;
++    }
++  }
++  // Without +zvl<N>b, use the minimum VLEN of the vector extension.
++  auto hasAnyFeature = [&](ArrayRef<StringRef> features) {
++    return llvm::any_of(features, [&](StringRef feature) {
++      return hasFeature(targetConfig, feature);
++    });
++  };
++  if (hasFeature(targetConfig, "+v")) {
++    return 128;
++  }
++  if (hasAnyFeature({"+zve64x", "+zve64f", "+zve64d"})) {
++    return 64;
++  }
++  if (hasAnyFeature({"+zve32x", "+zve32f"})) {
++    return 32;
++  }
++  return 0;
++}
++
+ // Returns the size in bits of SIMD register space, or 0 if it can't be
+ // determined (e.g. Arm SVE).
+ static int getRegisterSpaceBitsIfKnown(IREE::HAL::ExecutableTargetAttr target) {
+@@ -870,6 +899,10 @@ static int getRegisterSpaceBitsIfKnown(IREE::HAL::ExecutableTargetAttr target) {
+     // 32 NEON/SVE registers (at least 128-bit each, returns the base size for
+     // SVE).
+     return 32 * 128;
++  } else if (isRISCV(targetConfig)) {
++    // 32 vector registers of at least VLEN bits each. Without a vector
++    // extension this is 0, i.e. unknown.
++    return 32 * getRISCVMinVLenFromCPUFeatures(targetConfig);
+   } else {
+     // Don't know register space size as a compile-time constant on other
+     // architectures.
+@@ -1548,6 +1581,14 @@ getMatmulVectorSizes(mlir::FunctionOpInterface entryPointFn,
+                              matmulScalableFlags.end());
+   }
+ 
++  // RISC-V matmuls use the peeling pipeline, which does not limit the vector
++  // tile sizes to the register file (unlike setMatmulRootConfig). For a small
++  // VLEN, the sizes above can need more than the 32 vector registers (e.g.
++  // {8, 32, 1} with an i32 accumulator and VLEN=128), so limit them here.
++  if (targetAttr && isRISCV(targetAttr.getConfiguration())) {
++    limitVectorTileSizes(op, tileSizes);
++  }
++
+   // For proper 2-D or higher order matmuls, make sure we don't use a tile size
+   // greater than the static dim size for dims that are only unrolled, i.e., N
+   // and batch dims.
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/pipeline_riscv_aggressive_distribution_tests.mlir b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/pipeline_riscv_aggressive_distribution_tests.mlir
+index 54a1a61..762ec1d 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/pipeline_riscv_aggressive_distribution_tests.mlir
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/pipeline_riscv_aggressive_distribution_tests.mlir
+@@ -24,16 +24,12 @@ builtin.module {
+ }
+ // CHECK-LABEL: func.func @f32_rvv_matmul(
+ // CHECK-DAG:     %[[c1:.+]] = arith.constant 1 : index
+-// CHECK-DAG:     %[[c7:.+]] = arith.constant 7 : index
++// CHECK-DAG:     %[[c4:.+]] = arith.constant 4 : index
+ // CHECK-DAG:     %[[c128:.+]] = arith.constant 128 : index
+ // CHECK-DAG:     %[[c256:.+]] = arith.constant 256 : index
+ // CHECK-DAG:     %[[c512:.+]] = arith.constant 512 : index
+-// CHECK:       scf.for {{.*}} step %[[c7]]
++// CHECK:       scf.for {{.*}} step %[[c4]]
+ // CHECK:         scf.for {{.*}} step %[[c128]]
+ // CHECK:           scf.for {{.*}} step %[[c1]]
+-// CHECK-COUNT-7:     vector.fma
+-// CHECK-COUNT-7:   vector.store
+-// CHECK:       scf.for {{.*}} step %[[c128]]
+-// CHECK:           scf.for {{.*}} step %[[c1]]
+ // CHECK-COUNT-4:     vector.fma
+ // CHECK-COUNT-4:   vector.store
+diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/select_riscv_lowering_strategy.mlir b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/select_riscv_lowering_strategy.mlir
+index 1654c3b..8b96148 100644
+--- a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/select_riscv_lowering_strategy.mlir
++++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/select_riscv_lowering_strategy.mlir
+@@ -35,8 +35,8 @@ func.func @matmul_gemm_riscv_vl512(%lhs: tensor<384x512xf32>, %rhs: tensor<512x1
+   %res = linalg.matmul ins(%lhs, %rhs : tensor<384x512xf32>, tensor<512x128xf32>) outs(%fill : tensor<384x128xf32>) -> tensor<384x128xf32>
+   return %res : tensor<384x128xf32>
+ }
+-//  CHECK-DAG: #[[CONFIG:.+]] = #iree_cpu.lowering_config<cache_parallel = [64, 64], vector_common_parallel = [7, 64]>
+-//  CHECK-DAG: #[[CONFIG2:.+]] = #iree_cpu.lowering_config<cache_parallel = [64, 64, 0], distribution = [64, 64, 0], vector_common_parallel = [7, 64, 0], vector_reduction = [0, 0, 1]>
++//  CHECK-DAG: #[[CONFIG:.+]] = #iree_cpu.lowering_config<cache_parallel = [64, 64], vector_common_parallel = [4, 64]>
++//  CHECK-DAG: #[[CONFIG2:.+]] = #iree_cpu.lowering_config<cache_parallel = [64, 64, 0], distribution = [64, 64, 0], vector_common_parallel = [4, 64, 0], vector_reduction = [0, 0, 1]>
+ //  CHECK-DAG: #[[TRANSLATION:.+]] = #iree_codegen.translation_info<pipeline = #iree_cpu.pipeline<DoubleTilingExpert>, {{\{}}enable_loop_peeling}>
+ //      CHECK: func.func @matmul_gemm_riscv_vl512(
+ // CHECK-SAME:     translation_info = #[[TRANSLATION]]
+@@ -55,16 +55,16 @@ func.func @matmul_gemm_riscv_vl1024(%lhs: tensor<384x512xf32>, %rhs: tensor<512x
+   %res = linalg.matmul ins(%lhs, %rhs : tensor<384x512xf32>, tensor<512x256xf32>) outs(%fill : tensor<384x256xf32>) -> tensor<384x256xf32>
+   return %res : tensor<384x256xf32>
+ }
+-//  CHECK-DAG: #[[CONFIG:.+]] = #iree_cpu.lowering_config<cache_parallel = [64, 128], vector_common_parallel = [7, 128]>
+-//  CHECK-DAG: #[[CONFIG2:.+]] = #iree_cpu.lowering_config<cache_parallel = [64, 128, 0], distribution = [64, 128, 0], vector_common_parallel = [7, 128, 0], vector_reduction = [0, 0, 1]>
++//  CHECK-DAG: #[[CONFIG:.+]] = #iree_cpu.lowering_config<cache_parallel = [64, 128], vector_common_parallel = [4, 128]>
++//  CHECK-DAG: #[[CONFIG2:.+]] = #iree_cpu.lowering_config<cache_parallel = [64, 128, 0], distribution = [64, 128, 0], vector_common_parallel = [4, 128, 0], vector_reduction = [0, 0, 1]>
+ //  CHECK-DAG: #[[TRANSLATION:.+]] = #iree_codegen.translation_info<pipeline = #iree_cpu.pipeline<DoubleTilingExpert>, {{\{}}enable_loop_peeling}>
+ //      CHECK: func.func @matmul_gemm_riscv_vl1024(
+ // CHECK-SAME:     translation_info = #[[TRANSLATION]]
+ //      CHECK: linalg.matmul
+ // CHECK-SAME:     lowering_config = #[[CONFIG2]]
+ 
+-//  CHECK-AGGRESSIVE-DAG: #[[CONFIG:.+]] = #iree_cpu.lowering_config<cache_parallel = [32, 256], vector_common_parallel = [7, 128]>
+-//  CHECK-AGGRESSIVE-DAG: #[[CONFIG2:.+]] = #iree_cpu.lowering_config<cache_parallel = [32, 256, 0], distribution = [32, 256, 0], vector_common_parallel = [7, 128, 0], vector_reduction = [0, 0, 1]>
++//  CHECK-AGGRESSIVE-DAG: #[[CONFIG:.+]] = #iree_cpu.lowering_config<cache_parallel = [32, 256], vector_common_parallel = [4, 128]>
++//  CHECK-AGGRESSIVE-DAG: #[[CONFIG2:.+]] = #iree_cpu.lowering_config<cache_parallel = [32, 256, 0], distribution = [32, 256, 0], vector_common_parallel = [4, 128, 0], vector_reduction = [0, 0, 1]>
+ //  CHECK-AGGRESSIVE-DAG: #[[TRANSLATION:.+]] = #iree_codegen.translation_info<pipeline = #iree_cpu.pipeline<DoubleTilingExpert>, {{\{}}enable_loop_peeling}>
+ //      CHECK-AGGRESSIVE: func.func @matmul_gemm_riscv_vl1024(
+ // CHECK-AGGRESSIVE-SAME:     translation_info = #[[TRANSLATION]]
+-- 
+2.56.0.385.gd3acb90ef8-goog
+
