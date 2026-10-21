@@ -29,6 +29,7 @@
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/IR/Remarks.h"
 #include "mlir/Interfaces/DestinationStyleOpInterface.h"
 
 // LLVM:
@@ -36,6 +37,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/DebugLog.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -44,6 +46,8 @@
 #include <optional>
 #include <string>
 #include <utility>
+
+#define DEBUG_TYPE "coralnpu-tile-size-selection"
 
 using namespace mlir;
 using namespace mlir::iree_compiler;
@@ -105,13 +109,20 @@ SmallVector<int64_t> getOperandSpans(linalg::LinalgOp linalgOp,
     std::string exprStr;
     llvm::raw_string_ostream os(exprStr);
     os << expr;
-    linalgOp.emitWarning() << "could not estimate bound for dimension " << dim
-                           << " of operand #" << operand->getOperandNumber()
-                           << " (expression: " << os.str() << ") of '"
-                           << linalgOp->getName().getStringRef()
-                           << "', falling back to full dimension size ("
-                           << dimSize
-                           << "). Footprint estimation might be conservative.";
+    LDBG() << "could not estimate bound for dimension " << dim
+           << " of operand #" << operand->getOperandNumber()
+           << " (expression: " << os.str() << ") of '"
+           << linalgOp->getName().getStringRef()
+           << "', falling back to full dimension size (" << dimSize << ")";
+    remark::missed(
+        linalgOp.getLoc(),
+        remark::RemarkOpts::name("DTCMFootprint").category(DEBUG_TYPE))
+        << remark::reason(
+               "could not estimate bound for dimension {0} of operand #{1} "
+               "(expression: {2}) of '{3}', falling back to full dimension "
+               "size ({4})",
+               dim, operand->getOperandNumber(), os.str(),
+               linalgOp->getName().getStringRef(), dimSize);
     // A dynamic dimension has no size to fall back to; count one index.
     spans.push_back(ShapedType::isDynamic(dimSize) ? 1 : dimSize);
   }

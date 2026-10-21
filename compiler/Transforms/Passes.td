@@ -79,11 +79,12 @@ def CoralNPUDumpAffinityExecutionProfile : Pass<"coralnpu-dump-affinity-executio
 }
 
 def CoralNPUTileSizeSelectionDTCM : InterfacePass<"coralnpu-tile-size-selection-dtcm", "mlir::FunctionOpInterface"> {
-  let summary = "Selects DTCM-level tile sizes for CoralNPU operations";
+  let summary = "Selects DTCM- and workgroup-level tile sizes for CoralNPU operations";
   let description = [{
     This pass determines the optimal DTCM-level tile sizes for CoralNPU. It runs
     after LLVMCPUSelectLoweringStrategyPass and refines the lowering config of
-    the root op: it sets the cache_parallel and cache_reduction tile sizes.
+    the root op: it sets the cache_parallel and cache_reduction tile sizes, and
+    sets the distribution tile sizes to cache_parallel.
     It uses a footprint estimation model to iteratively shrink the tile sizes
     until the estimated DTCM footprint of one tile fits within the DTCM tile
     budget, using the vector tile sizes of the strategy pass as alignment
@@ -116,18 +117,6 @@ def CoralNPUTileSizeSelectionDTCM : InterfacePass<"coralnpu-tile-size-selection-
            "Number of DTCM buffers for each input slice (2 for double "
            "buffering).">
   ];
-}
-
-def CoralNPUTileSizeSelectionWorkgroup : InterfacePass<"coralnpu-tile-size-selection-workgroup", "mlir::FunctionOpInterface"> {
-  let summary = "Selects workgroup-level tile sizes for CoralNPU operations";
-  let description = [{
-    This pass determines the workgroup-level tile sizes for CoralNPU. It runs
-    after CoralNPUTileSizeSelectionDTCM and sets the distribution tile sizes
-    of the root op to the DTCM parallel tile sizes (cache_parallel).
-  }];
-  let constructor = [{
-    ::mlir::coralnpu_compiler::createCoralNPUTileSizeSelectionWorkgroupPass()
-  }];
 }
 
 def CoralNPUPromoteOperands : InterfacePass<"coralnpu-promote-operands", "mlir::FunctionOpInterface"> {

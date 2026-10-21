@@ -25,7 +25,6 @@ iree_cc_library(
   NAME
     Transforms
   HDRS
-    "CoralNPUTileSizeSelectionAnalysis.h"
     "CoralNPUTileSizeSelectionFootprint.h"
     "CoralNPUTileSizeSelectionUtils.h"
     "DeviceUtils.h"
@@ -45,11 +44,9 @@ iree_cc_library(
     "CoralNPUPromoteOperands.cpp"
     "CoralNPURaiseApplyScale.cpp"
     "CoralNPURestoreConvInputChannel.cpp"
-    "CoralNPUTileSizeSelectionAnalysis.cpp"
     "CoralNPUTileSizeSelectionDTCM.cpp"
     "CoralNPUTileSizeSelectionFootprint.cpp"
     "CoralNPUTileSizeSelectionUtils.cpp"
-    "CoralNPUTileSizeSelectionWorkgroup.cpp"
     "DeviceUtils.cpp"
     "Passes.cpp"
   INCLUDES

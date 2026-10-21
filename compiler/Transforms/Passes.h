@@ -55,18 +55,8 @@ createCoralNPUTileSizeSelectionDTCMPass(
     CoralNPUTileSizeSelectionDTCMOptions options);
 
 std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
-createCoralNPUTileSizeSelectionWorkgroupPass();
-
-// Creates the pass that copies the tiles of the operands of a root op with a
-// `promote_operands` lowering config entry to DTCM. It runs after the
-// cache-level tiling (see LLVMCPUPipelineOptions::afterCacheTilingHook).
-std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
 createCoralNPUPromoteOperandsPass();
 
-// Creates a pass that lowers the copies between memory and DTCM (the tile
-// copies of CoralNPUPromoteOperandsPass, after bufferization) to vector loads
-// and stores. It runs in the pre-LLVM hook. TODO(DMA): lower them to DMA
-// transfers there.
 std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
 createCoralNPULowerDTCMCopiesPass();
 

@@ -539,7 +539,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
 ### 2.2 Implementation Tasks (`code` step)
 
 #### CL 2a: Consolidate Workgroup Pass & Replace Analysis with `getDTCMRoot` (Pure Refactor)
-- [ ] **Task 1**: Merge `CoralNPUTileSizeSelectionWorkgroupPass` into
+- [x] **Task 1**: Merge `CoralNPUTileSizeSelectionWorkgroupPass` into
       `CoralNPUTileSizeSelectionDTCMPass` by setting `DistributionTiles` to
       `distParallelSizes`, removing `createCoralNPUTileSizeSelectionWorkgroupPass`
       in `CoralNPUTargetBackend.cpp`, `Passes.td`, and `Passes.h`, and deleting
@@ -550,7 +550,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
     `compiler/Transforms/CoralNPUTileSizeSelectionWorkgroup.cpp`,
     `compiler/Transforms/BUILD.bazel`
   - *Verify*: `bazel test --config=dev //tests/transforms:lit`
-- [ ] **Task 2**: Replace `CoralNPUTileSizeSelectionAnalysis` with `DTCMRoot`
+- [x] **Task 2**: Replace `CoralNPUTileSizeSelectionAnalysis` with `DTCMRoot`
       and `getDTCMRoot` in `CoralNPUTileSizeSelectionDTCM.cpp`, compute
       `computeOps` once in `runOnOperation()`, keep loop indices outermost-first
       without `llvm::reverse`, convert remaining `emitWarning` calls in
@@ -563,7 +563,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
     `compiler/Transforms/CoralNPUTileSizeSelectionAnalysis.cpp`,
     `compiler/Transforms/BUILD.bazel`
   - *Verify*: `bazel test --config=dev //tests/transforms:lit`
-- [ ] **Task 3 (CL 2a Build & Doc Sync)**: Sync
+- [x] **Task 3 (CL 2a Build & Doc Sync)**: Sync
       `compiler/Transforms/CMakeLists.txt`, `docs/design/dtcm_tiling.md`,
       `docs/design/tiling_levels_explained.md`, and
       `tests/transforms/tile_size_selection_dtcm.mlir`.
@@ -636,7 +636,16 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   - *Verify*: `bazel test --config=dev //tests/transforms:lit //tests/examples:efficientnet_test`
 
 ### 2.3 Implementation Notes & Adaptations
-- *(None yet)*
+- `getStaticLoopRanges` returns `std::optional<SmallVector<int64_t>>` using
+  `getOffsetsSizesAndStrides` and `getConstantIntValues` from
+  `mlir/Dialect/Utils/StaticValueUtils.h`, eliminating the
+  `ShapedType::kDynamic` sentinel and the separate `llvm::is_contained` check.
+- Factored `CoralNPUTileSizeSelectionDTCMPass::runOnOperation()` into focused
+  helpers (`getTilingLevelSizes`, `setZeroAlignmentsToOne`,
+  `selectDTCMTileSizes`, `enableLoopPeeling`, `setTilingLevel`, and
+  `applySelectedTileSizes` using `NamedAttrList`), and updated
+  `setZvtVectorSizes` to accept `const DTCMFootprintModel &` and `budgetBytes`
+  directly (only mutating the output vector sizes when a Zvt tile fits).
 
 ### 2.4 Documentation Archive Checklist (`archive` step — Pre-Submit)
 Run this step in the final implementation CL before uploading for review:

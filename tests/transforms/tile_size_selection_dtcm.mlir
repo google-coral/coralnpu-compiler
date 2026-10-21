@@ -6,7 +6,7 @@
 // RUN:   | FileCheck %s --check-prefix=DOUBLE
 // RUN: %iree_compile --compile-to=executable-configurations \
 // RUN:   --coralnpu-roofline-speedup-threshold=0 --coralnpu-dtcm-size-kb=12 %s \
-// RUN:   2>/dev/null | FileCheck %s --check-prefix=SMALL
+// RUN:   2>&1 | FileCheck %s --check-prefix=SMALL --implicit-check-not=warning:
 // RUN: %iree_compile --compile-to=executable-configurations \
 // RUN:   --coralnpu-roofline-speedup-threshold=0 --coralnpu-dtcm-size-kb=1024 %s \
 // RUN:   | FileCheck %s --check-prefix=HIGHMEM
@@ -17,13 +17,14 @@
 // RUN: %iree_compile --compile-to=executable-configurations \
 // RUN:   --coralnpu-roofline-speedup-threshold=0 \
 // RUN:   --coralnpu-stack-size-kb=16 --coralnpu-dtcm-reserve-kb=12 \
-// RUN:   --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f %s 2>/dev/null \
-// RUN:   | FileCheck %s --check-prefix=SMALL_NOZVT
+// RUN:   --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f %s \
+// RUN:   2>&1 | FileCheck %s --check-prefix=SMALL_NOZVT \
+// RUN:     --implicit-check-not=warning:
 
-// CoralNPUTileSizeSelectionDTCM and CoralNPUTileSizeSelectionWorkgroup run
-// after LLVMCPUSelectLoweringStrategyPass. They keep the vector tile sizes of
-// the strategy pass (except for Zvt), set the DTCM tile sizes (cache_parallel,
-// cache_reduction), and set the distribution tile sizes to cache_parallel.
+// CoralNPUTileSizeSelectionDTCM runs after LLVMCPUSelectLoweringStrategyPass.
+// It keeps the vector tile sizes of the strategy pass (except for Zvt), sets
+// the DTCM tile sizes (cache_parallel, cache_reduction), and sets the
+// distribution tile sizes to cache_parallel.
 // For an RVV contraction, the DTCM pass also sets promote_operands, so that
 // CoralNPUPromoteOperands copies the tiles to DTCM (promote_operands.mlir).
 //

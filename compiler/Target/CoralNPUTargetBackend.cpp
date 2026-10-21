@@ -385,7 +385,7 @@ void CoralNPUTargetBackend::buildConfigurationPassPipeline(
   // This pipeline mirrors LLVMCPUTargetBackend::buildConfigurationPassPipeline
   // (which calls buildCodegenConfigurationPreProcessingPassPipeline followed by
   // buildLLVMCPUCodegenConfigurationPassPipeline), with CoralNPU's custom
-  // tile-size selection passes inserted immediately after
+  // tile-size selection pass inserted immediately after
   // LLVMCPUSelectLoweringStrategyPass, CoralNPURestoreConvInputChannelPass
   // right before InsertBatchDimForBatchlessConvPass, and
   // FoldReshapeIntoInterfaceTensorPass / CleanupBufferAllocViewPass around
@@ -426,9 +426,9 @@ void CoralNPUTargetBackend::buildConfigurationPassPipeline(
   modulePassManager.addPass(createLLVMCPUSelectLoweringStrategyPass());
 
   // Refine the lowering config of the root op: the DTCM pass sets the DTCM
-  // (cache-level) tile sizes, and the workgroup pass sets the distribution tile
-  // sizes to the DTCM parallel tile sizes. The vector tile sizes stay as IREE
-  // set them, except for Zvt contractions.
+  // (cache-level) tile sizes, and sets the distribution tile sizes to the DTCM
+  // parallel tile sizes. The vector tile sizes stay as IREE set them, except
+  // for Zvt contractions.
   CoralNPUTileSizeSelectionDTCMOptions dtcmOptions;
   dtcmOptions.dtcmSizeKb = options_.dtcmSizeKb;
   dtcmOptions.stackSizeKb = options_.stackSizeKb;
@@ -437,7 +437,6 @@ void CoralNPUTargetBackend::buildConfigurationPassPipeline(
 
   OpPassManager &funcPassManager = modulePassManager.nest<func::FuncOp>();
   funcPassManager.addPass(createCoralNPUTileSizeSelectionDTCMPass(dtcmOptions));
-  funcPassManager.addPass(createCoralNPUTileSizeSelectionWorkgroupPass());
 }
 
 void CoralNPUTargetBackend::buildTranslationPassPipeline(

@@ -32,9 +32,9 @@ accumulators to a scratch tile in DTCM, and the footprint counts it.
   Step                         Pass (file)                          Result
   Strategy (IREE)              LLVMCPUSelectLoweringStrategyPass    pipeline, distribution, vector
                                                                     tile sizes
-  DTCM tile sizes              CoralNPUTileSizeSelectionDTCM        cache_parallel, cache_reduction,
+  DTCM tile sizes              CoralNPUTileSizeSelectionDTCM        distribution, cache_parallel,
+                                                                    cache_reduction,
                                                                     promote_operands (RVV only)
-  Workgroup tile sizes         CoralNPUTileSizeSelectionWorkgroup   distribution = cache_parallel
   Cache-level tiling (IREE)    LLVMCPU tiling passes                the loops of the DTCM tile
   Promotion                    CoralNPUPromoteOperands              DTCM buffers and copies
                                (afterCacheTilingHook, patch 0014)

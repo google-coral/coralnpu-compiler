@@ -75,6 +75,10 @@ Attribute getTilingLevelAttr(MLIRContext *context, ArrayRef<int64_t> sizes) {
 
 int64_t getDTCMTileBudgetBytes(int64_t dtcmSizeKb, int64_t stackSizeKb,
                                int64_t reserveKb) {
+  // Workgroup local memory is allocated in 4 KB pages
+  // (IREE_HAL_EXECUTABLE_WORKGROUP_LOCAL_MEMORY_PAGE_SIZE /
+  // LibraryBuilder::kWorkgroupLocalMemoryPageSize).
+  // TODO: Share this constant when upstreamed instead of duplicating 4096.
   constexpr int64_t kBudgetGranuleBytes = 4096;
   // A negative stack or reserve would make the budget larger than the DTCM.
   if (dtcmSizeKb <= 0 || stackSizeKb < 0 || reserveKb < 0) return 0;

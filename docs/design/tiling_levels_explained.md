@@ -5,9 +5,12 @@ It describes the purpose of each level, how they map to hardware, and where they
 
 The tile sizes are selected in two steps during the configuration phase of the compiler pipeline:
 - IREE's **`LLVMCPUSelectLoweringStrategyPass`** picks the lowering pipeline and the tile sizes of all levels, including the vector (register) levels. It attaches a `lowering_config` to the compute operations and a `translation_info` to the function of each dispatch.
-- Two CoralNPU passes then refine the `lowering_config` of the root operation:
-  - **`CoralNPUTileSizeSelectionDTCMPass`** ([CoralNPUTileSizeSelectionDTCM.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp)): Computes DTCM-level tile sizes (and the vector tile sizes of Zvt contractions and convolutions).
-  - **`CoralNPUTileSizeSelectionWorkgroupPass`** ([CoralNPUTileSizeSelectionWorkgroup.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionWorkgroup.cpp)): Propagates DTCM-level tile sizes to the workgroup/distribution level.
+- **`CoralNPUTileSizeSelectionDTCMPass`**
+  ([CoralNPUTileSizeSelectionDTCM.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp))
+  then refines the `lowering_config` of the root operation: it computes the
+  DTCM-level tile sizes (and the vector tile sizes of Zvt contractions and
+  convolutions) and sets the workgroup (`distribution`) tile sizes to the DTCM
+  parallel tile sizes (`cache_parallel`).
 
 In the translation phase, **`CoralNPUPromoteOperandsPass`** ([CoralNPUPromoteOperands.cpp](../../compiler/Transforms/CoralNPUPromoteOperands.cpp)) copies the DTCM tiles to DTCM (see [DTCM Promotion](#dtcm-promotion)).
 
@@ -53,7 +56,7 @@ The `LoweringConfigAttr` for CPU backends defines the following attributes (keys
 
 ### 1. Level 0: Distribution (`DistributionTiles`)
 
-*   **Configured by**: [CoralNPUTileSizeSelectionWorkgroupPass](../../compiler/Transforms/CoralNPUTileSizeSelectionWorkgroup.cpp)
+*   **Configured by**: [CoralNPUTileSizeSelectionDTCMPass](../../compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp)
 *   **Attribute Key**: `distribution`
 *   **Purpose**: To partition the global iteration space of the operation into independent chunks called **Workgroups**. Each workgroup can be executed concurrently by different CPU cores or NPU clusters.
 *   **Hardware Constraint**: Number of available compute cores/clusters.
@@ -140,14 +143,15 @@ This level is crucial for memory-constrained accelerators like the Coral NPU.
 
 ### Summary of Configuration Pipeline
 
-The following diagram shows how the IREE strategy pass and the two CoralNPU passes configure the tiling attributes during the configuration phase:
+The following diagram shows how the IREE strategy pass and
+`CoralNPUTileSizeSelectionDTCMPass` configure the tiling attributes during the
+configuration phase:
 
 ```mermaid
 graph TD
     Input[Input IR] --> Strategy[LLVMCPUSelectLoweringStrategyPass]
     Strategy -->|Sets the pipeline, distribution, vector_common_parallel & vector_reduction| DTCMPass[CoralNPUTileSizeSelectionDTCMPass]
-    DTCMPass -->|Sets cache_parallel & cache_reduction; Zvt vector sizes| WGPass[CoralNPUTileSizeSelectionWorkgroupPass]
-    WGPass -->|Sets distribution = cache_parallel| Output[Configured IR]
+    DTCMPass -->|Sets distribution = cache_parallel, cache_reduction; Zvt vector sizes| Output[Configured IR]
 ```
 
 ### Summary of Lowering Pipeline Flow (CPUDoubleTilingExpert)
