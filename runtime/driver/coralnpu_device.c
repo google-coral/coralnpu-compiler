@@ -50,7 +50,7 @@ typedef struct iree_hal_coralnpu_device_t {
 
   iree_hal_coralnpu_exec_backend_t exec_backend;
 
-  // Observer of the dispatches; |dispatch_observer.on_dispatch| is NULL if
+  // Observer of the dispatches; |dispatch_observer.begin_dispatch| is NULL if
   // the device has none.
   iree_hal_coralnpu_dispatch_observer_t dispatch_observer;
   void *dispatch_observer_context;
@@ -83,6 +83,17 @@ static void iree_hal_coralnpu_device_advance_frontier(
                                       epoch);
 }
 
+// Prints |observer_status|, an error of the dispatch observer, as a warning
+// and ignores it; does nothing if it is OK.
+static void iree_hal_coralnpu_device_warn_observer(
+    iree_status_t observer_status) {
+  if (iree_status_is_ok(observer_status)) return;
+  // Statistics must not fail the dispatch.
+  fprintf(stderr, "[CoralNPU] Warning: dispatch statistics are incomplete: ");
+  iree_status_fprint(stderr, observer_status);
+  iree_status_ignore(observer_status);
+}
+
 iree_status_t iree_hal_coralnpu_device_dispatch(
     iree_hal_device_t *base_device,
     const iree_hal_coralnpu_dispatch_info_t *info,
@@ -93,26 +104,29 @@ iree_status_t iree_hal_coralnpu_device_dispatch(
   IREE_ASSERT_ARGUMENT(info);
   iree_hal_coralnpu_device_t *device =
       iree_hal_coralnpu_device_cast(base_device);
-  // Without an observer, run the dispatch without collecting statistics.
-  if (!device->dispatch_observer.on_dispatch) {
-    return device->exec_backend.dispatch(
-        device->exec_backend.self, dispatch_image, dispatch_state,
-        binding_writeable, ordinal, local_memory_size, /*out_stats=*/NULL);
+  const iree_hal_coralnpu_dispatch_observer_t *observer =
+      &device->dispatch_observer;
+  void *observer_context = device->dispatch_observer_context;
+
+  // The dispatch runs with the hooks of the observer only if begin_dispatch
+  // succeeds; without an observer, it runs without hooks.
+  iree_hal_coralnpu_run_hooks_t hooks;
+  memset(&hooks, 0, sizeof(hooks));
+  bool observed = false;
+  if (observer->begin_dispatch) {
+    iree_status_t observer_status = observer->begin_dispatch(
+        observer->self, observer_context, info, &hooks);
+    observed = iree_status_is_ok(observer_status);
+    iree_hal_coralnpu_device_warn_observer(observer_status);
   }
 
-  iree_hal_coralnpu_dispatch_stats_t dispatch_stats;
-  memset(&dispatch_stats, 0, sizeof(dispatch_stats));
   iree_status_t status = device->exec_backend.dispatch(
       device->exec_backend.self, dispatch_image, dispatch_state,
-      binding_writeable, ordinal, local_memory_size, &dispatch_stats);
-  iree_status_t observer_status = device->dispatch_observer.on_dispatch(
-      device->dispatch_observer.self, device->dispatch_observer_context, info,
-      &dispatch_stats, iree_status_code(status));
-  if (!iree_status_is_ok(observer_status)) {
-    // Statistics must not fail the dispatch.
-    fprintf(stderr, "[CoralNPU] Warning: dispatch statistics are incomplete: ");
-    iree_status_fprint(stderr, observer_status);
-    iree_status_ignore(observer_status);
+      binding_writeable, ordinal, local_memory_size, observed ? &hooks : NULL);
+  if (observed) {
+    iree_hal_coralnpu_device_warn_observer(
+        observer->end_dispatch(observer->self, observer_context, info, &hooks,
+                               iree_status_code(status)));
   }
   return status;
 }
@@ -123,11 +137,18 @@ void iree_hal_coralnpu_device_params_initialize(
   out_params->arena_block_size = 32 * 1024;
 }
 
+// Validates |params| before creating a CoralNPU device.
 static iree_status_t iree_hal_coralnpu_device_check_params(
     const iree_hal_coralnpu_device_params_t *params) {
   if (params->arena_block_size < 4096) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "arena block size too small (< 4096 bytes)");
+  }
+  if (params->dispatch_observer.begin_dispatch &&
+      !params->dispatch_observer.end_dispatch) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "dispatch observer with begin_dispatch requires end_dispatch");
   }
   return iree_ok_status();
 }
@@ -169,9 +190,9 @@ iree_status_t iree_hal_coralnpu_device_create(
   device->host_allocator = host_allocator;
   device->device_allocator = device_allocator;
   device->exec_backend = *exec_backend;
-  // Use the observer only if it receives dispatches; without on_dispatch, its
-  // create and destroy hooks are not called.
-  if (params->dispatch_observer.on_dispatch) {
+  // Use the observer only if it observes dispatches; without begin_dispatch,
+  // its create and destroy hooks are not called.
+  if (params->dispatch_observer.begin_dispatch) {
     device->dispatch_observer = params->dispatch_observer;
   }
   // Let the observer create its per-device context.

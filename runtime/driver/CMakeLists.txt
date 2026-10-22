@@ -42,8 +42,8 @@ iree_cc_library(
     "coralnpu_executable.c"
     "coralnpu_executable_cache.c"
   DEPS
-    coralnpu_runtime::metrics::dispatch_observer
-    coralnpu_runtime::metrics::dispatch_stats
+    ::dispatch_observer
+    ::run_hooks
     iree::async
     iree::async::util::proactor_pool
     iree::base
@@ -58,5 +58,32 @@ iree_cc_library(
     iree::hal::utils::queue_emulation
   INCLUDES
     "${CMAKE_SOURCE_DIR}"
+  PUBLIC
+)
+
+# The hooks an execution backend calls while it runs a dispatch, through which
+# code outside the driver (e.g. coralnpu_metrics_runtime) observes the run.
+iree_cc_library(
+  NAME
+    run_hooks
+  HDRS
+    "coralnpu_run_hooks.h"
+  INCLUDES
+    "${CMAKE_SOURCE_DIR}"
+  PUBLIC
+)
+
+# The interface between a device and the observer of its dispatches (e.g. the
+# statistics writer in coralnpu_metrics_runtime).
+iree_cc_library(
+  NAME
+    dispatch_observer
+  HDRS
+    "coralnpu_dispatch_observer.h"
+  INCLUDES
+    "${CMAKE_SOURCE_DIR}"
+  DEPS
+    ::run_hooks
+    iree::base
   PUBLIC
 )

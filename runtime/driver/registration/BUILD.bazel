@@ -35,9 +35,10 @@ config_setting(
 )
 
 # Registers the driver with IREE, selects the execution backend it runs on and
-# sets up the statistics writer of the --coralnpu_stats_* flags. The simulator
-# and writer dependencies are confined to this target so that the HAL driver in
-# //runtime/driver:coralnpu stays unaware of them.
+# sets up the statistics writer of the --coralnpu_stats_* flags
+# (//metrics/runtime). The simulator and metrics dependencies are confined to
+# this target so that the HAL driver in //runtime/driver:coralnpu stays unaware
+# of them.
 cc_library(
     name = "registration",
     srcs = ["driver_module.c"],
@@ -47,8 +48,8 @@ cc_library(
         "//conditions:default": [],
     }),
     deps = [
+        "//metrics/runtime:stats_flags",
         "//runtime/driver:coralnpu",
-        "//runtime/metrics:stats_writer",
         "//runtime/sim:simulation",
         "//runtime/sim:simulator_mpact",
         "@iree_core//runtime/src/iree/base",

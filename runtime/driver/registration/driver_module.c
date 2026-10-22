@@ -22,8 +22,8 @@
 
 #include "iree/base/api.h"
 #include "iree/base/tooling/flags.h"
+#include "metrics/runtime/stats_flags.h"
 #include "runtime/driver/coralnpu_driver.h"
-#include "runtime/metrics/stats_writer.h"
 #include "runtime/sim/simulator_backend.h"
 
 #if !defined(CORALNPU_STATIC_FPGA)
@@ -35,20 +35,9 @@ IREE_FLAG(string, simulator, "mpact",
           "verilator, fpga, hw). Overridden by CORALNPU_SIMULATOR unless set "
           "to another backend.");
 
-IREE_FLAG(string, coralnpu_stats_format, "none",
-          "Per-dispatch execution statistics of CoralNPU devices: none, pretty "
-          "(a table summarizing each exported function, written when the "
-          "device is released) or json (one coralnpu.stats.v1 JSON object per "
-          "dispatch, one per line). Overridden by CORALNPU_STATS_FORMAT unless "
-          "set to another format.");
-
-IREE_FLAG(string, coralnpu_stats_file, "",
-          "Output file of --coralnpu_stats_format; empty writes to stderr and "
-          "'-' writes to stdout. Output is appended to an existing file. "
-          "Overridden by CORALNPU_STATS_FILE unless set.");
-
 // Returns |flag|, or the environment variable |env_name| if it is set and
-// |flag| has its default value |default_value|.
+// |flag| has its default value |default_value|. The --coralnpu_stats_* flags
+// follow the same rule (metrics/runtime/stats_flags.c).
 static const char* iree_hal_coralnpu_flag_or_env(const char* flag,
                                                  const char* default_value,
                                                  const char* env_name) {
@@ -133,30 +122,6 @@ static iree_status_t iree_hal_coralnpu_simulator_load(
       "unknown simulator '%.*s' (expected 'mpact', 'spike', 'verilator', "
       "'fpga', or 'hw')",
       (int)name.size, name.data);
-}
-
-// Options of the statistics writer, set from the flags. Static, as the writer
-// borrows them for the lifetime of the drivers.
-static iree_hal_coralnpu_stats_writer_options_t
-    iree_hal_coralnpu_stats_writer_options;
-
-// Sets |out_observer| to a statistics writer configured by the
-// --coralnpu_stats_* flags or CORALNPU_STATS_*, unless the format is none.
-static iree_status_t iree_hal_coralnpu_stats_writer_from_flags(
-    iree_hal_coralnpu_dispatch_observer_t* out_observer) {
-  iree_hal_coralnpu_stats_writer_options_t* options =
-      &iree_hal_coralnpu_stats_writer_options;
-  IREE_RETURN_IF_ERROR(iree_hal_coralnpu_stats_format_parse(
-      iree_make_cstring_view(iree_hal_coralnpu_flag_or_env(
-          FLAG_coralnpu_stats_format, "none", "CORALNPU_STATS_FORMAT")),
-      &options->format));
-  options->file_path = iree_make_cstring_view(iree_hal_coralnpu_flag_or_env(
-      FLAG_coralnpu_stats_file, "", "CORALNPU_STATS_FILE"));
-  if (options->format == IREE_HAL_CORALNPU_STATS_FORMAT_NONE) {
-    return iree_ok_status();
-  }
-  *out_observer = iree_hal_coralnpu_stats_writer_observer(options);
-  return iree_ok_status();
 }
 
 static iree_status_t iree_hal_coralnpu_driver_factory_enumerate(

@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-#ifndef RUNTIME_METRICS_STATS_WRITER_H_
-#define RUNTIME_METRICS_STATS_WRITER_H_
+#ifndef METRICS_RUNTIME_STATS_WRITER_H_
+#define METRICS_RUNTIME_STATS_WRITER_H_
 
 #include "iree/base/api.h"
-#include "runtime/metrics/dispatch_observer.h"
+#include "runtime/driver/coralnpu_dispatch_observer.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,4 +72,4 @@ iree_hal_coralnpu_dispatch_observer_t iree_hal_coralnpu_stats_writer_observer(
 }  // extern "C"
 #endif  // __cplusplus
 
-#endif  // RUNTIME_METRICS_STATS_WRITER_H_
+#endif  // METRICS_RUNTIME_STATS_WRITER_H_

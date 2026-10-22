@@ -162,17 +162,15 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
       "simulator_backend.h"
       "simulator_elf_loader.h"
       "simulator_inline.h"
-      "simulator_stats.h"
     SRCS
       "simulator_backend.c"
       "simulator_elf_loader.c"
       "simulator_inline.c"
-      "simulator_stats.c"
     INCLUDES
       "${CMAKE_SOURCE_DIR}"
     DEPS
       coralnpu_runtime::driver::coralnpu
-      coralnpu_runtime::metrics::dispatch_stats
+      coralnpu_runtime::driver::run_hooks
       coralnpu_runtime::sim::simulator
       iree::base
       iree::base::threading

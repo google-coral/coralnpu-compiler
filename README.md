@@ -424,6 +424,8 @@ For the CMake build, configure with `-DCORALNPU_ENABLE_SPIKE=ON`, `-DCORALNPU_EN
 
 Where the flags cannot be passed (e.g. the Python bindings), set `CORALNPU_STATS_FORMAT` and `CORALNPU_STATS_FILE` instead; each applies unless its flag is set to a non-default value.
 
+The statistics code is in [`metrics/`](metrics/README.md).
+
 ### Build Python Wheels (`coralnpu_compiler` and `coralnpu_runtime`)
 To build Python wheels for the local host platform (saved under `bazel-bin/build_tools/bazel/python_packages/...`):
 

@@ -13,6 +13,7 @@ main() {
   dirs+=(compiler)
   dirs+=(compiler-tuning)
   dirs+=(examples)
+  dirs+=(metrics)
   dirs+=(pjrt_plugin)
   dirs+=(runtime)
   dirs+=(scripts)

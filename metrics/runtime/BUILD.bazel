@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Per-dispatch execution statistics: the record the execution backends
-# (//runtime/sim) collect, the observer interface through which the HAL
-# driver (//runtime/driver) passes it on, and its consumers. Depends on
-# neither the driver nor the simulators.
+# Per-dispatch execution statistics of the CoralNPU HAL driver: the record,
+# the collector that fills it through the run hooks of the execution backends
+# (//runtime/driver:run_hooks), and the writer that the driver calls as its
+# dispatch observer (//runtime/driver:dispatch_observer). Depends only on these
+# hook interfaces of the driver, not on the driver or the simulators.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -31,13 +32,14 @@ cc_library(
     hdrs = ["dispatch_stats.h"],
 )
 
-# The interface between a HAL device and the consumer of its statistics.
+# Collects the statistics of a dispatch through the run hooks.
 cc_library(
-    name = "dispatch_observer",
-    hdrs = ["dispatch_observer.h"],
+    name = "stats_collector",
+    srcs = ["stats_collector.c"],
+    hdrs = ["stats_collector.h"],
     deps = [
         ":dispatch_stats",
-        "@iree_core//runtime/src/iree/base",
+        "//runtime/driver:run_hooks",
     ],
 )
 
@@ -48,9 +50,23 @@ cc_library(
     srcs = ["stats_writer.c"],
     hdrs = ["stats_writer.h"],
     deps = [
-        ":dispatch_observer",
         ":dispatch_stats",
+        ":stats_collector",
+        "//runtime/driver:dispatch_observer",
         "@iree_core//runtime/src/iree/base",
         "@iree_core//runtime/src/iree/base/threading",
+    ],
+)
+
+# The --coralnpu_stats_* flags, which configure the statistics writer.
+cc_library(
+    name = "stats_flags",
+    srcs = ["stats_flags.c"],
+    hdrs = ["stats_flags.h"],
+    deps = [
+        ":stats_writer",
+        "//runtime/driver:dispatch_observer",
+        "@iree_core//runtime/src/iree/base",
+        "@iree_core//runtime/src/iree/base/tooling:flags",
     ],
 )

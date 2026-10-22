@@ -106,15 +106,15 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
 ## 3. Implementation & Verification Plan
 
 ### CL 2a: Move Runtime Dispatch Statistics to `metrics/runtime/` Behind Run Hooks
-- [ ] **Step 1 (`runtime/driver/*`, `runtime/sim/*`)**: Replace `out_stats`,
+- [x] **Step 1 (`runtime/driver/*`, `runtime/sim/*`)**: Replace `out_stats`,
   `runtime/metrics/dispatch_observer.h`, and `runtime/sim/simulator_stats.{c,h}`
   with `coralnpu_run_hooks.h` and `coralnpu_dispatch_observer.h`.
-- [ ] **Step 2 (`metrics/runtime/*`, `metrics/README.md`,
+- [x] **Step 2 (`metrics/runtime/*`, `metrics/README.md`,
   `runtime/driver/registration/*`, `runtime/CMakeLists.txt`,
   `build_tools/cmake/iree_runtime_plugin.cmake`, `README.md`)**: Move
   `runtime/metrics/*` to `metrics/runtime/` and wire registration via
   `stats_flags`.
-- [ ] **Tests (`metrics/tests/runtime/*`, `tests/BUILD.bazel`)**: Move
+- [x] **Tests (`metrics/tests/runtime/*`, `tests/BUILD.bazel`)**: Move
   `tests/runtime/*` to `metrics/tests/runtime/*` and verify JSON and `pretty`
   total cycles (`bazel test --config=dev //metrics/tests/runtime:ci`).
 
@@ -150,7 +150,10 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
   `docs/design/archive/metrics_runtime.md`, and run `./scripts/format-code.sh`.
 
 ### Implementation Notes & Adaptations
-- *(None yet)*
+- **CL 2a (`runtime/driver/coralnpu_device.c`)**: Validated in
+  `iree_hal_coralnpu_device_check_params` that `end_dispatch` is non-null when
+  `begin_dispatch` is provided, and passed `observed ? &hooks : NULL` to
+  `exec_backend.dispatch`.
 
 ---
 

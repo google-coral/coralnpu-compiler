@@ -24,7 +24,6 @@ iree_setup_c_src_root(
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/..")
 
 if(IREE_ENABLE_CORALNPU_DRIVER)
-  add_subdirectory(metrics)
   add_subdirectory(sim)
   add_subdirectory(driver)
 endif()

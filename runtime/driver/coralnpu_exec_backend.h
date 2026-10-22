@@ -21,7 +21,7 @@
 
 #include "iree/base/api.h"
 #include "iree/hal/local/executable_library.h"
-#include "runtime/metrics/dispatch_stats.h"
+#include "runtime/driver/coralnpu_run_hooks.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,19 +33,17 @@ extern "C" {
 typedef struct iree_hal_coralnpu_exec_backend_t {
   void *self;
   // Name of the simulator or device the backend runs dispatches on (e.g.
-  // "mpact"), reported in the statistics. Must outlive the backend.
+  // "mpact"), passed to the dispatch observer. Must outlive the backend.
   iree_string_view_t name;
-  // Issues an inline dispatch on the execution backend. |out_stats| is NULL if
-  // the caller collects no statistics, and the backend then skips its
-  // measurements. Otherwise it is zero-initialized by the caller, and the
-  // backend sets the fields it collects, also when the dispatch fails after it
-  // started running.
+  // Issues an inline dispatch on the execution backend. |hooks| is NULL if
+  // the caller does not observe the run; otherwise the backend calls them
+  // around the run of the dispatch (coralnpu_run_hooks.h).
   iree_status_t (*dispatch)(
       void *self, iree_const_byte_span_t dispatch_image,
       const iree_hal_executable_dispatch_state_v0_t *dispatch_state,
       const bool *binding_writeable, iree_host_size_t ordinal,
       iree_host_size_t local_memory_size,
-      iree_hal_coralnpu_dispatch_stats_t *out_stats);
+      const iree_hal_coralnpu_run_hooks_t *hooks);
 } iree_hal_coralnpu_exec_backend_t;
 
 #ifdef __cplusplus

@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-// The statistics of a single dispatch: collected by the execution backend
-// that runs it, passed on by the HAL driver and consumed by a dispatch
-// observer (dispatch_observer.h).
+// The statistics of a single dispatch: collected through the run hooks of the
+// execution backend that runs it (stats_collector.h) and written by the
+// statistics writer (stats_writer.h).
 
-#ifndef RUNTIME_METRICS_DISPATCH_STATS_H_
-#define RUNTIME_METRICS_DISPATCH_STATS_H_
+#ifndef METRICS_RUNTIME_DISPATCH_STATS_H_
+#define METRICS_RUNTIME_DISPATCH_STATS_H_
 
 #include <stdint.h>
 
@@ -34,8 +34,8 @@ enum iree_hal_coralnpu_dispatch_stats_field_bits_e {
   IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_CYCLES_TOTAL = 1u << 0,
 };
 
-// Statistics an execution backend reports for a single dispatch. Fields whose
-// bit is not set in |valid_fields| were not collected and must be ignored.
+// Statistics of a single dispatch. Fields whose bit is not set in
+// |valid_fields| were not collected and must be ignored.
 typedef struct iree_hal_coralnpu_dispatch_stats_t {
   // Bitfield of IREE_HAL_CORALNPU_DISPATCH_STATS_FIELD_* values.
   uint32_t valid_fields;
@@ -48,4 +48,4 @@ typedef struct iree_hal_coralnpu_dispatch_stats_t {
 }  // extern "C"
 #endif  // __cplusplus
 
-#endif  // RUNTIME_METRICS_DISPATCH_STATS_H_
+#endif  // METRICS_RUNTIME_DISPATCH_STATS_H_

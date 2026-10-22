@@ -19,8 +19,8 @@
 
 #include "iree/base/api.h"
 #include "iree/hal/api.h"
+#include "runtime/driver/coralnpu_dispatch_observer.h"
 #include "runtime/driver/coralnpu_exec_backend.h"
-#include "runtime/metrics/dispatch_observer.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,7 +35,8 @@ typedef struct iree_hal_coralnpu_device_params_t {
   // transient allocations while also increasing memory consumption.
   iree_host_size_t arena_block_size;
   // Observer of the dispatches (e.g. a statistics writer); none by default.
-  // The device collects execution statistics only when it has an observer.
+  // The device runs the dispatches with run hooks only when it has an
+  // observer.
   iree_hal_coralnpu_dispatch_observer_t dispatch_observer;
 } iree_hal_coralnpu_device_params_t;
 

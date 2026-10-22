@@ -23,8 +23,8 @@
 
 #include "iree/base/api.h"
 #include "runtime/driver/coralnpu_device.h"
+#include "runtime/driver/coralnpu_dispatch_observer.h"
 #include "runtime/driver/coralnpu_executable.h"
-#include "runtime/metrics/dispatch_observer.h"
 
 //===----------------------------------------------------------------------===//
 // iree_hal_coralnpu_command_buffer_t

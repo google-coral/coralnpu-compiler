@@ -38,7 +38,7 @@ static iree_status_t iree_hal_coralnpu_simulator_backend_dispatch_locked(
     const iree_hal_executable_dispatch_state_v0_t *dispatch_state,
     const bool *binding_writeable, iree_host_size_t ordinal,
     iree_host_size_t local_memory_size,
-    iree_hal_coralnpu_dispatch_stats_t *out_stats) {
+    const iree_hal_coralnpu_run_hooks_t *hooks) {
   static coralnpu_simulator_create_fn_t cached_factory = NULL;
   static coralnpu_simulator_t *cached_sim = NULL;
   if (reuse_sim && cached_sim && cached_factory != factory) {
@@ -60,7 +60,7 @@ static iree_status_t iree_hal_coralnpu_simulator_backend_dispatch_locked(
   }
   iree_status_t status = iree_hal_simulator_issue_dispatch_inline(
       sim, dispatch_image, dispatch_state, binding_writeable, ordinal,
-      local_memory_size, out_stats);
+      local_memory_size, hooks);
   if (reuse_sim && iree_status_is_ok(status)) return status;
   if (reuse_sim) {
     cached_factory = NULL;
@@ -71,42 +71,45 @@ static iree_status_t iree_hal_coralnpu_simulator_backend_dispatch_locked(
   return status;
 }
 
+// Acquires the simulator mutex and runs the dispatch on the simulator backend.
 static iree_status_t iree_hal_coralnpu_simulator_backend_dispatch_with_policy(
     void *self, bool reuse_sim, iree_const_byte_span_t dispatch_image,
     const iree_hal_executable_dispatch_state_v0_t *dispatch_state,
     const bool *binding_writeable, iree_host_size_t ordinal,
     iree_host_size_t local_memory_size,
-    iree_hal_coralnpu_dispatch_stats_t *out_stats) {
+    const iree_hal_coralnpu_run_hooks_t *hooks) {
   iree_call_once(&iree_hal_coralnpu_simulator_mutex_once,
                  iree_hal_coralnpu_simulator_mutex_initialize);
   iree_slim_mutex_lock(&iree_hal_coralnpu_simulator_mutex);
   iree_status_t status = iree_hal_coralnpu_simulator_backend_dispatch_locked(
       (coralnpu_simulator_create_fn_t)self, reuse_sim, dispatch_image,
-      dispatch_state, binding_writeable, ordinal, local_memory_size, out_stats);
+      dispatch_state, binding_writeable, ordinal, local_memory_size, hooks);
   iree_slim_mutex_unlock(&iree_hal_coralnpu_simulator_mutex);
   return status;
 }
 
+// Runs the dispatch on a simulator instance reused across dispatches.
 static iree_status_t iree_hal_coralnpu_simulator_backend_dispatch_reused(
     void *self, iree_const_byte_span_t dispatch_image,
     const iree_hal_executable_dispatch_state_v0_t *dispatch_state,
     const bool *binding_writeable, iree_host_size_t ordinal,
     iree_host_size_t local_memory_size,
-    iree_hal_coralnpu_dispatch_stats_t *out_stats) {
+    const iree_hal_coralnpu_run_hooks_t *hooks) {
   return iree_hal_coralnpu_simulator_backend_dispatch_with_policy(
       self, /*reuse_sim=*/true, dispatch_image, dispatch_state,
-      binding_writeable, ordinal, local_memory_size, out_stats);
+      binding_writeable, ordinal, local_memory_size, hooks);
 }
 
+// Runs the dispatch on a fresh simulator instance created for this dispatch.
 static iree_status_t iree_hal_coralnpu_simulator_backend_dispatch_fresh(
     void *self, iree_const_byte_span_t dispatch_image,
     const iree_hal_executable_dispatch_state_v0_t *dispatch_state,
     const bool *binding_writeable, iree_host_size_t ordinal,
     iree_host_size_t local_memory_size,
-    iree_hal_coralnpu_dispatch_stats_t *out_stats) {
+    const iree_hal_coralnpu_run_hooks_t *hooks) {
   return iree_hal_coralnpu_simulator_backend_dispatch_with_policy(
       self, /*reuse_sim=*/false, dispatch_image, dispatch_state,
-      binding_writeable, ordinal, local_memory_size, out_stats);
+      binding_writeable, ordinal, local_memory_size, hooks);
 }
 
 iree_hal_coralnpu_exec_backend_t iree_hal_coralnpu_simulator_backend_make(

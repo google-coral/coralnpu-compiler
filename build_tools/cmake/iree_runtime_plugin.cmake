@@ -23,3 +23,5 @@ if("coralnpu" IN_LIST IREE_EXTERNAL_HAL_DRIVERS)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../runtime coralnpu_runtime)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../metrics/runtime
+                 coralnpu_metrics_runtime)

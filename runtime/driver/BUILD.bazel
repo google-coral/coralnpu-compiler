@@ -38,8 +38,8 @@ cc_library(
         "coralnpu_executable_cache.h",
     ],
     deps = [
-        "//runtime/metrics:dispatch_observer",
-        "//runtime/metrics:dispatch_stats",
+        ":dispatch_observer",
+        ":run_hooks",
         "@iree_core//runtime/src/iree/async",
         "@iree_core//runtime/src/iree/async/util:proactor_pool",
         "@iree_core//runtime/src/iree/base",
@@ -52,5 +52,23 @@ cc_library(
         "@iree_core//runtime/src/iree/hal/utils:file_transfer",
         "@iree_core//runtime/src/iree/hal/utils:files",
         "@iree_core//runtime/src/iree/hal/utils:queue_emulation",
+    ],
+)
+
+# The hooks an execution backend calls while it runs a dispatch, through which
+# code outside the driver (e.g. //metrics/runtime) observes the run.
+cc_library(
+    name = "run_hooks",
+    hdrs = ["coralnpu_run_hooks.h"],
+)
+
+# The interface between a device and the observer of its dispatches (e.g. the
+# statistics writer in //metrics/runtime).
+cc_library(
+    name = "dispatch_observer",
+    hdrs = ["coralnpu_dispatch_observer.h"],
+    deps = [
+        ":run_hooks",
+        "@iree_core//runtime/src/iree/base",
     ],
 )

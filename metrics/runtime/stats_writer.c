@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "runtime/metrics/stats_writer.h"
+#include "metrics/runtime/stats_writer.h"
 
 #include <errno.h>
 #include <inttypes.h>
@@ -23,6 +23,8 @@
 #include <string.h>
 
 #include "iree/base/threading/mutex.h"
+#include "metrics/runtime/dispatch_stats.h"
+#include "metrics/runtime/stats_collector.h"
 
 // Writes the statistics of the dispatches of one device: the per-device
 // context of the observer. Thread-safe.
@@ -248,13 +250,12 @@ static iree_status_t iree_hal_coralnpu_stats_find_or_add_entry(
 }
 
 // Records the outcome of one dispatch: |status_code| is the code of the status
-// the dispatch returned and |dispatch_stats| what the backend reported.
+// the dispatch returned and |dispatch_stats| what the collector collected.
 static iree_status_t iree_hal_coralnpu_stats_record(
-    void *self, void *context, const iree_hal_coralnpu_dispatch_info_t *info,
+    iree_hal_coralnpu_stats_t *stats,
+    const iree_hal_coralnpu_dispatch_info_t *info,
     const iree_hal_coralnpu_dispatch_stats_t *dispatch_stats,
     iree_status_code_t status_code) {
-  (void)self;
-  iree_hal_coralnpu_stats_t *stats = (iree_hal_coralnpu_stats_t *)context;
   IREE_ASSERT_ARGUMENT(stats);
   IREE_ASSERT_ARGUMENT(info);
   IREE_ASSERT_ARGUMENT(dispatch_stats);
@@ -289,6 +290,43 @@ static iree_status_t iree_hal_coralnpu_stats_record(
   }
 
   iree_slim_mutex_unlock(&stats->mutex);
+  return status;
+}
+
+// Starts observing a dispatch: sets |out_hooks| to the hooks of a new
+// collector of its statistics, which end_dispatch records and frees.
+static iree_status_t iree_hal_coralnpu_stats_begin_dispatch(
+    void *self, void *context, const iree_hal_coralnpu_dispatch_info_t *info,
+    iree_hal_coralnpu_run_hooks_t *out_hooks) {
+  (void)self;
+  (void)info;
+  iree_hal_coralnpu_stats_t *stats = (iree_hal_coralnpu_stats_t *)context;
+  IREE_ASSERT_ARGUMENT(stats);
+  IREE_ASSERT_ARGUMENT(out_hooks);
+  iree_hal_coralnpu_stats_collector_t *collector = NULL;
+  IREE_RETURN_IF_ERROR(iree_allocator_malloc(
+      stats->host_allocator, sizeof(*collector), (void **)&collector));
+  iree_hal_coralnpu_stats_collector_initialize(collector);
+  *out_hooks = iree_hal_coralnpu_stats_collector_hooks(collector);
+  return iree_ok_status();
+}
+
+// Records the statistics that the collector of |hooks| collected for a
+// dispatch that returned a status with |status_code|, and frees the
+// collector.
+static iree_status_t iree_hal_coralnpu_stats_end_dispatch(
+    void *self, void *context, const iree_hal_coralnpu_dispatch_info_t *info,
+    const iree_hal_coralnpu_run_hooks_t *hooks,
+    iree_status_code_t status_code) {
+  (void)self;
+  iree_hal_coralnpu_stats_t *stats = (iree_hal_coralnpu_stats_t *)context;
+  IREE_ASSERT_ARGUMENT(stats);
+  IREE_ASSERT_ARGUMENT(hooks);
+  iree_hal_coralnpu_stats_collector_t *collector =
+      (iree_hal_coralnpu_stats_collector_t *)hooks->self;
+  iree_status_t status = iree_hal_coralnpu_stats_record(
+      stats, info, &collector->stats, status_code);
+  iree_allocator_free(stats->host_allocator, collector);
   return status;
 }
 
@@ -383,7 +421,8 @@ iree_hal_coralnpu_dispatch_observer_t iree_hal_coralnpu_stats_writer_observer(
       .self = (void *)options,
       .create = iree_hal_coralnpu_stats_create,
       .destroy = iree_hal_coralnpu_stats_destroy,
-      .on_dispatch = iree_hal_coralnpu_stats_record,
+      .begin_dispatch = iree_hal_coralnpu_stats_begin_dispatch,
+      .end_dispatch = iree_hal_coralnpu_stats_end_dispatch,
   };
   return observer;
 }

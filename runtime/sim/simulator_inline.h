@@ -21,7 +21,7 @@
 
 #include "iree/base/api.h"
 #include "iree/hal/local/executable_library.h"
-#include "runtime/metrics/dispatch_stats.h"
+#include "runtime/driver/coralnpu_run_hooks.h"
 #include "runtime/sim/simulator_api.h"
 
 #ifdef __cplusplus
@@ -31,15 +31,14 @@ extern "C" {
 // Runs export |ordinal| of |dispatch_image| on |sim|. |binding_writeable| has
 // one entry per binding. If |local_memory_size| is not 0, the workgroup local
 // memory of that size is allocated in the firmware heap (in DTCM) and zeroed,
-// and the dispatch request gives its address and size to the firmware. Fills
-// in the fields of |out_stats| (which must be zero-initialized) that the
-// simulator reports; a NULL |out_stats| skips the measurements.
+// and the dispatch request gives its address and size to the firmware. Calls
+// |hooks|, unless it is NULL, around the run of the program.
 iree_status_t iree_hal_simulator_issue_dispatch_inline(
     coralnpu_simulator_t *sim, iree_const_byte_span_t dispatch_image,
     const iree_hal_executable_dispatch_state_v0_t *dispatch_state,
     const bool *binding_writeable, iree_host_size_t ordinal,
     iree_host_size_t local_memory_size,
-    iree_hal_coralnpu_dispatch_stats_t *out_stats);
+    const iree_hal_coralnpu_run_hooks_t *hooks);
 
 // Drops cached state for |sim| before it is destroyed.
 void iree_hal_simulator_inline_forget(coralnpu_simulator_t *sim);
