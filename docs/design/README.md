@@ -6,11 +6,26 @@ enablements, third-party patches, or changes larger than ~150 LOC), the project
 uses a **Two-CL Spec-Driven Development (SDD)** workflow supported by the
 `/design-doc` and `/implement-design` agent skills.
 
-The separation between a context-rich design session and isolated, zero-history
-audit subagents is inspired by Dave Rensin's paper, *Elephants, Goldfish, and
-the New Golden Age of Software Engineering*
-([Google Research](https://research.google/pubs/elephants-goldfish-and-the-new-golden-age-of-software-engineering/)
-| [Medium](https://drensin.medium.com/elephants-goldfish-and-the-new-golden-age-of-software-engineering-c33641a48874)).
+The workflow and authoring/audit standards in
+[`.agents/skills/design-doc/references/standards.md`](../../.agents/skills/design-doc/references/standards.md)
+and
+[`.agents/skills/implement-design/references/standards.md`](../../.agents/skills/implement-design/references/standards.md)
+build on three engineering and AI skill sources:
+- **Elephants & Goldfish Model (`go/egm-plugin`)**: Dave Rensin's paper,
+  *Elephants, Goldfish, and the New Golden Age of Software Engineering*
+  (`go/design-is-the-new-code` |
+  [Google Research](https://research.google/pubs/elephants-goldfish-and-the-new-golden-age-of-software-engineering/)
+  |
+  [Medium](https://drensin.medium.com/elephants-goldfish-and-the-new-golden-age-of-software-engineering-c33641a48874))
+  — separating context-rich design sessions from isolated zero-history audit
+  subagents, blind comprehension checks, the Zoom-Out Standard
+  (`go/egm:standard:zoom-out`), and anti-sycophancy protocols.
+- **Design Doc Readability (`go/writing-a-design-doc`, `go/tott/773`,
+  `go/bluedoc`, `go/contracts`)**: Strict objective isolation, the rational
+  decision formula, design by contract, and falsifiable language.
+- **Natural-Language-First Technical Writing (`go/speak-like-tl`,
+  `go/good-design-docs`, `go/how-to-write-a-design-document`)**: Explaining
+  system flows in plain natural language first without code-symbol dumping.
 
 ---
 
@@ -43,13 +58,16 @@ Each change document in `docs/design/changes/<change>.md` has three parts (see
 [changes/TEMPLATE.md](changes/TEMPLATE.md)):
 
 1. **Part 1 — Design Specification**:
-   - Problem statement, explicit Goals, and Non-Goals (including related
-     Buganizer issues left out of scope).
-   - Background (linking to `<component>.md`) and hardware/IR invariants
-     (DTCM/ITCM limits, 32 vector registers, zero register spills).
-   - Alternatives considered (with pros, cons, and estimated LOC delta).
-   - Detailed technical design (pipeline diagrams, C++ signatures or TableGen
-     definitions, and before/after MLIR IR examples) and verification plan.
+   - Problem statement (isolated from the implementation mechanism), explicit
+     Goals, and Non-Goals with 1-line reasons.
+   - Plain-language background (linking to `<component>.md`) and preserved
+     system/hardware invariants.
+   - Alternatives considered (non-strawman options with pros, cons, estimated
+     LOC delta, the 3-part rational decision formula, and reconsideration
+     triggers).
+   - Detailed technical design (steady-state flow, imposed preconditions and
+     offered postconditions, signatures, representative examples, and edge
+     cases/fallbacks) and positive + negative/fallback verification plan.
 2. **Part 2 — Implementation Plan**:
    - Expected affected files.
    - Ordered `- [ ]` implementation tasks for the `code` step (grouped into
@@ -134,14 +152,16 @@ After you have reviewed the draft, invoke `audit`:
 /design-doc audit
 ```
 - Spawns a fresh subagent with **zero chat history** that reads only
-  `docs/design/changes/<change>.md`, `.agents/AGENTS.md`, and any repository
-  files explicitly referenced in `<change>.md`.
+  `docs/design/changes/<change>.md`,
+  `.agents/skills/design-doc/references/standards.md`, `.agents/AGENTS.md`, and
+  any repository files explicitly referenced in `<change>.md`.
 - **Focused Document Audit vs. Broad Design Critique**:
   - `/design-doc audit` intentionally gives the isolated subagent a **narrow
-    view** (only `<change>.md`, `.agents/AGENTS.md`, and the files explicitly
-    referenced in `<change>.md`). Its purpose is to verify that `<change>.md`
-    is self-contained for a zero-context reader and that its cited files,
-    symbols, and tasks are accurate.
+    view** (only `<change>.md`,
+    `.agents/skills/design-doc/references/standards.md`, `.agents/AGENTS.md`,
+    and the files explicitly referenced in `<change>.md`). Its purpose is to
+    verify that `<change>.md` is self-contained for a zero-context reader and
+    that its cited files, symbols, contracts, and tasks are accurate.
   - It does **not** perform an open-ended critique across the rest of the
     repository. If you want a broad architectural review or want the agent to
     search the wider codebase for better hooks, uncited callers, or simpler
@@ -199,22 +219,26 @@ In a fresh session (with your CL 2 branch checked out), run:
 #### 2. `audit` — Isolated Code, Style & Spec-Drift Audit
 Before or during your local code review, you can run a stateless code audit:
 ```text
-/implement-design audit
+/implement-design audit [<change>]
 ```
 - Spawns a fresh subagent (with no chat history and a narrow view) that
-  inspects `git diff`, `<change>.md`, `.agents/AGENTS.md`, and any referenced
-  files to produce a 1-paragraph summary of what `git diff` actually implements
-  and check:
-  1. **Spec-to-Code Drift**: Any undocumented behavior or unimplemented design
-     requirements. Read the subagent's summary to verify that the implemented
-     behavior matches the specification's intent.
-  2. **Correctness, Edge Cases & Test Integrity**: Logic flaws, sub-byte bit
-     math, fallback remarks, register/DTCM/ITCM invariants, and verification
-     that tests genuinely exercise the new code path without weakening existing
-     `CHECK` assertions.
-  3. **Code Style & Comment Density**: Header comments on declarations,
-     *why*-comments on non-obvious `if`/`for` blocks, early guard clauses, and
-     MLIR interfaces over op lists.
+  inspects the current working-tree diff (`git diff`), `<change>.md`,
+  `.agents/skills/implement-design/references/standards.md`,
+  `.agents/AGENTS.md`, and any referenced files to produce a 1-paragraph summary
+  of what the diff actually implements and check:
+  1. **4-Way Bidirectional Spec-to-Code Drift**: Specified but missing/shortcut
+     requirements (including completed tasks in **Section 2.2** still left
+     unchecked `- [ ]`), implemented behavior that diverges from `<change>.md`
+     (or adaptations missing from **Section 2.3**), undocumented observable
+     scope creep (vs. internal refactor invariance), and symbol/terminology
+     drift. Read the subagent's summary to verify that the implemented behavior
+     matches the specification's intent.
+  2. **Contract-Derived Test Coverage & Correctness**: Positive tests for every
+     **Offered Postcondition**, negative/fallback tests for every **Imposed
+     Precondition**, logic/boundary/resource safety, and anti-test-hacking
+     compliance.
+  3. **Code Style & Documentation Compliance**: Compliance with all build,
+     C/C++, MLIR/LLVM, and comment-density rules in `.agents/AGENTS.md`.
 - Reports verified numbered findings without modifying files automatically.
   (For a broader code review across the rest of the repository, ask the main
   agent in your current session to double-check itself.)

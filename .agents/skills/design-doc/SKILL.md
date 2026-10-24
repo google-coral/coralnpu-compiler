@@ -17,47 +17,39 @@ Use this skill during **CL 1** of the project CL workflow to draft, audit, or
 revise a change design document in `./docs/design/changes/<change>.md`.
 
 > [!IMPORTANT]
-> **Design Phase & Git Boundary**:
-> - During CL 1, do NOT implement production code changes. Only create or edit
->   `./docs/design/changes/<change>.md` (and optional header, `.td`, or test
->   stubs if explicitly requested by the developer). Keep all tasks in
->   **Part 2** unchecked (`- [ ]`).
-> - Operate directly on the current Git worktree. Do NOT switch branches,
->   create Git commits, or push to Gerrit unless explicitly asked by the
->   developer.
+> **Standards, Rules & Design-Phase Boundary**:
+> - Read and apply
+>   [`references/standards.md`](references/standards.md)
+>   and [`../../AGENTS.md`](../../AGENTS.md) across all steps.
+> - During CL 1, do **not** implement production code changes: only create or
+>   edit `./docs/design/changes/<change>.md` (and optional interface/test stubs
+>   if explicitly requested), keeping all **Part 2** tasks unchecked (`- [ ]`).
 
 ---
 
 ## Resolving `<change>` (No Full Path Required)
 
-The developer never needs to type the full path `./docs/design/changes/...`:
-- **Short Name**: If the developer passes `<change>` or `<change>.md` (for
-  example, `zvt_conv_igemm`), resolve it to
-  `./docs/design/changes/<change>.md`.
+- **Short Name**: Resolve `<change>` or `<change>.md` (e.g., `zvt_conv_igemm`)
+  to `./docs/design/changes/<change>.md`.
 - **Omitted Name**:
-  - During `draft`: derive a concise `snake_case` name `<change>` from the
-    feature description or bug title.
-  - During `audit` or `revise`: list `./docs/design/changes/*.md` (excluding
-    `TEMPLATE.md`). If only one active change doc exists, use it automatically.
-    If multiple exist, check `git status` for the modified doc or ask the
-    developer which one to target.
+  - `draft`: Derive a concise `snake_case` name from the feature description or
+    bug title.
+  - `audit` / `revise`: List `./docs/design/changes/*.md` (excluding
+    `TEMPLATE.md`). Use the sole active doc automatically, or check `git status`
+    / ask the developer if multiple exist.
 
 ---
 
 ## Named Steps
 
-Invoke `/design-doc` with a descriptive step name:
+| Invocation                         | When to Use                                                                                         |
+| :--------------------------------- | :-------------------------------------------------------------------------------------------------- |
+| `/design-doc draft [<change>] ...` | Co-design with the developer, author `changes/<change>.md`, and stop for developer review.          |
+| `/design-doc audit [<change>]`     | Spawn an isolated narrow-view subagent with no chat history (run **only after** review; repeatable).|
+| `/design-doc revise [<change>] ...`| Update the doc from inline `A:` notes or Gerrit reviewer comments.                                  |
 
-| Invocation                          | When to Use                                                                                         |
-| :---------------------------------- | :-------------------------------------------------------------------------------------------------- |
-| `/design-doc draft [<change>] ...`  | Co-design with the developer, author `changes/<change>.md`, and stop for developer review.          |
-| `/design-doc audit [<change>]`      | Spawn an isolated narrow-view subagent with no chat history (run **only after** review; repeatable).|
-| `/design-doc revise [<change>] ...` | Update the doc from inline `A:` notes or Gerrit reviewer comments.                                  |
-
-If the developer invokes `/design-doc` without a step keyword, infer the step
-from their prompt (for example, a new feature description runs `draft`; asking
-to check `A:` comments or reviewer feedback runs `revise`), but **never** run
-`audit` automatically during `draft`.
+If invoked without a step keyword, infer `draft` or `revise` from the prompt,
+but **never** run `audit` automatically during `draft`.
 
 ---
 
@@ -65,149 +57,62 @@ to check `A:` comments or reviewer feedback runs `revise`), but **never** run
 
 1. **Identify `<change>` and Related Living Component Doc(s)**:
    - Resolve `./docs/design/changes/<change>.md`.
-   - Read `./docs/design/INDEX.md` first to locate which living component
-     doc(s) in `./docs/design/<component>.md` (such as `matrix_codegen.md` or
-     `tiling_levels_explained.md`) this change affects, and read those component
-     docs before scanning raw source files.
-
+   - Read `./docs/design/INDEX.md` and the relevant
+     `./docs/design/<component>.md` living docs before scanning source files.
 2. **Query Buganizer Component `564546727` (Read-Only)**:
-   - If `/google/bin/releases/issues-cli/issues` is available, run it with
-     `BypassSandbox: true` (per Google CLI auth rules):
-     - If the developer provides `b/<id>`, read the issue and its comments:
-       ```bash
-       /google/bin/releases/issues-cli/issues readonly render <id>
-       /google/bin/releases/issues-cli/issues readonly list-updates <id>
-       ```
-     - Search for up to 5 related open issues in component `564546727`:
-       ```bash
-       /google/bin/releases/issues-cli/issues readonly search \
-         "componentid:564546727 status:open <keywords>" --limit 5
-       ```
-     - Briefly highlight any closely related open bugs so the developer can
-       decide whether to include them in **Goals**, **Non-Goals**, or **Part 3:
-       Follow-Up Items**.
-   - If `/google/bin/releases/issues-cli/issues` does not exist on the machine,
-     skip the query and add a note in `./docs/design/changes/<change>.md`
-     (under `- **Bug(s)**:` or **Section 1.1: Non-Goals**) stating that
-     existing Buganizer issues were not searched.
-
-3. **Context Verification, Assumption Check & Scope Right-Sizing**:
-   - Inspect the relevant files in `compiler/`, `runtime/`, `crt/`,
-     `pjrt_plugin/`, or `tests/` to ground the design in existing classes,
-     MLIR passes, and IREE hooks.
-   - Unless the developer explicitly asks you to write the full `<change>.md`
-     file immediately in one shot, **pause before generating the full
-     document** and present a concise alignment check:
-     1. **Baseline Understanding**: Summarize the current code flow and
-        hardware/IR constraints so the developer can correct any
-        misunderstandings early.
-     2. **Challenge Assumptions**: Do not passively agree with suboptimal
-        assumptions. Push back on unhandled edge cases, register/DTCM/ITCM
-        pressure, or third-party patch bloat, and propose 2–3 concrete design
-        options (including simpler upstream IREE/MLIR alternatives) with
-        trade-offs.
-     3. **Scope Right-Sizing & CL Splitting**: If the requested change is large
-        (for example, >300–400 LOC or spanning multiple independent ops,
-        passes, or components), proactively propose one of two ways to keep CLs
-        small and reviewable:
-        - **Option A — Tighten the Spec & Defer Follow-Ups (Preferred)**:
-          Narrow the current design doc to a minimal, end-to-end vertical
-          slice, and place the remaining slices of the original requirement
-          into **Part 3: Follow-Up Items** so they are reviewed in Gerrit and
-          filed in Buganizer (`564546727`) for subsequent design cycles.
-        - **Option B — Multi-CL Implementation Plan (`CL 2a`, `CL 2b`, ...)**:
-          If the whole architecture must be designed and reviewed together in
-          CL 1, structure **Section 2.2 (Implementation Tasks)** into separate,
-          independently testable implementation CLs (`CL 2a`, `CL 2b`, ...).
-     4. **Clarifying Questions**: Ask any remaining scope or design questions.
-
+   - Follow the Buganizer `564546727` CLI convention in
+     [`../../AGENTS.md`](../../AGENTS.md) to read any cited `b/<id>` and search
+     for up to 5 related open issues, highlighting candidates for **Goals**,
+     **Non-Goals**, or **Part 3: Follow-Up Items**.
+3. **Alignment Check & Scope Right-Sizing**:
+   - Inspect relevant files and search (`code_search`) for reusable utilities.
+   - Follow **Section 1.2 (Pre-Draft Alignment Check & Scope Right-Sizing)** of
+     [`references/standards.md`](references/standards.md)
+     to align with the developer before generating the full document.
 4. **Write `./docs/design/changes/<change>.md` and Stop for Review**:
-   - Once the approach is aligned, copy the structure from
-     `./docs/design/changes/TEMPLATE.md` and populate **Part 1 (Design
-     Specification)**, **Part 2 (Implementation Plan)**, and **Part 3
-     (Follow-Up Items)** following `./.agents/AGENTS.md` and Google Markdown
-     style guidelines (active voice, concise prose wrapped at 80 columns, and
-     space-aligned single-line-per-row tables).
-   - **Do NOT spawn the audit subagent yet.** Present the drafted file link to
-     the developer so they can review it and add inline `A:` comments first.
+   - Copy `./docs/design/changes/TEMPLATE.md` and populate **Parts 1–3**
+     following **Sections 2–3** of
+     [`references/standards.md`](references/standards.md)
+     and [`../../AGENTS.md`](../../AGENTS.md).
+   - **Do NOT spawn the audit subagent yet.** Present the file link so the
+     developer can review and add inline `A:` comments first.
 
 ---
 
 ## Step 2: `audit` — Run the Isolated Narrow-View Audit Subagent
 
-Run this step **only when explicitly requested** after the developer has
-reviewed the draft. This step performs a focused, **narrow-view** audit of
-`<change>.md` and its cited files (for a broader critique across the rest of the
-codebase, the developer can ask the main agent in the current session to
-double-check itself). This step can be invoked **multiple times** across the
-life of the design doc; each invocation spawns a fresh, stateless subagent.
+Run this step **only when explicitly requested** after developer review (for a
+broad critique across the wider codebase, the developer can ask the main agent
+in the current session). This step is repeatable; each call spawns a fresh,
+stateless subagent.
 
 1. **Spawn an Isolated Subagent (No Chat History, Narrow View)**:
-   - Use your agent environment's subagent tool to launch a fresh, isolated
-     subagent in a new conversation context with **zero chat history** so it
-     cannot rely on unstated assumptions from earlier turns (if your agent does
-     not support spawning isolated subagents, inform the developer so they can
-     invoke `/design-doc audit` in a separate fresh session).
+   - Launch a fresh subagent with **zero chat history** (or ask the developer to
+     run `/design-doc audit` in a separate session if subagents are
+     unavailable).
    - Instruct the subagent to read **only**:
      - `./docs/design/changes/<change>.md`
+     - `./.agents/skills/design-doc/references/standards.md`
      - `./.agents/AGENTS.md`
-     - Any repository files explicitly referenced in `<change>.md` (such as
-       living component docs in `./docs/design/<component>.md`, source files,
-       build files, or tests)
-   - Instruct the subagent to perform a read-only audit (it must **not** edit
-     `<change>.md`) covering three sections:
-     1. **Blind Comprehension Summary ("Explain It Back")**: In 1 short
-        paragraph, explain in its own words how the current system works and
-        what the proposed change does, based *strictly* on what is written in
-        `<change>.md`. Flag any place where it had to guess unstated context.
-     2. **Critical Design & Referenced-File Audit**: Actively test the design
-        for weaknesses:
-        - Do all file paths, C++ symbols, MLIR ops, passes, and Bazel targets
-          referenced in `<change>.md` actually exist at `HEAD`?
-        - Are there unhandled edge cases, fallback gaps, pass-ordering bugs, or
-          DTCM/ITCM/register-spill risks?
-        - Does the design violate `./.agents/AGENTS.md` (such as unnecessary
-          third-party patches, hardcoded op lists instead of MLIR interfaces,
-          sub-byte truncation, or long verbatim C++ bodies in Markdown)?
-     3. **Scope & 1-Pass Implementation Readiness**:
-        - Does **Part 2** specify every affected file, signature, task order,
-          and verification command needed to implement the change without
-          guessing?
-        - Is the change too large for a single implementation CL? If so,
-          recommend either tightening the spec (moving later slices to
-          **Part 3: Follow-Up Items**) or splitting **Section 2.2** into
-          staged implementation CLs (`CL 2a`, `CL 2b`, ...).
-
-2. **Verify Audit Findings Against the Codebase (No Automatic Edits)**:
-   - Do **not** automatically modify `./docs/design/changes/<change>.md` when
-     the audit subagent finishes.
-   - **Fact-Check the Subagent**: Before reporting to the developer, verify the
-     subagent's objections against the actual codebase:
-     - Check if the **Blind Comprehension Summary** misunderstood any part of
-       the design (which indicates `<change>.md` is missing context).
-     - Label each finding (`#1`, `#2`, ...) as **[Verified]** or
-       **[Refuted by `<file>:<line>`]** (if the subagent missed an existing
-       guarantee in the codebase; for refuted points, suggest whether to
-       clarify `<change>.md` or note the rebuttal under *Alternatives
-       Considered*).
-   - Present the **Blind Comprehension Summary** prominently at the top of your
-     response (so the developer can read it to verify that a zero-context
-     reader's understanding matches their actual intent), followed by the
-     verified findings list, and wait for their confirmation on which findings
-     to apply.
+     - Any repository files explicitly referenced in `<change>.md`
+   - Instruct it to perform a read-only audit (without editing files) using
+     **Section 4.1** of
+     [`references/standards.md`](references/standards.md).
+2. **Fact-Check & Report Findings (No Automatic Edits)**:
+   - Follow **Section 4.2 (Main-Agent Fact-Checking Protocol)** of
+     [`references/standards.md`](references/standards.md).
 
 ---
 
 ## Step 3: `revise` — Address Developer `A:` Comments or Gerrit Feedback
 
-1. **Inline `A:` Comments**:
-   - Read `./docs/design/changes/<change>.md`, locate all lines starting with
-     `A:`, apply the requested changes, and remove the resolved `A:` lines.
-2. **Gerrit Reviewer Feedback**:
-   - Update `./docs/design/changes/<change>.md` to address the reviewer
-     comments provided by the developer.
-   - Move any valid but out-of-scope reviewer ideas into **Part 3: Follow-Up
-     Items** so they are preserved and visible in the next Gerrit patchset.
-3. **Transition to CL 2**:
-   - Once CL 1 receives `+2` in Gerrit, remind the developer to start a
-     **fresh session** and invoke `/implement-design code <change>`.
+1. **Contradiction Gate & Edits**:
+   - Check for contradictions first per **Section 1.3** of
+     [`references/standards.md`](references/standards.md).
+   - Apply inline `A:` notes (removing resolved `A:` lines) or Gerrit reviewer
+     feedback in `./docs/design/changes/<change>.md` following
+     [`references/standards.md`](references/standards.md),
+     moving valid out-of-scope reviewer ideas to **Part 3: Follow-Up Items**.
+2. **Transition to CL 2**:
+   - Once CL 1 receives `+2` in Gerrit, remind the developer to start a **fresh
+     session** and invoke `/implement-design code <change>`.

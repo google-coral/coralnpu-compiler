@@ -25,7 +25,15 @@
 
 ## Agent Governance & Test Integrity
 - The agent must never change agent rules without explicit authorization.
-- Do not change tests without explicit authorization, especially don't tag tests manual without explicit authorization.
+- Never bypass failing tests by tagging them `manual`, disabling test cases, or
+  weakening existing `CHECK` assertions/tolerances without explicit
+  authorization; tests must genuinely exercise the target code path.
+- Operate directly on the current Git worktree; never create or switch Git
+  branches, create commits, or push to Gerrit unless explicitly requested.
+- Default to stress-testing assumptions: lead with risks, unhandled edge cases,
+  and simpler codebase/upstream alternatives, and avoid validating flattery. If
+  a request contradicts an earlier goal or project invariant, point out the
+  contradiction before editing files.
 
 ## Temporary Files
 - All temporary files (scratch files, scripts, temporary outputs, logs, output
@@ -39,14 +47,15 @@
 - For non-trivial changes (new passes, operation enablements, third-party
   patches, or changes >150 LOC), suggest following the two-CL Spec-Driven
   Development workflow using the `/design-doc` and `/implement-design` skills
-  (see `./docs/design/README.md` for full details):
+  (see `./docs/design/README.md`,
+  `./.agents/skills/design-doc/references/standards.md`, and
+  `./.agents/skills/implement-design/references/standards.md` for full details):
   1. **CL 1 (Design CL — `/design-doc`)**:
      - `/design-doc draft [<change>]`: Verify codebase context, challenge
        assumptions, right-size scope (tightening the spec and moving deferred
        slices to **Part 3: Follow-Up Items**, or splitting tasks into staged
-       `CL 2a`, `CL 2b`, ...), author `./docs/design/changes/<change>.md`
-       (based on `./docs/design/changes/TEMPLATE.md`), and stop for developer
-       review.
+       `CL 2a`, `CL 2b`, ...), author `./docs/design/changes/<change>.md` (based
+       on `./docs/design/changes/TEMPLATE.md`), and stop for developer review.
      - `/design-doc audit [<change>]`: After developer review, spawn a
        repeatable isolated subagent (with no chat history and a narrow view of
        `<change>.md` and its referenced files) for blind comprehension and
@@ -73,6 +82,18 @@
      - `/implement-design file-followups [<change>]`: After CL 2 receives `+2`
        in Gerrit, file reviewer-approved Part 3 follow-ups into Buganizer under
        component `564546727` (with explicit user authorization).
+- **Buganizer Component `564546727` (`issues` CLI)**:
+  - When `/google/bin/releases/issues-cli/issues` is available, run it with
+    `BypassSandbox: true`: use `issues readonly render <id>`,
+    `issues readonly list-updates <id>`, and
+    `issues readonly search "componentid:564546727 status:open <keywords>" --limit 5`
+    for read-only lookups, and require explicit user authorization before
+    creating tickets via
+    `issues mutate create --component_id=564546727 --title="<title>" --priority=<P1|P2|P3> --type=BUG --description_file=./agent-temp/.bug_desc.md`.
+  - If `/google/bin/releases/issues-cli/issues` does not exist on the machine,
+    skip the CLI commands and either note in `<change>.md` that Buganizer was
+    not searched (`draft`) or present the suggested tickets for manual filing
+    (`file-followups`).
 - **Documentation Tiers in `./docs/design/`**:
   - `./docs/design/INDEX.md`: Map of living component docs to source paths and
     passes.
