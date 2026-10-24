@@ -91,7 +91,7 @@ Each change document in `docs/design/changes/<change>.md` has three parts (see
                         CL 1: DESIGN CL (`/design-doc`)
 ===============================================================================
   1. `/design-doc draft`     -> Co-design (verify context, challenge
-          │                     assumptions, right-size scope) -> Write
+     (or `draft-from-commits`)  assumptions, right-size scope) -> Write
           │                     `changes/<change>.md` (Developer reviews)
           ▼
   2. `/design-doc audit`     -> Spawn isolated narrow-view subagent (no chat
@@ -145,6 +145,28 @@ implicit GEMM (b/123456789).
     requirement into **Part 3: Follow-Up Items**) or splitting **Section 2.2**
     into staged implementation CLs (`CL 2a`, `CL 2b`, ...).
 - **Stops for your review** before running the audit subagent.
+
+**Drafting from Existing Commits (`draft-from-commits`)**:
+```text
+/design-doc draft-from-commits HEAD~2..HEAD zvt_conv_igemm
+```
+- When you already have an implementation commit or range of commits
+  (`<commits>`, defaulting to `HEAD`), `draft-from-commits` inspects the
+  commits and their pre-change baseline (`<base_sha>`), asks during the
+  alignment check whether a commit range should be kept in a single design doc
+  or split into multiple `<change_i>.md` docs, and authors each
+  `changes/<change>.md` so it reads as if written **before** the code.
+- Records `<base_sha>..<tip_sha>` in `./agent-temp/<change>.commit` so
+  `/design-doc audit` automatically runs the isolated audit subagent inside a
+  unique temporary `<base_sha>` snapshot directory
+  (`./agent-temp/audit-snapshot-<change>-XXXXXX/`) without seeing the commits'
+  changes or colliding with concurrent audits.
+- Once `<change>.md` passes `/design-doc audit`, commit `<change>.md` on
+  `<base_sha>`, **rebase your implementation commit(s) on top of the CL 1
+  design doc commit**, and push CL 1 to Gerrit. After CL 1 receives `+2`,
+  check out the rebased implementation commit(s) (CL 2), start a fresh session,
+  and run `/implement-design audit <change>` directly (skipping
+  `/implement-design code`).
 
 #### 2. `audit` — Run the Isolated Narrow-View Audit Subagent
 After you have reviewed the draft, invoke `audit`:
@@ -219,10 +241,11 @@ In a fresh session (with your CL 2 branch checked out), run:
 #### 2. `audit` — Isolated Code, Style & Spec-Drift Audit
 Before or during your local code review, you can run a stateless code audit:
 ```text
-/implement-design audit [<change>]
+/implement-design audit [<change>] [<commits>]
 ```
 - Spawns a fresh subagent (with no chat history and a narrow view) that
-  inspects the current working-tree diff (`git diff`), `<change>.md`,
+  inspects the implementation diff (working-tree edits or committed code on top
+  of the CL 1 design doc commit), `<change>.md`,
   `.agents/skills/implement-design/references/standards.md`,
   `.agents/AGENTS.md`, and any referenced files to produce a 1-paragraph summary
   of what the diff actually implements and check:

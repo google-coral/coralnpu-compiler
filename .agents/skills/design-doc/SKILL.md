@@ -3,12 +3,13 @@ name: design-doc
 description: >-
   Authors, audits, and refines change design documents in
   ./docs/design/changes/<change>.md (CL 1 of the project CL workflow).
-  Supports three named steps: `draft` (query Buganizer 564546727, verify
+  Supports four named steps: `draft` (query Buganizer 564546727, verify
   codebase understanding, challenge assumptions, right-size scope, and draft
-  the design doc), `audit` (spawn a repeatable isolated narrow-view subagent
-  with no chat history for blind comprehension and specification verification),
-  and `revise` (update the design doc from inline A: comments or Gerrit
-  feedback).
+  the design doc), `draft-from-commits` (author pre-code design doc(s) from an
+  existing commit or commit range), `audit` (spawn a repeatable isolated
+  narrow-view subagent with no chat history for blind comprehension and
+  specification verification), and `revise` (update the design doc from inline
+  A: comments or Gerrit feedback).
 ---
 
 # Change Design Document Workflow (`/design-doc`)
@@ -32,8 +33,8 @@ revise a change design document in `./docs/design/changes/<change>.md`.
 - **Short Name**: Resolve `<change>` or `<change>.md` (e.g., `zvt_conv_igemm`)
   to `./docs/design/changes/<change>.md`.
 - **Omitted Name**:
-  - `draft`: Derive a concise `snake_case` name from the feature description or
-    bug title.
+  - `draft` / `draft-from-commits`: Derive a concise `snake_case` name from the
+    feature description, bug title, or commit subject(s).
   - `audit` / `revise`: List `./docs/design/changes/*.md` (excluding
     `TEMPLATE.md`). Use the sole active doc automatically, or check `git status`
     / ask the developer if multiple exist.
@@ -42,18 +43,25 @@ revise a change design document in `./docs/design/changes/<change>.md`.
 
 ## Named Steps
 
-| Invocation                         | When to Use                                                                                         |
-| :--------------------------------- | :-------------------------------------------------------------------------------------------------- |
-| `/design-doc draft [<change>] ...` | Co-design with the developer, author `changes/<change>.md`, and stop for developer review.          |
-| `/design-doc audit [<change>]`     | Spawn an isolated narrow-view subagent with no chat history (run **only after** review; repeatable).|
-| `/design-doc revise [<change>] ...`| Update the doc from inline `A:` notes or Gerrit reviewer comments.                                  |
+| Invocation                                                  | When to Use                                                                                         |
+| :---------------------------------------------------------- | :-------------------------------------------------------------------------------------------------- |
+| `/design-doc draft [<change>] ...`                          | Co-design with the developer, author `changes/<change>.md`, and stop for developer review.          |
+| `/design-doc draft-from-commits [<commits>] [<change>] ...` | Author pre-code `changes/<change>.md` doc(s) from an existing commit or commit range (`<commits>`). |
+| `/design-doc audit [<change>]`                              | Spawn an isolated narrow-view subagent with no chat history (run **only after** review; repeatable).|
+| `/design-doc revise [<change>] ...`                         | Update the doc from inline `A:` notes or Gerrit reviewer comments.                                  |
 
-If invoked without a step keyword, infer `draft` or `revise` from the prompt,
-but **never** run `audit` automatically during `draft`.
+If invoked without a step keyword, infer `draft`, `draft-from-commits`, or
+`revise` from the prompt, but **never** run `audit` automatically during
+`draft` or `draft-from-commits`.
 
 ---
 
-## Step 1: `draft` — Co-Design & Author the Initial Design Document
+## Step 1: `draft` (and `draft-from-commits`) — Co-Design & Author the Initial Design Document
+
+> [!NOTE]
+> **When Running `draft-from-commits`**: Read and apply
+> [`references/draft-from-commits.md`](references/draft-from-commits.md) on top
+> of the steps below.
 
 1. **Identify `<change>` and Related Living Component Doc(s)**:
    - Resolve `./docs/design/changes/<change>.md`.
@@ -86,6 +94,12 @@ broad critique across the wider codebase, the developer can ask the main agent
 in the current session). This step is repeatable; each call spawns a fresh,
 stateless subagent.
 
+> [!IMPORTANT]
+> **Commit-Sourced Design Docs (`./agent-temp/<change>.commit`)**: If
+> `./agent-temp/<change>.commit` exists, follow **Section 3** of
+> [`references/draft-from-commits.md`](references/draft-from-commits.md) so the
+> subagent runs inside an isolated `<base_sha>` snapshot directory.
+
 1. **Spawn an Isolated Subagent (No Chat History, Narrow View)**:
    - Launch a fresh subagent with **zero chat history** (or ask the developer to
      run `/design-doc audit` in a separate session if subagents are
@@ -114,5 +128,7 @@ stateless subagent.
      [`references/standards.md`](references/standards.md),
      moving valid out-of-scope reviewer ideas to **Part 3: Follow-Up Items**.
 2. **Transition to CL 2**:
-   - Once CL 1 receives `+2` in Gerrit, remind the developer to start a **fresh
-     session** and invoke `/implement-design code <change>`.
+   - If `./agent-temp/<change>.commit` exists, follow **Section 4** of
+     [`references/draft-from-commits.md`](references/draft-from-commits.md).
+   - Otherwise, once CL 1 receives `+2` in Gerrit, remind the developer to start
+     a **fresh session** and invoke `/implement-design code <change>`.

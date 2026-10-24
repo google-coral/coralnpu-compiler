@@ -51,11 +51,13 @@
   `./.agents/skills/design-doc/references/standards.md`, and
   `./.agents/skills/implement-design/references/standards.md` for full details):
   1. **CL 1 (Design CL — `/design-doc`)**:
-     - `/design-doc draft [<change>]`: Verify codebase context, challenge
-       assumptions, right-size scope (tightening the spec and moving deferred
-       slices to **Part 3: Follow-Up Items**, or splitting tasks into staged
-       `CL 2a`, `CL 2b`, ...), author `./docs/design/changes/<change>.md` (based
-       on `./docs/design/changes/TEMPLATE.md`), and stop for developer review.
+     - `/design-doc draft [<change>]` (or
+       `/design-doc draft-from-commits [<commits>] [<change>]` for existing
+       commits): Verify codebase context, challenge assumptions, right-size
+       scope (tightening the spec and moving deferred slices to **Part 3:
+       Follow-Up Items**, or splitting tasks into staged `CL 2a`, `CL 2b`, ...),
+       author `./docs/design/changes/<change>.md` (based on
+       `./docs/design/changes/TEMPLATE.md`), and stop for developer review.
      - `/design-doc audit [<change>]`: After developer review, spawn a
        repeatable isolated subagent (with no chat history and a narrow view of
        `<change>.md` and its referenced files) for blind comprehension and
@@ -71,8 +73,8 @@
        `./docs/design/changes/<change>.md` updated. Record out-of-scope
        follow-ups in **Part 3: Follow-Up Items** of `<change>.md` for Gerrit
        review.
-     - `/implement-design audit [<change>]`: Spawn a repeatable isolated
-       subagent (with no chat history) to audit `git diff` against
+     - `/implement-design audit [<change>] [<commits>]`: Spawn a repeatable
+       isolated subagent (with no chat history) to audit `git diff` against
        `<change>.md` for spec drift, edge cases, test integrity, and code style
        / comment density before or during local review.
      - `/implement-design archive [<change>]`: Fold lasting architectural

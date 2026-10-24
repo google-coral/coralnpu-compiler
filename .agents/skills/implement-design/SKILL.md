@@ -39,12 +39,12 @@ audit, and finalize an approved design document from
 
 ## Named Steps
 
-| Invocation                               | Purpose                                                                                                |
-| :--------------------------------------- | :----------------------------------------------------------------------------------------------------- |
-| `/implement-design code [<change>]`      | Implement tasks, adapt flexibly, sync build/doc files, and update `<change>.md`.                       |
-| `/implement-design audit [<change>]`     | Spawn an isolated narrow-view subagent (no chat history) for a code, style, and spec-drift audit.      |
-| `/implement-design archive [<change>]`   | Fold lasting design into `<component>.md`, `git mv` `<change>.md` to `archive/`, and format code.      |
-| `/implement-design file-followups [<change>]` | Deduplicate and file approved Part 3 follow-ups into Buganizer component `564546727`.             |
+| Invocation                                      | Purpose                                                                                                |
+| :---------------------------------------------- | :----------------------------------------------------------------------------------------------------- |
+| `/implement-design code [<change>]`             | Implement tasks, adapt flexibly, sync build/doc files, and update `<change>.md`.                       |
+| `/implement-design audit [<change>] [<commits>]`| Spawn an isolated narrow-view subagent (no chat history) for a code, style, and spec-drift audit.      |
+| `/implement-design archive [<change>]`          | Fold lasting design into `<component>.md`, `git mv` `<change>.md` to `archive/`, and format code.      |
+| `/implement-design file-followups [<change>]`   | Deduplicate and file approved Part 3 follow-ups into Buganizer component `564546727`.                  |
 
 If invoked without a step keyword, default to `code` (unless the prompt
 requests `audit`, `archive`, or `file-followups`).
@@ -80,17 +80,28 @@ Run this step when requested (repeatable; each call spawns a fresh, stateless
 subagent; for a broader codebase review, the developer can ask the main agent
 in the current session).
 
-1. **Spawn an Isolated Audit Subagent (No Chat History, Narrow View)**:
+1. **Resolve the Implementation Diff Command (`<diff_cmd>`)**:
+   - Determine the `git diff` command before spawning the subagent (do not rely
+     on bare `git diff`, which is empty when code is committed):
+     - **Explicit `<commits>` argument**: `git diff <base_sha>..<tip_sha>` (or
+       `git diff <commit>~1..<commit>`).
+     - **Uncommitted code changes**: If `git diff HEAD` touches source/test
+       files outside `docs/design/`, use `git diff HEAD`.
+     - **Committed code on top of the CL 1 design doc**: Find `<cl1_sha>` via
+       `git log -n 1 --diff-filter=A --format=%H -- docs/design/changes/<change>.md`
+       (falling back to `BASE_SHA` in `./agent-temp/<change>.commit` or
+       `HEAD~1`), and use `git diff <cl1_sha>`.
+2. **Spawn an Isolated Audit Subagent (No Chat History, Narrow View)**:
    - Launch a fresh, zero-history subagent (`invoke_subagent`) reading **only**:
      - `./docs/design/changes/<change>.md` (or `archive/<change>.md`)
      - `./.agents/skills/implement-design/references/standards.md`
      - `./.agents/AGENTS.md`
-     - The current `git diff`, the modified source/test files, and any
+     - The output of `<diff_cmd>`, the modified source/test files, and any
        repository files explicitly referenced in `<change>.md`
    - Instruct it to perform a read-only audit (without editing files) using
      **Section 2.1** of
      [`references/standards.md`](references/standards.md).
-2. **Fact-Check & Report Findings (No Automatic Edits)**:
+3. **Fact-Check & Report Findings (No Automatic Edits)**:
    - Follow **Section 2.2 (Main-Agent Fact-Checking Protocol)** of
      [`references/standards.md`](references/standards.md).
 
@@ -110,7 +121,9 @@ Run this step in the final implementation CL before Gerrit upload:
      mkdir -p docs/design/archive
      git mv ./docs/design/changes/<change>.md ./docs/design/archive/<change>.md
      ```
-   - Mark **Section 2.4** items as `- [x]` and run `./scripts/format-code.sh`.
+   - Mark **Section 2.4** items as `- [x]`, remove `./agent-temp/<change>.commit`
+     if present (`rm -f ./agent-temp/<change>.commit`), and run
+     `./scripts/format-code.sh`.
 
 ---
 
