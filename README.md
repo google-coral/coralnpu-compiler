@@ -68,11 +68,13 @@ following are prerequisites that are not handled by bazel/cmake:
 - cmake >= 3.26
 - Python 3.13
 - shfmt, for bash scripts formatting (<https://github.com/mvdan/sh>)
+- markdownlint (`mdl`), for Markdown linting
+  (<https://github.com/markdownlint/markdownlint>)
 
 In a Debian based linux distro you can get all of the above like this:
 
 ```shell
-sudo apt install git bash bazel-9.1.0 clang-19 lld-19 cmake python3.13 python3.13-venv shfmt
+sudo apt install git bash bazel-9.1.0 clang-19 lld-19 cmake python3.13 python3.13-venv shfmt markdownlint
 ```
 
 To install Bazel for other distributions, please refer to

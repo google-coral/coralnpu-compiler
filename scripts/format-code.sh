@@ -9,9 +9,11 @@ main() {
   # We also don't want to format the external directory link added by
   # refresh_compile_commands.
   local -a dirs=()
+  dirs+=(.agents)
   dirs+=(build_tools)
   dirs+=(compiler)
   dirs+=(compiler-tuning)
+  dirs+=(docs)
   dirs+=(examples)
   dirs+=(metrics)
   dirs+=(pjrt_plugin)
@@ -41,7 +43,15 @@ main() {
     | xargs -0 shfmt -w --language-dialect bash --indent 2 --case-indent --binary-next-line || exit_code=$?
 
   echo
-  echo 'Done!'
+  echo 'Linting Markdown files'
+  find README.md "${dirs[@]}" -type f -name '*.md' -print0 \
+    | xargs -0 mdl --no-verbose || exit_code=$?
+
+  local message='Done!'
+  ((exit_code == 0)) || message='Failed!'
+
+  echo
+  echo "${message}"
   return "${exit_code}"
 }
 

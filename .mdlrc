@@ -1,0 +1,4 @@
+# .mdlrc
+style ".markdown_style.rb"
+ignore_front_matter true
+verbose true
