@@ -16,10 +16,10 @@
 //
 // DTCM buffers are ordinary statics: coralnpu_tcm.ld places .data/.bss in
 // DTCM. DDR has no loadable section the simulator's ELF loader accepts, so DDR
-// buffers are fixed absolute addresses, starting where the runtime itself
-// allocates HAL bindings (0x80000000). The runner reads RESULT_ADDR back after
-// the run, followed by an auxiliary word a test may use for a diagnostic
-// value; the DMA trace region (CORALNPU_DMA_TRACE_ADDR) sits above both.
+// buffers are fixed absolute addresses at the bottom of DDR (0x80000000). The
+// runner reads RESULT_ADDR back after the run, followed by an auxiliary word a
+// test may use for a diagnostic value; the DMA trace region
+// (CORALNPU_DMA_TRACE_ADDR) sits above both.
 
 #ifndef TESTS_DMA_DMA_TEST_COMMON_H_
 #define TESTS_DMA_DMA_TEST_COMMON_H_

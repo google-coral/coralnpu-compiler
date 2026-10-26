@@ -202,16 +202,14 @@ _Static_assert(sizeof(coralnpu_dma_trace_t) == 16,
 #define CORALNPU_DMA_EVENT_START 1u
 #define CORALNPU_DMA_EVENT_DONE 2u
 
-
-// WARNING: this region is NOT reserved. iree_hal_coralnpu_issue_dispatch_inline()
-// allocates dispatch bindings from 0x80000000 upward (simulator_inline.c, the
-// `ddr_cursor` walk) with no knowledge of the trace, so the two will overlap as soon
-// as a dispatch's bindings exceed 0x3000 bytes. Working for now because the standalone
-// tests in //tests/dma never go through the HAL.
-// TODO: Before the driver is linked into dispatch firmware, the trace must
-// either move into DTCM or become a linker-placed symbol the host resolves and
-// the allocator skips. In future, totally remove the tracing once the IREE codegen
-// part is done.
+// Kept in DDR rather than DTCM: 4,100 bytes in DTCM would shrink the 32 KB
+// DTCM firmware heap below the 6-page (24 KB) workgroup local-memory capacity
+// tested by local_memory_size_test. runtime/sim/simulator_inline.c starts HAL
+// bindings above this region and zeroes the count per dispatch. Both
+// libcoralnpu_crt.a and simulator_inline.c compile against these defaults, so
+// do not override them per translation unit.
+// TODO: Remove the guest trace (or default CORALNPU_DMA_TRACE_CAPACITY to 0)
+// once DMA codegen is in place.
 #ifndef CORALNPU_DMA_TRACE_ADDR
 #define CORALNPU_DMA_TRACE_ADDR 0x80003000u
 #endif  // CORALNPU_DMA_TRACE_ADDR

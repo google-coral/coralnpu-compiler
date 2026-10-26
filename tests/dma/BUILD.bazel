@@ -14,24 +14,18 @@
 
 # Standalone CoralNPU DMA tests.
 #
-# Each guest test is a bare-metal riscv32 program linked against the CRT alone
-# (no IREE dispatch firmware) and run on the MPACT simulator by dma_sim_runner,
-# which reads a result word and the DMA event trace back from DDR.
+# Each guest test in GUEST_TESTS is a bare-metal riscv32 program linked against
+# the CRT alone (no IREE dispatch firmware) and run on the MPACT simulator by
+# dma_sim_runner, which reads a result word and the DMA event trace back from
+# DDR. dma_dispatch_test goes through the HAL's simulator runtime instead.
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//crt:rv32.bzl", "coralnpu_rv32_elf")
 
 package(
     default_visibility = ["//visibility:public"],
     licenses = ["notice"],  # Apache 2.0
 )
-
-# Mirrors //crt:RV32_COPTS so the tests are built the way the CRT is.
-RV32_COPTS = "-march=rv32imf_zicsr_zifencei_zbb -mabi=ilp32 -mcmodel=medany -ffreestanding -fno-builtin -I. -Os -ffunction-sections -fdata-sections"
-
-# Mirrors the link line of compiler/Target/CoralNPULinkerTool.cpp.
-RV32_LDFLAGS = "--build-id=none -nostdlib -static --no-undefined --gc-sections --no-warn-rwx-segments"
-
-TOOLCHAIN_DIR = "$$(dirname $$(dirname $(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-clang)))"
 
 GUEST_TESTS = [
     "dma_runtime_test",
@@ -41,33 +35,13 @@ GUEST_TESTS = [
 ]
 
 [
-    genrule(
+    coralnpu_rv32_elf(
         name = name + "_elf",
-        srcs = [
-            name + ".c",
+        src = name + ".c",
+        hdrs = [
             "dma_test_common.h",
             "//crt:coralnpu_dma.h",
-            "//crt:coralnpu_tcm_ld",
-            "//crt:libcoralnpu_crt",
-            "@rv32_toolchain//:all_files",
-            "@rv32_toolchain//:bin/riscv32-unknown-elf-clang",
-            "@rv32_toolchain//:bin/riscv32-unknown-elf-ld",
         ],
-        outs = [name + ".elf"],
-        cmd = """
-            {clang} --gcc-toolchain={toolchain_dir} {copts} -c $(execpath {src}) -o $(@D)/{name}.o
-            {ld} -o $@ {ldflags} -T $(execpath //crt:coralnpu_tcm_ld) $(@D)/{name}.o \\
-                --whole-archive $(execpath //crt:libcoralnpu_crt) --no-whole-archive
-        """.format(
-            name = name,
-            src = name + ".c",
-            clang = "$(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-clang)",
-            copts = RV32_COPTS,
-            ld = "$(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-ld)",
-            ldflags = RV32_LDFLAGS,
-            toolchain_dir = TOOLCHAIN_DIR,
-        ),
-        tags = ["target=coralnpu"],
     )
     for name in GUEST_TESTS
 ]
@@ -158,6 +132,29 @@ cc_test(
     linkstatic = True,
     tags = RUNNER_TAGS,
     deps = RUNNER_DEPS,
+)
+
+# Dispatch firmware, linked like compiler/Target/CoralNPULinkerTool.cpp does.
+coralnpu_rv32_elf(
+    name = "dma_dispatch_test_elf",
+    src = "dma_dispatch_test.c",
+    hdrs = ["//crt:coralnpu_dma.h"],
+    dispatch = True,
+)
+
+# Large HAL bindings and the DMA trace do not overlap.
+cc_test(
+    name = "dma_dispatch_test",
+    srcs = ["dma_dispatch_runner.cc"],
+    args = ["$(rootpath :dma_dispatch_test.elf)"],
+    data = [":dma_dispatch_test.elf"],
+    linkstatic = True,
+    tags = RUNNER_TAGS,
+    deps = RUNNER_DEPS + [
+        "//runtime/sim:simulation",
+        "@iree_core//runtime/src/iree/base",
+        "@iree_core//runtime/src/iree/hal/local:executable_library",
+    ],
 )
 
 test_suite(

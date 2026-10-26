@@ -19,6 +19,7 @@
 #include <inttypes.h>
 
 #include "crt/coralnpu_dispatch.h"
+#include "crt/coralnpu_dma.h"
 #include "iree/base/api.h"
 #include "runtime/sim/simulator_api.h"
 #include "runtime/sim/simulator_elf_loader.h"
@@ -44,12 +45,29 @@ static iree_status_t iree_hal_coralnpu_allocate(uint32_t* cursor,
   return iree_ok_status();
 }
 
-// Simulated 1 GiB DDR window at 0x80000000: writeable staging grows up from
-// IREE_HAL_CORALNPU_DDR_START; cached read-only bindings grow down from
-// IREE_HAL_CORALNPU_DDR_END.
-#define IREE_HAL_CORALNPU_DDR_START 0x80000000u
+// Simulated 1 GiB DDR window [0x80000000, 0xC0000000): writeable staging grows
+// up from IREE_HAL_CORALNPU_DDR_START (above the guest DMA trace when enabled);
+// cached read-only bindings grow down from IREE_HAL_CORALNPU_DDR_END.
+#define IREE_HAL_CORALNPU_DDR_BASE 0x80000000u
 #define IREE_HAL_CORALNPU_DDR_END 0xC0000000u
 #define IREE_HAL_CORALNPU_STAGING_RESERVE (128u * 1024 * 1024)
+
+#if CORALNPU_DMA_TRACE_CAPACITY > 0
+// Computed in 64-bit so large ADDR/CAPACITY values cannot wrap 32-bit before
+// the static_assert below.
+#define IREE_HAL_CORALNPU_DMA_TRACE_END                   \
+  ((uint64_t)CORALNPU_DMA_TRACE_ADDR + sizeof(uint32_t) + \
+   (uint64_t)CORALNPU_DMA_TRACE_CAPACITY * sizeof(coralnpu_dma_trace_t))
+_Static_assert(CORALNPU_DMA_TRACE_ADDR >= IREE_HAL_CORALNPU_DDR_BASE &&
+                   ((IREE_HAL_CORALNPU_DMA_TRACE_END + 63u) & ~63ull) <=
+                       IREE_HAL_CORALNPU_DDR_END -
+                           IREE_HAL_CORALNPU_STAGING_RESERVE,
+               "DMA trace region must stay in DDR below the staging reserve");
+#define IREE_HAL_CORALNPU_DDR_START \
+  ((uint32_t)((IREE_HAL_CORALNPU_DMA_TRACE_END + 63u) & ~63ull))
+#else
+#define IREE_HAL_CORALNPU_DDR_START IREE_HAL_CORALNPU_DDR_BASE
+#endif  // CORALNPU_DMA_TRACE_CAPACITY > 0
 
 // Guarded by |iree_hal_coralnpu_simulator_mutex| in simulator_backend.c.
 static coralnpu_simulator_t* iree_hal_coralnpu_ro_cache_sim = NULL;
@@ -160,6 +178,12 @@ iree_status_t iree_hal_simulator_issue_dispatch_inline(
     iree_hal_coralnpu_simulator_zero_mem(sim, request.local_memory_addr,
                                          local_memory_size);
   }
+
+#if CORALNPU_DMA_TRACE_CAPACITY > 0
+  // DDR outlives the dispatch, so reset the trace count.
+  iree_hal_coralnpu_simulator_zero_mem(sim, CORALNPU_DMA_TRACE_ADDR,
+                                       sizeof(uint32_t));
+#endif  // CORALNPU_DMA_TRACE_CAPACITY > 0
 
   // Cache read-only bindings in simulated DDR across dispatches on |sim|.
   // Guarded by |iree_hal_coralnpu_simulator_mutex| in simulator_backend.c.

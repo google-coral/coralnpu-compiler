@@ -14,15 +14,15 @@
 
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load(
+    ":rv32.bzl",
+    "RV32_CLANG_FLAGS",
+    "RV32_COPTS",
+    "RV32_IREE_EXECUTABLE_LIBRARY_HDR",
+    "RV32_IREE_INC",
+)
 
 package(default_visibility = ["//visibility:public"])
-
-# For debugging, replace -Os with -O0 -g.
-RV32_COPTS = "-march=rv32imf_zicsr_zifencei_zbb -mabi=ilp32 -mcmodel=medany -ffreestanding -fno-builtin -I. -Os -ffunction-sections -fdata-sections"
-
-TOOLCHAIN_DIR = "$$(dirname $$(dirname $(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-clang)))"
-
-CLANG_FLAGS = "--gcc-toolchain=" + TOOLCHAIN_DIR
 
 COMMON_LD_SUBSTITUTIONS = {
     "@@STACK_SIZE@@": "4096",
@@ -98,7 +98,7 @@ genrule(
     """.format(
         ar = "$(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-ar)",
         clang = "$(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-clang)",
-        clang_flags = CLANG_FLAGS,
+        clang_flags = RV32_CLANG_FLAGS,
         clangxx = "$(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-clang++)",
         copts = RV32_COPTS,
     ),
@@ -113,7 +113,7 @@ genrule(
         "@rv32_toolchain//:all_files",
         "@rv32_toolchain//:bin/riscv32-unknown-elf-clang",
         "@rv32_toolchain//:bin/riscv32-unknown-elf-ar",
-        "@iree_core//runtime/src/iree/hal/local:executable_library.h",
+        RV32_IREE_EXECUTABLE_LIBRARY_HDR,
     ],
     outs = ["libcoralnpu_iree.a"],
     cmd = """
@@ -122,9 +122,9 @@ genrule(
     """.format(
         ar = "$(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-ar)",
         clang = "$(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-clang)",
-        clang_flags = CLANG_FLAGS,
+        clang_flags = RV32_CLANG_FLAGS,
         copts = RV32_COPTS,
-        iree_inc = "$$(dirname $$(dirname $$(dirname $$(dirname $(execpath @iree_core//runtime/src/iree/hal/local:executable_library.h)))))",
+        iree_inc = RV32_IREE_INC,
     ),
 )
 
