@@ -35,6 +35,7 @@ test_suite(
         "//tests/models/linalg:ci",
         "//tests/models/stablehlo:ci",
         "//tests/python-bindings:ci",
+        "//tests/runtime:ci",
         "//tests/spike:ci",
         "//tests/transforms:ci",
         "//tests/verilator:ci",
