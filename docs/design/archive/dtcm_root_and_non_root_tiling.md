@@ -463,84 +463,84 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
 
 - **Build**:
   - `compiler/Transforms/BUILD.bazel`
-      - Remove deleted `CoralNPUTileSizeSelectionAnalysis.{h,cpp}` and
-        `CoralNPUTileSizeSelectionWorkgroup.cpp` (`CL 2a`).
+    - Remove deleted `CoralNPUTileSizeSelectionAnalysis.{h,cpp}` and
+      `CoralNPUTileSizeSelectionWorkgroup.cpp` (`CL 2a`).
   - `compiler/Transforms/CMakeLists.txt`
-      - Remove deleted `CoralNPUTileSizeSelectionAnalysis.{h,cpp}` and
-        `CoralNPUTileSizeSelectionWorkgroup.cpp` (`CL 2a`).
+    - Remove deleted `CoralNPUTileSizeSelectionAnalysis.{h,cpp}` and
+      `CoralNPUTileSizeSelectionWorkgroup.cpp` (`CL 2a`).
 
 - **Compiler**:
   - `compiler/Target/CoralNPUTargetBackend.cpp`
-      - Remove `createCoralNPUTileSizeSelectionWorkgroupPass()` from
-        `buildConfigurationPassPipeline` and update pipeline comments (`CL 2a`).
+    - Remove `createCoralNPUTileSizeSelectionWorkgroupPass()` from
+      `buildConfigurationPassPipeline` and update pipeline comments (`CL 2a`).
   - `compiler/Transforms/CoralNPUTileSizeSelectionAnalysis.cpp` *(deleted)*
-      - Replaced by `DTCMRoot` and `getDTCMRoot` (`CL 2a`).
+    - Replaced by `DTCMRoot` and `getDTCMRoot` (`CL 2a`).
   - `compiler/Transforms/CoralNPUTileSizeSelectionAnalysis.h` *(deleted)*
-      - Replaced by `DTCMRoot` and `getDTCMRoot` (`CL 2a`).
+    - Replaced by `DTCMRoot` and `getDTCMRoot` (`CL 2a`).
   - `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`
-      - Merge workgroup distribution assignment, add `DTCMRoot` and
-        `getDTCMRoot` with outermost-first loops, convert warnings to missed
-        remarks (`CL 2a`), support non-root multi-op reductions (`CL 2b`), and
-        gate contraction promotion on `hasContractionReuse` while keeping Zvt
-        `M` tiles on exact divisors (`CL 2c`).
+    - Merge workgroup distribution assignment, add `DTCMRoot` and `getDTCMRoot`
+      with outermost-first loops, convert warnings to missed remarks (`CL 2a`),
+      support non-root multi-op reductions (`CL 2b`), and gate contraction
+      promotion on `hasContractionReuse` while keeping Zvt `M` tiles on exact
+      divisors (`CL 2c`).
   - `compiler/Transforms/CoralNPUTileSizeSelectionFootprint.cpp`
-      - Convert unknown-bound `emitWarning` in `getOperandSpans` to
-        `remark::missed` + `LDBG()` (`CL 2a`), and preserve full ranges on
-        streamed reduction loops with `vectorSize <= 0` in
-        `DTCMFootprintModel::estimate` (`CL 2c`).
+    - Convert unknown-bound `emitWarning` in `getOperandSpans` to
+      `remark::missed` + `LDBG()` (`CL 2a`), and preserve full ranges on
+      streamed reduction loops with `vectorSize <= 0` in
+      `DTCMFootprintModel::estimate` (`CL 2c`).
   - `compiler/Transforms/CoralNPUTileSizeSelectionFootprint.h`
-      - Update `DTCMFootprintModel::estimate` doc comment for streamed reduction
-        loops without a vector tile (`CL 2c`).
+    - Update `DTCMFootprintModel::estimate` doc comment for streamed reduction
+      loops without a vector tile (`CL 2c`).
   - `compiler/Transforms/CoralNPUTileSizeSelectionUtils.cpp`
-      - Document 4 KB workgroup local memory page granularity (`CL 2a`) and
-        implement `hasContractionReuse(Operation *op)` (`CL 2c`).
+    - Document 4 KB workgroup local memory page granularity (`CL 2a`) and
+      implement `hasContractionReuse(Operation *op)` (`CL 2c`).
   - `compiler/Transforms/CoralNPUTileSizeSelectionUtils.h`
-      - Declare `hasContractionReuse(Operation *op)` (`CL 2c`).
+    - Declare `hasContractionReuse(Operation *op)` (`CL 2c`).
   - `compiler/Transforms/CoralNPUTileSizeSelectionWorkgroup.cpp` *(deleted)*
-      - Merged into `CoralNPUTileSizeSelectionDTCM.cpp` (`CL 2a`).
+    - Merged into `CoralNPUTileSizeSelectionDTCM.cpp` (`CL 2a`).
   - `compiler/Transforms/Passes.h`
-      - Remove `createCoralNPUTileSizeSelectionWorkgroupPass()` (`CL 2a`).
+    - Remove `createCoralNPUTileSizeSelectionWorkgroupPass()` (`CL 2a`).
   - `compiler/Transforms/Passes.td`
-      - Remove `CoralNPUTileSizeSelectionWorkgroup` and update the description
-        of `CoralNPUTileSizeSelectionDTCM` (`CL 2a`, `CL 2c`).
+    - Remove `CoralNPUTileSizeSelectionWorkgroup` and update the description of
+      `CoralNPUTileSizeSelectionDTCM` (`CL 2a`, `CL 2c`).
 
 - **Documentation**:
   - `docs/design/INDEX.md`
-      - Update component descriptions and source paths (`CL 2a`, `CL 2c`).
+    - Update component descriptions and source paths (`CL 2a`, `CL 2c`).
   - `docs/design/dtcm_tiling.md`
-      - Update pass table (`CL 2a`) and streamed reduction / reuse description
-        (`CL 2c`).
+    - Update pass table (`CL 2a`) and streamed reduction / reuse description
+      (`CL 2c`).
   - `docs/design/tiling_levels_explained.md`
-      - Update references to `CoralNPUTileSizeSelectionWorkgroupPass` (`CL 2a`),
-        multi-op reduction alignment fallback (`CL 2b`), and Zvt `M` exact
-        divisor shrinking (`CL 2c`).
+    - Update references to `CoralNPUTileSizeSelectionWorkgroupPass` (`CL 2a`),
+      multi-op reduction alignment fallback (`CL 2b`), and Zvt `M` exact
+      divisor shrinking (`CL 2c`).
 
 - **Tests**:
   - `tests/examples/BUILD.bazel`
-      - Re-enable `efficientnet_test` with `tags = ["ci"]` (`CL 2c`).
+    - Re-enable `efficientnet_test` with `tags = ["ci"]` (`CL 2c`).
   - `tests/models/linalg/check_gen_templates/softmax_bf16.mlir`
-      - Pass `outs(%empty)` directly (`CL 2b`).
+    - Pass `outs(%empty)` directly (`CL 2b`).
   - `tests/models/linalg/check_gen_templates/softmax_f32.mlir`
-      - Pass `outs(%empty)` directly (`CL 2b`).
+    - Pass `outs(%empty)` directly (`CL 2b`).
   - `tests/models/linalg/generated_bf16/softmax_bf16_*.mlir` *(new)*
-      - Static generated check tests for `softmax_bf16` (`CL 2b`).
+    - Static generated check tests for `softmax_bf16` (`CL 2b`).
   - `tests/models/linalg/generated_f32/softmax_f32_*.mlir` *(new)*
-      - Static generated check tests for `softmax_f32` (`CL 2b`).
+    - Static generated check tests for `softmax_f32` (`CL 2b`).
   - `tests/models/linalg/op_tests_bf16.bzl`
-      - Enable `softmax_bf16` in CI (`CL 2b`).
+    - Enable `softmax_bf16` in CI (`CL 2b`).
   - `tests/models/linalg/op_tests_f32.bzl`
-      - Enable `softmax_f32` in CI (`CL 2b`).
+    - Enable `softmax_f32` in CI (`CL 2b`).
   - `tests/transforms/tile_size_selection_dtcm.mlir`
-      - Add `--implicit-check-not=warning:` (`CL 2a`), `@softmax`,
-        `@softmax_scaled`, and `@softmax_unaligned` (`CL 2b`), and
-        `@vecmat_f32`, `@reduce_untiled_k`, and `@matmul_zvt_m196_consumer`
-        (`CL 2c`).
+    - Add `--implicit-check-not=warning:` (`CL 2a`), `@softmax`,
+      `@softmax_scaled`, and `@softmax_unaligned` (`CL 2b`), and `@vecmat_f32`,
+      `@reduce_untiled_k`, and `@matmul_zvt_m196_consumer` (`CL 2c`).
   - `tests/transforms/tile_size_selection_footprint.mlir`
-      - Add `@softmax_scaled_max` executable-source LIT test (`CL 2b`).
+    - Add `@softmax_scaled_max` executable-source LIT test (`CL 2b`).
 
 ### 2.2 Implementation Tasks (`code` step)
 
-#### CL 2a: Consolidate Workgroup Pass & Replace Analysis with `getDTCMRoot` (Pure Refactor)
+#### CL 2a: Consolidate Workgroup Pass & Replace Analysis (`getDTCMRoot`)
+
 - [x] **Task 1**: Merge `CoralNPUTileSizeSelectionWorkgroupPass` into
       `CoralNPUTileSizeSelectionDTCMPass` by setting `DistributionTiles` to
       `distParallelSizes`, removing `createCoralNPUTileSizeSelectionWorkgroupPass`
@@ -575,6 +575,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   - *Verify*: `bazel test --config=dev //tests:ci`
 
 #### CL 2b: Support Non-Root Compute Ops in `getDTCMRoot` & Enable Softmax Tests
+
 - [x] **Task 4**: Extend `getDTCMRoot` and `CoralNPUTileSizeSelectionDTCM.cpp`
       to record supported non-root compute ops (`isSupportedMultiOp`) in
       `root.nonRootOps`, skip reduction-loop shrinking when
@@ -607,6 +608,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   - *Verify*: `bazel test --config=dev //tests/models/linalg:all //tests:check_generated`
 
 #### CL 2c: Gate Contraction Promotion on Reuse & Keep Zvt `M` Tiles on Exact Divisors
+
 - [x] **Task 7**: Add `hasContractionReuse(Operation *op)` to
       `CoralNPUTileSizeSelectionUtils.{h,cpp}`, set
       `streamReduction = !hasContractionReuse(root.op)` and gate
@@ -638,6 +640,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   - *Verify*: `bazel test --config=dev //tests/transforms:lit //tests/examples:efficientnet_test`
 
 ### 2.3 Implementation Notes & Adaptations
+
 - `getStaticLoopRanges` returns `std::optional<SmallVector<int64_t>>` using
   `getOffsetsSizesAndStrides` and `getConstantIntValues` from
   `mlir/Dialect/Utils/StaticValueUtils.h`, eliminating the
@@ -668,6 +671,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   **Part 3**).
 
 ### 2.4 Documentation Archive Checklist (`archive` step — Pre-Submit)
+
 Run this step in the final implementation CL before uploading for review:
 
 - [x] Fold lasting architectural changes (including non-obvious "Why Not X"
@@ -683,7 +687,10 @@ Run this step in the final implementation CL before uploading for review:
 
 ## Part 3: Follow-Up Items (For Reviewer Approval -> Buganizer `564546727`)
 
-- [ ] **Prevent `LLVMCPUTileRootAndFuseInputOperandsPass(VectorReductionTiles)` from fusing producer reductions across dynamic identity parallel slices in IREE** (`P2` | `third_party/iree/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUTileAndFuseProducerConsumer.cpp`):
+- [ ] **Prevent `LLVMCPUTileRootAndFuseInputOperandsPass(VectorReductionTiles)`
+      from fusing producer reductions across dynamic identity parallel slices in
+      IREE** (`P2` |
+      `third_party/iree/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUTileAndFuseProducerConsumer.cpp`):
       When a reduction root's parallel tile size is dynamic (`?`),
       `createOrFold<tensor::ExtractSliceOp>` cannot fold the identity
       `[0] [%d0] [1]` slice on a 1D producer reduction result (such as `%max` in
@@ -694,7 +701,9 @@ Run this step in the final implementation CL before uploading for review:
       `tensor.extract_slice` ops or by filtering reduction-untiled operands in
       `tileRootAndFuseInputOperands`) so multi-row dynamic parallel vector tiles
       remain safe without snapping `vector_common_parallel` to `1`.
-- [ ] **Support `linalg.softmax` and aggregated ops in `CoralNPUAffinityAnnotationPass`** (`P2` | `compiler/Transforms/CoralNPUAffinityAnnotation.cpp`):
+- [ ] **Support `linalg.softmax` and aggregated ops in
+      `CoralNPUAffinityAnnotationPass`** (`P2` |
+      `compiler/Transforms/CoralNPUAffinityAnnotation.cpp`):
       `CoralNPUAffinityAnnotationPass` runs during `DispatchCreation` (before
       `DecomposeSoftmaxPass` in target configuration) and requires
       `isa<linalg::LinalgOp>(*rootOp)`, routing `linalg::SoftmaxOp`
@@ -702,7 +711,8 @@ Run this step in the final implementation CL before uploading for review:
       (such as PJRT). Teach `CoralNPUAffinityAnnotationPass` and its roofline
       estimator to recognize `linalg::SoftmaxOp` (and evaluate other
       non-`LinalgOp` compute roots supported by CoralNPU codegen).
-- [ ] **Run target tile-size selection before `setLoweringConfigForComputeOps` in IREE** (`P3` | `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`):
+- [ ] **Run target tile-size selection before `setLoweringConfigForComputeOps`
+      in IREE** (`P3` | `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`):
       Evaluate adding an upstreamable hook in `setTranslationInfoAndRootConfig`
       between `setRootConfigImpl` and `setLoweringConfigForComputeOps` (together
       with fixing `cache_reduction` propagation in

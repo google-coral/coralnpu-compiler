@@ -32,7 +32,7 @@ accumulators to a scratch tile in DTCM, and the footprint counts it.
 
 ## Passes
 
-```
+```text
   Step                         Pass (file)                          Result
   Strategy (IREE)              LLVMCPUSelectLoweringStrategyPass    pipeline, distribution, vector
                                                                     tile sizes
@@ -146,7 +146,7 @@ The local memory does not keep its contents between workgroups.
 The patches are at the repo root, and
 [patch-third_party.sh](../../scripts/patch-third_party.sh) applies them.
 
-```
+```text
   Patch   Name                                         Change
   0011    llvmcpu-riscv-register-space                 Limit the vector tile sizes of RISC-V
                                                        matmuls to the register file (32 x VLEN).
@@ -197,7 +197,7 @@ The main limits of the current implementation:
 
 ## Upstream Mapping
 
-```
+```text
   Now (CoralNPU)                             Upstream
   DTCM pass after the strategy pass          A generic "fit to local memory" step after
                                              setLoweringConfigForComputeOps

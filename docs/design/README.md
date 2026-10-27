@@ -33,30 +33,30 @@ To keep design documents short and easy to read while preventing
 ahead of `HEAD` code, the design phase updates two sets of files and commits
 them as a **2-CL chain**:
 
-1. **Change Design Brief (`docs/design/changes/<change>.md` — CL 1 Commit)**:
-   - A concise (**80–150 line**) brief based on
-     [changes/TEMPLATE.md](changes/TEMPLATE.md) covering four flat sections:
-     **1. Summary & Motivation**, **2. Proposed Change & Component Doc Delta**
-     (followed by **Alternatives Considered**), **3. Implementation &
-     Verification Plan** (a single unified `- [ ]` checklist), and **4.
-     Follow-Up Items** (for Buganizer `564546727`).
-   - Uses natural-language principles and examples by default (never
-     transcribing C++ conditionals into prose) and avoids duplicating
-     `<component>.md` or pasting `.h`/`.td` code blocks.
-2. **Living Component Doc & Boundary Interfaces (`docs/design/<component>.md` +
-   `.h`/`.td` — Initial `[WIP]` CL 2 / `CL 2a..2n` Commits)**:
-   - **`docs/design/<component>.md`** (+ [INDEX.md](INDEX.md) if updated): Holds
-     the timeless architectural explanation at the post-change state (summary,
-     pass pipeline, invariants, IR examples, tests, and `TODO(...)` limits).
-   - **Boundary Interface Files (`.h` Headers & `.td` TableGen Definitions)**:
-     Includes any added, modified, or deleted cross-file C/C++ header
-     declarations (`.h`, with doc comments) or TableGen definitions (`.td`),
-     without `.cpp` implementation bodies.
-   - Committed on top of CL 1 as an **initial `[WIP]` CL 2** (or across stacked
-     `[WIP]` `CL 2a .. CL 2n` commits when Section 3 is split into multiple CLs)
-     and pushed to Gerrit with `-o wip`. Reviewers of CL 1 can inspect the exact
-     `<component>.md` and interface diffs in the Gerrit relation chain, while
-     merging CL 1 leaves `master` untouched until CL 2 lands.
+- **1. Change Design Brief (`docs/design/changes/<change>.md` — CL 1 Commit)**:
+  - A concise (**80–150 line**) brief based on
+    [changes/TEMPLATE.md](changes/TEMPLATE.md) covering four flat sections:
+    **1. Summary & Motivation**, **2. Proposed Change & Component Doc Delta**
+    (followed by **Alternatives Considered**), **3. Implementation &
+    Verification Plan** (a single unified `- [ ]` checklist), and **4.
+    Follow-Up Items** (for Buganizer `564546727`).
+  - Uses natural-language principles and examples by default (never
+    transcribing C++ conditionals into prose) and avoids duplicating
+    `<component>.md` or pasting `.h`/`.td` code blocks.
+- **2. Living Component Doc & Boundary Interfaces (`docs/design/<component>.md` +
+  `.h`/`.td` — Initial `[WIP]` CL 2 / `CL 2a..2n` Commits)**:
+  - **`docs/design/<component>.md`** (+ [INDEX.md](INDEX.md) if updated): Holds
+    the timeless architectural explanation at the post-change state (summary,
+    pass pipeline, invariants, IR examples, tests, and `TODO(...)` limits).
+  - **Boundary Interface Files (`.h` Headers & `.td` TableGen Definitions)**:
+    Includes any added, modified, or deleted cross-file C/C++ header
+    declarations (`.h`, with doc comments) or TableGen definitions (`.td`),
+    without `.cpp` implementation bodies.
+  - Committed on top of CL 1 as an **initial `[WIP]` CL 2** (or across stacked
+    `[WIP]` `CL 2a .. CL 2n` commits when Section 3 is split into multiple CLs)
+    and pushed to Gerrit with `-o wip`. Reviewers of CL 1 can inspect the exact
+    `<component>.md` and interface diffs in the Gerrit relation chain, while
+    merging CL 1 leaves `master` untouched until CL 2 lands.
 
 ---
 
@@ -136,11 +136,14 @@ them as a **2-CL chain**:
 - **Pushing to Gerrit (`-o wip` vs. `-o ready`)**:
   - After `/design-doc commit` (`n = 1` for a single CL 2, or the number of
     staged `CL 2a..2n` commits):
+
     ```bash
     git push origin HEAD~<n>:refs/for/master && git push -o wip origin HEAD:refs/for/master
     ```
+
   - After `/implement-design archive` and `git commit --amend` (removing
     `[WIP]`):
+
     ```bash
     git push -o ready origin HEAD:refs/for/master
     ```
@@ -154,6 +157,7 @@ The workflow and authoring/audit standards in
 and
 [`.agents/skills/implement-design/references/standards.md`](../../.agents/skills/implement-design/references/standards.md)
 build on three sources:
+
 - **Elephants & Goldfish Model (`go/egm-plugin`)**: Dave Rensin's paper,
   *Elephants, Goldfish, and the New Golden Age of Software Engineering*
   (`go/design-is-the-new-code` |

@@ -1,7 +1,8 @@
 # <Title of Change>
 
 - **Author(s)**: <name>
-- **Component Doc(s)**: [<component>.md](../<component>.md) *(updated in chained CL 2)*
+- **Component Doc(s)**: [<component>.md](../<component>.md) *(updated in chained
+  CL 2)*
 - **Bug(s)**: b/<id>
 
 ---

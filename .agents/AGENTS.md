@@ -1,6 +1,7 @@
 # Project Rules
 
 ## Project Overview & Repository Layout
+
 - **CoralNPU Compiler**: An IREE compiler plugin and HAL runtime driver for
   compiling and running ML models (JAX/StableHLO, TFLite/TOSA, Linalg) targeting
   CoralNPU RISC-V32 (`rv32` + RVV / `zvt` matrix extension).
@@ -24,6 +25,7 @@
   workflows.
 
 ## Agent Governance & Test Integrity
+
 - The agent must never change agent rules without explicit authorization.
 - Never bypass failing tests by tagging them `manual`, disabling test cases, or
   weakening existing `CHECK` assertions/tolerances without explicit
@@ -36,6 +38,7 @@
   contradiction before editing files.
 
 ## Temporary Files
+
 - All temporary files (scratch files, scripts, temporary outputs, logs, output
   redirections, etc.) created by the agent MUST be placed in the `./agent-temp/`
   directory.
@@ -44,6 +47,7 @@
   temporary files.
 
 ## Design Documents & Two-CL Workflow
+
 - For non-trivial changes (new passes, operation enablements, third-party
   patches, or changes >150 LOC), suggest starting the two-CL workflow with
   `/design-doc draft <change>` (or `/design-doc draft-from-commits [<commits>]
@@ -66,6 +70,7 @@
     it.
 
 ## Third-party code
+
 - Do NOT modify `third_party/iree`, `third_party/llvm-project`, or
   `third_party/iree/third_party/stablehlo` without explicit user authorization
   first.
@@ -92,6 +97,7 @@
   for GPL/LGPL, `"reciprocal"` for MPL/EPL).
 
 ## Build systems & Testing
+
 - Unless you are explicitly asked to, use bazel.
 - Always build, run, and test using `--config=dev`, unless explicitly asked to
   use a different config.
@@ -109,11 +115,12 @@
     `--test_tag_filters=f32,bf16,i8,i16,i32`).
   - Check / sync generated tests: `//tests/models/...` runs against static
     `.mlir` files under `generated_<type>/` and never regenerates them
-    automatically. Verify sync with `bazel test --config=dev //tests:check_generated`
-    and update with `bazel run --config=dev //tests:sync_generated` (or
-    `//tests:copy_missing`).
+    automatically. Verify sync with
+    `bazel test --config=dev //tests:check_generated` and update with
+    `bazel run --config=dev //tests:sync_generated` (or `//tests:copy_missing`).
 
 ## C/C++ code style
+
 - Keep files, classes, and functions short, focused, and dedicated to a single,
   well-defined task. Do not mix unrelated responsibilities; decouple into
   separate components as needed.
@@ -127,7 +134,8 @@
   functors with less boilerplate; prefer explicit captures if the lambda escapes
   the current scope, and default capture by reference only when its lifetime is
   obviously shorter than the captures.
-- If a local function is inside an anonymous namespace, don't make it also static.
+- If a local function is inside an anonymous namespace, don't make it also
+  static.
 - Annotate non-obvious literal arguments (booleans, magic numbers, `nullptr`) at
   call sites with `/*paramName=*/` comments (e.g.,
   `setLoopUnrollAttr(forOp, /*fullUnroll=*/false)`).
@@ -148,13 +156,17 @@
   remain accurate and consistent with the updated implementation.
 
 ## MLIR & LLVM Development
-- **Follow Existing IREE Patterns:** Before implementing new passes, rewrites, or lowerings, look for analogous cases in `third_party/iree` and follow their established conventions, idioms, and abstractions.
+
+- **Follow Existing IREE Patterns:** Before implementing new passes, rewrites,
+  or lowerings, look for analogous cases in `third_party/iree` and follow their
+  established conventions, idioms, and abstractions.
 - **Prefer Interfaces & Inference Utilities Over Op Lists:** Use MLIR/IREE
   interfaces and analysis helpers (e.g., `TilingInterface`,
   `linalg::isaContractionOpInterface`, `linalg::inferContractionDims`,
   `iree_compiler::isComputeOp`, `TargetBackend::SupportedTypes`) instead of
   maintaining long hardcoded lists of concrete operation types.
-- **Use Native Type Checking:** Prefer `llvm::isa<>` and `llvm::dyn_cast<>` over string comparisons for identifying operations, types, or attributes.
+- **Use Native Type Checking:** Prefer `llvm::isa<>` and `llvm::dyn_cast<>` over
+  string comparisons for identifying operations, types, or attributes.
 - **Utilize API Features & Upstream Utilities:** Trust the framework's APIs
   before writing defensive boilerplate, and inspect `#include`d MLIR/IREE
   `*Utils.h` and `*Interfaces.h` headers (e.g.,
@@ -191,7 +203,10 @@
   spans multiple stages (e.g., tile-size selection, IREE patch hooks, and
   codegen lowering), share a common utility or explicitly document the peer
   functions that must be kept in sync.
-- **Preserve Semantic Guardrails:** Do not prematurely remove compiler directives (like unfoldable constants or optimization barriers) that protect intermediate passes from unwanted behavior like over-folding. If they need to be removed from the final output, do so in a dedicated final cleanup pass.
+- **Preserve Semantic Guardrails:** Do not prematurely remove compiler
+  directives (like unfoldable constants or optimization barriers) that protect
+  intermediate passes from unwanted behavior like over-folding. If they need to
+  be removed from the final output, do so in a dedicated final cleanup pass.
 - **Use Worklists for Def-Use and Graph Walks:** Traverse producer-consumer or
   def-use chains iteratively with an `llvm::SmallVector` worklist (`push_back` /
   `pop_back_val`) and a visited set (`llvm::SmallPtrSet` or
@@ -199,6 +214,7 @@
   deep operation chains.
 
 ## Code Formatting & Repository Hygiene
+
 - Update `README.md` whenever you add, rename, or remove user-facing
   `--coralnpu-*` compiler flags or runtime options.
 - When adding new top-level C/C++ targets in Bazel, add them to

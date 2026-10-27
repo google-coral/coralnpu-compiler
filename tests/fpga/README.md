@@ -1,16 +1,21 @@
 # CoralNPU Nexus FPGA Hardware Tests
 
-This directory contains NPU-only compilation and FPGA hardware execution targets for Nexus FPGA boards connected via FTDI USB/SPI.
+This directory contains NPU-only compilation and FPGA hardware execution targets
+for Nexus FPGA boards connected via FTDI USB/SPI.
 
 Tests are split into two categories:
-- **`check` tests (`check_tests/*.vmfb`)**: Self-contained `check`-dialect modules executed via `iree-check-module` (no external inputs needed).
-- **Models (`models/*.vmfb`)**: Standard modules (such as MobileNetV2) executed via `iree-run-module` with explicit `--function` and `--input` flags.
+
+- **`check` tests (`check_tests/*.vmfb`)**: Self-contained `check`-dialect
+  modules executed via `iree-check-module` (no external inputs needed).
+- **Models (`models/*.vmfb`)**: Standard modules (such as MobileNetV2) executed
+  via `iree-run-module` with explicit `--function` and `--input` flags.
 
 ---
 
 ## 1. Running on a Remote FPGA Host (Standalone Tarball)
 
 ### Step 1: Build the Tarball
+
 From the repository root, build the self-contained archive:
 
 ```bash
@@ -55,6 +60,7 @@ export CORALNPU_FPGA_SERIAL=<YOUR_FTDI_SERIAL>
 ```
 
 ### Step 3: Run the `iree-check-module` Tests
+
 Run all self-contained `check_tests/*.vmfb` modules:
 
 ```bash
@@ -74,6 +80,7 @@ Or run an individual check module directly:
 ```
 
 ### Step 4: Run Models Manually with Inputs (`iree-run-module`)
+
 Run MobileNetV2 (`models/mobilenet_v2.vmfb`):
 
 ```bash
@@ -89,7 +96,8 @@ Run MobileNetV2 (`models/mobilenet_v2.vmfb`):
 
 ## 2. Running Locally via Bazel
 
-If the Nexus board is attached directly to your local workstation, run the targets via Bazel:
+If the Nexus board is attached directly to your local workstation, run the
+targets via Bazel:
 
 ```bash
 # Run the check-dialect hardware tests (runs locally and sequentially):

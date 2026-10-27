@@ -83,6 +83,7 @@ When `./agent-temp/<change>.commit` exists during `/design-doc challenge` or
      `changes/<change>.md`, `docs/design/<component>.md` (`+ INDEX.md`), and any
      `.h` or `.td` interface files modified in `<base_sha>..<tip_sha>` (no
      `.cpp`/`.cc`/`.c` files):
+
      ```bash
      mkdir -p ./agent-temp
      mktemp -d ./agent-temp/audit-snapshot-<change>-XXXXXX   # prints <snapshot_dir>
@@ -93,6 +94,7 @@ When `./agent-temp/<change>.commit` exists during `/design-doc challenge` or
      cp ./.agents/skills/design-doc/references/*.md <snapshot_dir>/.agents/skills/design-doc/references/
      cp ./.agents/AGENTS.md <snapshot_dir>/.agents/AGENTS.md
      ```
+
    - Copy or remove any `.h` and `.td` interface files from
      `git diff --name-status <base_sha>..<tip_sha> -- '*.h' '*.td'` into
      `<snapshot_dir>`.
@@ -142,6 +144,7 @@ When `./agent-temp/<change>.commit` exists during
    - Show the Gerrit push command (CL 1 Ready for Review, CL 2 WIP) and remind
      the developer to run `/implement-design audit <change>` in a fresh session
      once CL 1 receives `+2`:
+
      ```bash
      git push origin <cl1_sha>:refs/for/master && git push -o wip origin HEAD:refs/for/master
      ```

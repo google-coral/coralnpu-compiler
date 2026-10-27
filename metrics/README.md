@@ -25,12 +25,12 @@ creates a collector (`metrics/runtime/stats_collector.h`) whose run hooks
 run of the dispatch. The writer then writes the statistics that the collector
 collected:
 
--   the cycles of the run, and the cycles and retired instructions of the
-    kernel, which the firmware measures and reports in its dispatch request
-    (`crt/coralnpu_dispatch.h`);
--   the memory footprint: the ITCM and DTCM that the firmware ELF uses
-    (`firmware_memory.h`), the heap that the dispatch data uses and, as an
-    opt-in, the peak stack use (`stack_peak.h`).
+- the cycles of the run, and the cycles and retired instructions of the kernel,
+  which the firmware measures and reports in its dispatch request
+  (`crt/coralnpu_dispatch.h`);
+- the memory footprint: the ITCM and DTCM that the firmware ELF uses
+  (`firmware_memory.h`), the heap that the dispatch data uses and, as an opt-in,
+  the peak stack use (`stack_peak.h`).
 
 The `--coralnpu_stats_*` flags in the top-level `README.md` select the output
 format, the output file and the opt-in collectors.

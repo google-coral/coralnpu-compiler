@@ -488,57 +488,57 @@ and `vectorWidth = std::max<int64_t>(1, (vlenBits / 8) / elemBytes)`:
 
 - **Build**:
   - `compiler/Transforms/BUILD.bazel`
-      - Add `CoralNPUTileSizeSelectionRVV.h` and
-        `CoralNPUTileSizeSelectionRVV.cpp` to `Transforms`.
+    - Add `CoralNPUTileSizeSelectionRVV.h` and
+      `CoralNPUTileSizeSelectionRVV.cpp` to `Transforms`.
   - `compiler/Transforms/CMakeLists.txt`
-      - Add `CoralNPUTileSizeSelectionRVV.h` and
-        `CoralNPUTileSizeSelectionRVV.cpp` to `Transforms`.
+    - Add `CoralNPUTileSizeSelectionRVV.h` and
+      `CoralNPUTileSizeSelectionRVV.cpp` to `Transforms`.
 
 - **Compiler**:
   - `compiler/Target/CoralNPUTargetBackend.cpp`
-      - Update comment in `buildConfigurationPassPipeline` describing Zvt and
-        RVV vector tile refinement in `CoralNPUTileSizeSelectionDTCMPass`.
+    - Update comment in `buildConfigurationPassPipeline` describing Zvt and RVV
+      vector tile refinement in `CoralNPUTileSizeSelectionDTCMPass`.
   - `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`
-      - Move `DTCMRoot` and `classifyLoops` to
-        `CoralNPUTileSizeSelectionUtils.{h,cpp}`, call `refineRVVTileSizes` in
-        `useRVV()`, pre-tile 2D `NHWC` depthwise conv channels, replace root
-        vector levels via `setOrEraseTilingLevel`, update `translation_info`
-        pipeline and `enable_loop_peeling`, and call `syncNonRootRVVConfigs`.
+    - Move `DTCMRoot` and `classifyLoops` to
+      `CoralNPUTileSizeSelectionUtils.{h,cpp}`, call `refineRVVTileSizes` in
+      `useRVV()`, pre-tile 2D `NHWC` depthwise conv channels, replace root
+      vector levels via `setOrEraseTilingLevel`, update `translation_info`
+      pipeline and `enable_loop_peeling`, and call `syncNonRootRVVConfigs`.
   - `compiler/Transforms/CoralNPUTileSizeSelectionRVV.cpp` *(new)*
-      - Implement structural RVV vector tile and pipeline selection
-        (`refineRVVTileSizes`) and multi-op config synchronization
-        (`syncNonRootRVVConfigs`).
+    - Implement structural RVV vector tile and pipeline selection
+      (`refineRVVTileSizes`) and multi-op config synchronization
+      (`syncNonRootRVVConfigs`).
   - `compiler/Transforms/CoralNPUTileSizeSelectionRVV.h` *(new)*
-      - Declare `refineRVVTileSizes` and `syncNonRootRVVConfigs`.
+    - Declare `refineRVVTileSizes` and `syncNonRootRVVConfigs`.
   - `compiler/Transforms/CoralNPUTileSizeSelectionUtils.cpp`
-      - Implement `classifyLoops`, `hasWideningInput`, and `inferConvDims`.
+    - Implement `classifyLoops`, `hasWideningInput`, and `inferConvDims`.
   - `compiler/Transforms/CoralNPUTileSizeSelectionUtils.h`
-      - Define `DTCMRoot` and declare `classifyLoops`, `hasWideningInput`, and
-        `inferConvDims`.
+    - Define `DTCMRoot` and declare `classifyLoops`, `hasWideningInput`, and
+      `inferConvDims`.
   - `compiler/Transforms/Passes.td`
-      - Update `CoralNPUTileSizeSelectionDTCM` pass summary and description to
-        document RVV vector tile, pipeline, and multi-op synchronization.
+    - Update `CoralNPUTileSizeSelectionDTCM` pass summary and description to
+      document RVV vector tile, pipeline, and multi-op synchronization.
 
 - **Documentation**:
   - `docs/design/INDEX.md`
-      - Add `CoralNPUTileSizeSelectionRVV.{h,cpp}` to the `dtcm_tiling.md` and
-        `tiling_levels_explained.md` entries.
+    - Add `CoralNPUTileSizeSelectionRVV.{h,cpp}` to the `dtcm_tiling.md` and
+      `tiling_levels_explained.md` entries.
   - `docs/design/dtcm_tiling.md`
-      - Update pass table and description to reflect RVV vector tile and
-        pipeline refinement in `CoralNPUTileSizeSelectionDTCM`.
+    - Update pass table and description to reflect RVV vector tile and pipeline
+      refinement in `CoralNPUTileSizeSelectionDTCM`.
   - `docs/design/tiling_levels_explained.md`
-      - Update Level 2 (`Vector`) configuration summary and pipeline diagram to
-        describe RVV refinement and multi-op config synchronization.
+    - Update Level 2 (`Vector`) configuration summary and pipeline diagram to
+      describe RVV refinement and multi-op config synchronization.
 
 - **Tests**:
   - `tests/transforms/tile_size_selection_dtcm.mlir`
-      - Update `@conv_3x3_n20`, `@vecmat_f32`, `@softmax`, `@softmax_scaled`,
-        and `@softmax_unaligned` for refined RVV sizes and add `@conv_3x3_f1`,
-        `@depthwise_3x3_c120`, `@vecmat_i8_i32_1000`, `@transpose_2d_f32`,
-        `@pooling_nchw_sum`, `@reduce_sum_197`, and `@softmax_f32`.
+    - Update `@conv_3x3_n20`, `@vecmat_f32`, `@softmax`, `@softmax_scaled`, and
+      `@softmax_unaligned` for refined RVV sizes and add `@conv_3x3_f1`,
+      `@depthwise_3x3_c120`, `@vecmat_i8_i32_1000`, `@transpose_2d_f32`,
+      `@pooling_nchw_sum`, `@reduce_sum_197`, and `@softmax_f32`.
   - `tests/transforms/tile_size_selection_footprint.mlir`
-      - Update `@softmax_scaled_max` expected vector tile sizes for synchronized
-        RVV multi-op reduction refinement (`[1, 0]` and `[0, 16]`).
+    - Update `@softmax_scaled_max` expected vector tile sizes for synchronized
+      RVV multi-op reduction refinement (`[1, 0]` and `[0, 16]`).
 
 ### 2.2 Implementation Tasks (`code` step)
 
@@ -581,6 +581,7 @@ and `vectorWidth = std::max<int64_t>(1, (vlenBits / 8) / elemBytes)`:
   - *Verify*: `bazel test --config=dev //tests:ci`
 
 ### 2.3 Implementation Notes & Adaptations
+
 - In `tests/transforms/tile_size_selection_footprint.mlir`, extended
   `@softmax_scaled_max` with an unfused 2D parallel producer (`%ex`, kept
   unfused by an external capture) that only feeds `%sum`, directly exercising
@@ -588,6 +589,7 @@ and `vectorWidth = std::max<int64_t>(1, (vlenBits / 8) / elemBytes)`:
   stored 2D parallel producer `%mul`.
 
 ### 2.4 Documentation Archive Checklist (`archive` step — Pre-Submit)
+
 Run this step in the final implementation CL before uploading for review:
 
 - [x] Fold lasting architectural changes (including non-obvious "Why Not X"
@@ -603,7 +605,9 @@ Run this step in the final implementation CL before uploading for review:
 
 ## Part 3: Follow-Up Items (For Reviewer Approval -> Buganizer `564546727`)
 
-- [ ] **Upstream CoralNPU RVV register tile heuristics into IREE's `LLVMCPUSelectLoweringStrategyPass`** (`P2` | `third_party/iree/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp`):
+- [ ] **Upstream CoralNPU RVV register tile heuristics into IREE's
+      `LLVMCPUSelectLoweringStrategyPass`** (`P2` |
+      `third_party/iree/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp`):
       Incrementally upstream the structural RISC-V vector tile selection rules
       from `CoralNPUTileSizeSelectionRVV.cpp` (`LMUL=4`/`LMUL=8` elementwise
       live-range sizing, `NHWC` depthwise and windowed conv unrolling, `8x8`

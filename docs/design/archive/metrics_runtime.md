@@ -106,6 +106,7 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
 ## 3. Implementation & Verification Plan
 
 ### CL 2a: Move Runtime Dispatch Statistics to `metrics/runtime/` Behind Run Hooks
+
 - [x] **Step 1 (`runtime/driver/*`, `runtime/sim/*`)**: Replace `out_stats`,
   `runtime/metrics/dispatch_observer.h`, and `runtime/sim/simulator_stats.{c,h}`
   with `coralnpu_run_hooks.h` and `coralnpu_dispatch_observer.h`.
@@ -119,6 +120,7 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
   total cycles (`bazel test --config=dev //metrics/tests/runtime:ci`).
 
 ### CL 2b: Report Firmware-Measured Kernel Cycles and Retired Instructions
+
 - [x] **Step 3 (`crt/coralnpu_{dispatch.h,main.c}`,
   `runtime/driver/coralnpu_run_hooks.h`, `runtime/sim/simulator_inline.c`,
   `metrics/runtime/*`)**: Extend `coralnpu_dispatch_request_t` to 84 bytes,
@@ -131,6 +133,7 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
   unset, and verify default-disabled and invalid `--coralnpu_stats_format` runs.
 
 ### CL 2c: Add Per-Dispatch ELF Memory Footprint and Stack Peak to Stats
+
 - [x] **Step 4 (`runtime/driver/coralnpu_dispatch_observer.h`,
   `runtime/driver/coralnpu_command_buffer.c`,
   `runtime/driver/coralnpu_run_hooks.h`, `runtime/sim/simulator_inline.c`,
@@ -151,6 +154,7 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
   `docs/design/archive/metrics_runtime.md`, and run `./scripts/format-code.sh`.
 
 ### Implementation Notes & Adaptations
+
 - **CL 2a (`runtime/driver/coralnpu_device.c`)**: Validated in
   `iree_hal_coralnpu_device_check_params` that `end_dispatch` is non-null when
   `begin_dispatch` is provided, and passed `observed ? &hooks : NULL` to
@@ -171,6 +175,7 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
 ---
 
 ## 4. Follow-Up Items (For Reviewer Approval -> Buganizer `564546727`)
+
 - [ ] **Register `stack_peak_test` in CMake and `refresh_compile_commands`**
       (`P3` | `metrics/tests/runtime/`, `BUILD.bazel`): Add `stack_peak_test` to
       CMake and `refresh_compile_commands`.

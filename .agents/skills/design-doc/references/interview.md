@@ -100,20 +100,19 @@ all load-bearing decisions are resolved:
      briefly explaining the relevant codebase mechanism or hardware/pipeline
      constraint so the developer never lacks background context.
    - **Numbered Reply Options (`1..N`)**:
-     1. **`1. (Recommended) <Option>`**: Recommended choice and its trade-off.
-     2. **`2..k. <Alternative Option(s)>`**: Realistic alternatives and
-        trade-offs.
-        - **Strong Lens Evidence Only**: If a lens found strong evidence for an
-          option (e.g., *"IREE solves the same problem this way in the GPU
-          pipeline"* or *"a minor fix in a different pass bypasses the
-          problem"*), state it shortly and clearly in plain prose without
-          `file:line` noise; omit it otherwise so options stay easy to read.
-     3. **`<k+1>. Explain the background / current codebase flow or elaborate on
-        the options (or a filtered lens idea) before deciding`**: Always include
-        this option. If selected (or if the developer asks any background
-        question in chat), explain the surrounding code/pipeline flow and unpack
-        the trade-offs thoroughly, then re-present the decision question without
-        advancing prematurely.
-     4. **`<k+2>. (Include once the core architecture is chosen) Use recommended
-        defaults for remaining details and draft the docs now`**: Exits the
-        interview and proceeds to authoring (`SKILL.md` Step 1.3).
+     - **`1. (Recommended) <Option>`**: Recommended choice and its trade-off.
+     - **`2..k. <Alternative Option(s)>`**: Realistic alternatives and
+       trade-offs. **Strong Lens Evidence Only**: If a lens found strong
+       evidence for an option (e.g., *"IREE solves the same problem this way in
+       the GPU pipeline"* or *"a minor fix in a different pass bypasses the
+       problem"*), state it shortly and clearly in plain prose without
+       `file:line` noise; omit it otherwise so options stay easy to read.
+     - **`<k+1>. Explain the background / current codebase flow or elaborate on
+       the options (or a filtered lens idea) before deciding`**: Always include
+       this option. If selected (or if the developer asks any background
+       question in chat), explain the surrounding code/pipeline flow and unpack
+       the trade-offs thoroughly, then re-present the decision question without
+       advancing prematurely.
+     - **`<k+2>. (Include once the core architecture is chosen) Use recommended
+       defaults for remaining details and draft the docs now`**: Exits the
+       interview and proceeds to authoring (`SKILL.md` Step 1.3).

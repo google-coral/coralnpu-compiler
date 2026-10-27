@@ -143,6 +143,7 @@ modified `.h`/`.td` interfaces, and referenced files across three dimensions:
 ### 4.2 Shared Main-Agent Fact-Checking Protocol (`audit` & `challenge`)
 
 When an isolated `audit` or `challenge` subagent finishes:
+
 1. **Do not modify any files automatically.**
 2. **Fact-check every finding against the codebase**: Discard low-signal
    nitpicks, deduplicate overlapping points, and label each finding (`#1`,

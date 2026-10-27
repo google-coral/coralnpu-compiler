@@ -1,22 +1,44 @@
 # `check_gen`
 
-`check_gen` is a utility tool used to generate concrete test cases (check tests) from MLIR functions with dynamic shapes. It uses IREE's compiler and runtime to evaluate input generators at build time, yielding concrete test inputs and outputs which are then baked into a self-checking MLIR test file.
-This allows writing a single test file with dynamic shapes, and automatically generating tests for many different concrete configurations.
+`check_gen` is a utility tool used to generate concrete test cases (check tests)
+from MLIR functions with dynamic shapes. It uses IREE's compiler and runtime to
+evaluate input generators at build time, yielding concrete test inputs and
+outputs which are then baked into a self-checking MLIR test file. This allows
+writing a single test file with dynamic shapes, and automatically generating
+tests for many different concrete configurations.
 
 ## What it does
 
 Given:
-1.  A MLIR file containing a function under test with dynamic shapes (e.g., `func.func @main(%arg0: tensor<?xi32>)`).
-2.  One or more **generator** files. These are typically precompiled `.vmfb` files (recommended), but can also be `.mlir` files (which will be JIT-compiled on the fly). Each generator file must contain a module with one or more generator functions. Each function must return exactly one value, and its result type must be different from all other functions in the same module. Generator functions can accept arbitrary scalar arguments (e.g. fill values, seeds, sizes). The number of generator files must match the number of arguments of the function under test, and for each argument, the corresponding generator file must contain a function with a compatible result type.
-3.  A list of concrete **instances** (arguments to be passed to the generator functions, e.g., `(8)`, `(10,256)`).
+
+1. A MLIR file containing a function under test with dynamic shapes (e.g.,
+   `func.func @main(%arg0: tensor<?xi32>)`).
+2. One or more **generator** files. These are typically precompiled `.vmfb`
+   files (recommended), but can also be `.mlir` files (which will be
+   JIT-compiled on the fly). Each generator file must contain a module with one
+   or more generator functions. Each function must return exactly one value, and
+   its result type must be different from all other functions in the same
+   module. Generator functions can accept arbitrary scalar arguments (e.g. fill
+   values, seeds, sizes). The number of generator files must match the number of
+   arguments of the function under test, and for each argument, the
+   corresponding generator file must contain a function with a compatible result
+   type.
+3. A list of concrete **instances** (arguments to be passed to the generator
+   functions, e.g., `(8)`, `(10,256)`).
 
 `check_gen` does the following for each instance:
-1.  **Evaluates the generators**: It compiles and runs the generator functions using IREE's ConstEval JIT to produce concrete input tensors.
-2.  **Evaluates the test function**: It compiles and runs the test function with the generated concrete inputs to get the expected output tensors.
-3.  **Generates a check test**: It creates a new MLIR file that:
-    *   Defines the input and expected output tensors as `util.unfoldable_constant` ops.
-    *   Calls the test function with the input constants.
-    *   Uses the `check.expect_eq` operation (or `check.expect_almost_eq` for floating-point tensors) to compare the test function's output with the expected output constants.
+
+- **1. Evaluates the generators**: It compiles and runs the generator functions
+  using IREE's ConstEval JIT to produce concrete input tensors.
+- **2. Evaluates the test function**: It compiles and runs the test function
+  with the generated concrete inputs to get the expected output tensors.
+- **3. Generates a check test**: It creates a new MLIR file that:
+  - Defines the input and expected output tensors as `util.unfoldable_constant`
+    ops.
+  - Calls the test function with the input constants.
+  - Uses the `check.expect_eq` operation (or `check.expect_almost_eq` for
+    floating-point tensors) to compare the test function's output with the
+    expected output constants.
 
 ## Direct Usage
 
@@ -33,27 +55,39 @@ check_gen \
   [<generator_1.vmfb/mlir> [<generator_2.vmfb/mlir> ...]]
 ```
 
-*   `-o <output_directory>`: The directory where the generated `_check.mlir` files will be written.
-*   `--default-gen <default_gen.vmfb/mlir>`: (Optional) The path to a VMFB or MLIR file containing default generators.
-*   `--instance "<instance>"`: The arguments for the generator functions. The format is a sequence of parenthesized arguments for each generator.
-    *   For a single generator: `--instance "(4,8)"`
-    *   For two generators: `--instance "(4,2)(5)"`
-*   `<test_dynamic.mlir>`: The path to the MLIR file containing the function under test (must be named `@main`).
-*   `<generator_N.vmfb/mlir>`: The paths to VMFB (or MLIR) files containing the generator modules. If `--default-gen` is used, some or all of these can be omitted or replaced with the keyword `default`.
+- `-o <output_directory>`: The directory where the generated `_check.mlir` files
+  will be written.
+- `--default-gen <default_gen.vmfb/mlir>`: (Optional) The path to a VMFB or MLIR
+  file containing default generators.
+- `--instance "<instance>"`: The arguments for the generator functions. The
+  format is a sequence of parenthesized arguments for each generator.
+  - For a single generator: `--instance "(4,8)"`
+  - For two generators: `--instance "(4,2)(5)"`
+- `<test_dynamic.mlir>`: The path to the MLIR file containing the function under
+  test (must be named `@main`).
+- `<generator_N.vmfb/mlir>`: The paths to VMFB (or MLIR) files containing the
+  generator modules. If `--default-gen` is used, some or all of these can be
+  omitted or replaced with the keyword `default`.
 
 ### Naming Scheme of Generated Tests
 
 The generated check test files are named using the following pattern:
 `<output_directory>/<test_file_base_name>_<instance_suffix>_check.mlir`
 
-*   `<test_file_base_name>`: The base name of the input test file (e.g., `add_rank2_i32` for `add_rank2_i32.mlir`).
-*   `<instance_suffix>`: A representation of the concrete instance arguments, where values within a group are separated by underscores (`_`) and groups are separated by dashes (`-`). For example, if the instance is `(4,8)(4,8)`, the suffix will be `4_8-4_8`, resulting in a file named `add_rank2_i32_4_8-4_8_check.mlir`.
+- `<test_file_base_name>`: The base name of the input test file (e.g.,
+  `add_rank2_i32` for `add_rank2_i32.mlir`).
+- `<instance_suffix>`: A representation of the concrete instance arguments,
+  where values within a group are separated by underscores (`_`) and groups are
+  separated by dashes (`-`). For example, if the instance is `(4,8)(4,8)`, the
+  suffix will be `4_8-4_8`, resulting in a file named
+  `add_rank2_i32_4_8-4_8_check.mlir`.
 
 ### Example
 
 Suppose we have a test file `add_rank2_i32.mlir`.
 
 **`add_rank2_i32.mlir`**:
+
 ```mlir
 func.func @main(%arg0: tensor<?x?xi32>, %arg1: tensor<?x?xi32>) -> tensor<?x?xi32> {
   %0 = stablehlo.add %arg0, %arg1 : tensor<?x?xi32>
@@ -63,6 +97,7 @@ func.func @main(%arg0: tensor<?x?xi32>, %arg1: tensor<?x?xi32>) -> tensor<?x?xi3
 
 We will use the `sequential.mlir` generator from the `generators` directory:
 **`sequential.mlir`** (generator module for sequential values):
+
 ```mlir
 [...]
 module {
@@ -89,9 +124,12 @@ module {
 }
 ```
 
-To generate check tests, you first need to compile the generators to `.vmfb` files (recommended), or you can pass `.mlir` files directly (they will be JIT-compiled on the fly by `check_gen`).
+To generate check tests, you first need to compile the generators to `.vmfb`
+files (recommended), or you can pass `.mlir` files directly (they will be
+JIT-compiled on the fly by `check_gen`).
 
 To compile a generator manually:
+
 ```bash
 iree-compile \
   --iree-hal-target-device=local \
@@ -102,11 +140,13 @@ iree-compile \
 ```
 
 First build the `check_gen` tool:
+
 ```bash
 bazel build --config=dev //tools/check_gen:check_gen
 ```
 
 Then, run the binary directly with the `.vmfb` files:
+
 ```bash
 ./bazel-bin/tools/check_gen/check_gen \
   -o tools/check_gen/examples/output \
@@ -118,6 +158,7 @@ Then, run the binary directly with the `.vmfb` files:
 ```
 
 This will generate:
+
 - `tools/check_gen/examples/output/add_rank2_i32_4_8-4_8_check.mlir`
 - `tools/check_gen/examples/output/add_rank2_i32_120_256-120_256_check.mlir`
 
@@ -153,12 +194,16 @@ module {
 
 ## Controlling Floating-Point Tolerances (atol / rtol)
 
-For floating-point outputs, `check_gen` emits `check.expect_almost_eq` instead of `check.expect_eq`.
+For floating-point outputs, `check_gen` emits `check.expect_almost_eq` instead
+of `check.expect_eq`.
 
-You can configure the comparison tolerances by adding attributes to the `@main` function in the template `.mlir` file:
+You can configure the comparison tolerances by adding attributes to the `@main`
+function in the template `.mlir` file:
 
-*   **`check.atol`**: Sets the absolute tolerance (`FloatAttr`). Omitted by default if not specified.
-*   **`check.rtol`**: Sets the relative tolerance (`FloatAttr`). Defaults to `1e-6 : f32` if omitted (to allow FMA vs non-FMA discrepancies).
+- **`check.atol`**: Sets the absolute tolerance (`FloatAttr`). Omitted by
+  default if not specified.
+- **`check.rtol`**: Sets the relative tolerance (`FloatAttr`). Defaults to
+  `1e-6 : f32` if omitted (to allow FMA vs non-FMA discrepancies).
 
 ### Example Template
 
@@ -188,9 +233,13 @@ module {
 
 ## Default Generators
 
-To simplify CLI commands and build targets, you can provide a **default generator file** containing generators for multiple MLIR types. This allows you to:
-1.  Use the keyword `"default"` as a placeholder in the generator list.
-2.  Omit generators entirely for arguments that can be satisfied by a generator in the default generator file.
+To simplify CLI commands and build targets, you can provide a **default
+generator file** containing generators for multiple MLIR types. This allows you
+to:
+
+1. Use the keyword `"default"` as a placeholder in the generator list.
+2. Omit generators entirely for arguments that can be satisfied by a generator
+   in the default generator file.
 
 Use the `--default-gen=<path>` flag to register a default generator file:
 
@@ -203,7 +252,8 @@ Use the `--default-gen=<path>` flag to register a default generator file:
   default default
 ```
 
-Or omit them entirely (since both arguments of `add_rank2_i32.mlir` are `tensor<?x?xi32>`, they will both be completed by the default generator):
+Or omit them entirely (since both arguments of `add_rank2_i32.mlir` are
+`tensor<?x?xi32>`, they will both be completed by the default generator):
 
 ```bash
 ./bazel-bin/tools/check_gen/check_gen \
@@ -215,11 +265,14 @@ Or omit them entirely (since both arguments of `add_rank2_i32.mlir` are `tensor<
 
 ## Bazel Rules Integration
 
-Typically, you don't run `check_gen` directly. Instead, you use the Bazel macros provided in `tests/defs.bzl` or `tools/check_gen/def.bzl`.
+Typically, you don't run `check_gen` directly. Instead, you use the Bazel macros
+provided in `tests/defs.bzl` or `tools/check_gen/def.bzl`.
 
 ### `check_gen_tests` Macro (Recommended)
 
-The easiest way to integrate check_gen tests into your Bazel builds is using the `check_gen_tests` macro. It automatically handles running the generator, compiling the generated MLIR files, and defining the test targets.
+The easiest way to integrate check_gen tests into your Bazel builds is using the
+`check_gen_tests` macro. It automatically handles running the generator,
+compiling the generated MLIR files, and defining the test targets.
 
 Here is the recommended setup using precompiled VMFB generators:
 
@@ -249,12 +302,14 @@ check_gen_tests(
 ```
 
 This will define:
+
 - A generator target `generate_add_rank2_i32_macro` which runs `check_gen` once.
 - For each instance (in this case, only one), it defines:
   - A compilation target: `add_rank2_i32_macro_2_16-2_16_bytecode`
   - A test target: `add_rank2_i32_macro_2_16-2_16_check_test`
 
 You can run the tests with:
+
 ```bash
 bazel test //path/to:add_rank2_i32_macro_2_16-2_16_check_test
 ```
@@ -263,11 +318,14 @@ bazel test //path/to:add_rank2_i32_macro_2_16-2_16_check_test
 
 ### Lower-level Bazel Rules (Advanced)
 
-If you need to customize the build or test steps (e.g., use a custom test runner, or run custom passes on the generated MLIR), you can use the lower-level rules.
+If you need to customize the build or test steps (e.g., use a custom test
+runner, or run custom passes on the generated MLIR), you can use the lower-level
+rules.
 
 #### `check_gen_test_generator` Rule
 
-This rule runs the generator for specific instances and outputs the generated MLIR file as an artifact.
+This rule runs the generator for specific instances and outputs the generated
+MLIR file as an artifact.
 
 ```bazel
 load("//tools/check_gen:def.bzl", "check_gen_test_generator")
@@ -284,11 +342,14 @@ check_gen_test_generator(
 )
 ```
 
-The generated MLIR files are exposed as individual targets. You can reference them in other rules using the label: `:<generator_target_name>_<instance_suffix>` (e.g., `:add_rank2_i32_mlir_8_4-1_8_4`).
+The generated MLIR files are exposed as individual targets. You can reference
+them in other rules using the label: `:<generator_target_name>_<instance_suffix>`
+(e.g., `:add_rank2_i32_mlir_8_4-1_8_4`).
 
 #### Declaring compilation and test targets manually
 
-You can manually link `check_gen_test_generator` output to `iree_bytecode_module` and `native_test`:
+You can manually link `check_gen_test_generator` output to
+`iree_bytecode_module` and `native_test`:
 
 ```bazel
 load("@iree_core//build_tools/bazel:iree_bytecode_module.bzl", "iree_bytecode_module")
@@ -318,11 +379,13 @@ native_test(
 
 ## CMake Integration
 
-Similar to Bazel, you can use CMake macros to integrate check_gen tests. The `check_gen_tests` function is provided in `def.cmake`.
+Similar to Bazel, you can use CMake macros to integrate check_gen tests. The
+`check_gen_tests` function is provided in `def.cmake`.
 
 ### `check_gen_tests` Function
 
-This function automatically handles running the generator, compiling the generated MLIR files, and defining the ctest targets.
+This function automatically handles running the generator, compiling the
+generated MLIR files, and defining the ctest targets.
 
 Here is the recommended setup:
 
@@ -344,11 +407,14 @@ check_gen_tests(
 ```
 
 This will define:
+
 - A custom target `generate_add_rank2_i32_macro` which runs `check_gen`.
 - Compilation targets for each instance.
-- CTest targets named `<NAME>_<SUFFIX>_check_test` (e.g., `add_rank2_i32_macro_2_16-2_16_check_test`).
+- CTest targets named `<NAME>_<SUFFIX>_check_test` (e.g.,
+  `add_rank2_i32_macro_2_16-2_16_check_test`).
 
 You can run the tests with:
+
 ```bash
 ctest -R "add_rank2_i32_macro.*_check_test"
 ```

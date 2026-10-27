@@ -122,6 +122,7 @@ for any non-trivial trade-off).
 ## 3. Living Component Doc Verification & Archival Standards (`archive`)
 
 During `/implement-design archive` (in `CL 2` or the final stage `CL 2n`):
+
 - **Coherence Pass & Adaptation Sync**: Merge and smooth any separate per-stage
   paragraphs/bullets added across `CL 2a .. CL 2n` and any adaptations or
   non-obvious "Why Not X" guardrails discovered during `code` into unified,

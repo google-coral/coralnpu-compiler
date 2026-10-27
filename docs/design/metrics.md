@@ -153,5 +153,3 @@ and simulator backends (`runtime/sim/`) across two narrow C boundaries:
   `max(stack.peak)` (with `"!"` appended on overflow). Behavior is verified by
   `//metrics/tests/runtime:stats_test`, `//metrics/tests/runtime:memory_test`,
   and `//metrics/tests/runtime:stack_peak_test`.
-
----
