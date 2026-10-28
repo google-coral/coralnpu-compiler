@@ -27,6 +27,7 @@
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/IR/TypeUtilities.h"
 
 // LLVM:
 #include "llvm/ADT/STLExtras.h"
@@ -38,6 +39,50 @@ using namespace mlir;
 using namespace mlir::iree_compiler;
 
 namespace mlir::coralnpu_compiler {
+
+void classifyLoops(TilingInterface tilingOp,
+                   SmallVectorImpl<unsigned> &parallelLoops,
+                   SmallVectorImpl<unsigned> &reductionLoops) {
+  for (auto [index, iterType] :
+       llvm::enumerate(tilingOp.getLoopIteratorTypes())) {
+    switch (iterType) {
+      case utils::IteratorType::parallel:
+        parallelLoops.push_back(index);
+        break;
+      case utils::IteratorType::reduction:
+        reductionLoops.push_back(index);
+        break;
+    }
+  }
+}
+
+bool hasWideningInput(linalg::LinalgOp op) {
+  if (!op || op.getNumDpsInputs() == 0 || op->getNumResults() == 0) {
+    return false;
+  }
+  Type inTy = getElementTypeOrSelf(op.getDpsInputOperand(0)->get().getType());
+  Type outTy = getElementTypeOrSelf(op->getResult(0).getType());
+  if (!inTy.isIntOrFloat() || !outTy.isIntOrFloat()) return false;
+  unsigned inBits = inTy.getIntOrFloatBitWidth();
+  unsigned outBits = outTy.getIntOrFloatBitWidth();
+  return inBits >= 8 && inBits < outBits;
+}
+
+FailureOr<linalg::ConvolutionDimensions> inferConvDims(Operation *op) {
+  auto linalgOp = dyn_cast_if_present<linalg::LinalgOp>(op);
+  if (!linalgOp || !linalg::isaConvolutionOpInterface(linalgOp)) {
+    return failure();
+  }
+  if (FailureOr<linalg::ConvolutionDimensions> dims =
+          linalg::inferConvolutionDims(linalgOp);
+      succeeded(dims)) {
+    return dims;
+  }
+  SmallVector<AffineMap> maps = linalgOp.getIndexingMapsArray();
+  if (maps.size() < 3) return failure();
+  return linalg::inferConvolutionDims(
+      ArrayRef<AffineMap>{maps[0], maps[1], maps.back()});
+}
 
 FailureOr<int64_t> getVlenFromTargetFeatures(FunctionOpInterface funcOp) {
   auto targetAttr = IREE::HAL::ExecutableTargetAttr::lookup(funcOp);

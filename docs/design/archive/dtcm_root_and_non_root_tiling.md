@@ -88,7 +88,7 @@
   - Refining RVV register-level vector tile sizes (`vector_common_parallel`,
     `vector_reduction`), CPU lowering pipelines, or synchronized non-root RVV
     lowering configs (addressed in the companion design document
-    [rvv_tile_size_selection.md](../changes/rvv_tile_size_selection.md)).
+    [rvv_tile_size_selection.md](rvv_tile_size_selection.md)).
   - Adding an upstream IREE callback in `LLVMCPUSelectLoweringStrategyPass`
     between root configuration and non-root configuration propagation (tracked
     in **Part 3: Follow-Up Items**).

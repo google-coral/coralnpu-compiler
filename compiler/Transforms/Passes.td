@@ -79,23 +79,28 @@ def CoralNPUDumpAffinityExecutionProfile : Pass<"coralnpu-dump-affinity-executio
 }
 
 def CoralNPUTileSizeSelectionDTCM : InterfacePass<"coralnpu-tile-size-selection-dtcm", "mlir::FunctionOpInterface"> {
-  let summary = "Selects DTCM- and workgroup-level tile sizes for CoralNPU operations";
+  let summary = "Selects DTCM-, workgroup-, and vector-level tile sizes for CoralNPU operations";
   let description = [{
-    This pass determines the optimal DTCM-level tile sizes for CoralNPU. It runs
-    after LLVMCPUSelectLoweringStrategyPass and refines the lowering config of
-    the root op: it sets the cache_parallel and cache_reduction tile sizes, and
-    sets the distribution tile sizes to cache_parallel.
+    This pass determines the optimal DTCM-, workgroup-, and vector-level tile
+    sizes for CoralNPU. It runs after LLVMCPUSelectLoweringStrategyPass and
+    refines the lowering config of the root op: it refines the Zvt and RVV
+    vector tile sizes and CPU lowering pipeline, sets the cache_parallel and
+    cache_reduction tile sizes, sets the distribution tile sizes to
+    cache_parallel, and synchronizes non-root reduction configs.
     It uses a footprint estimation model to iteratively shrink the tile sizes
     until the estimated DTCM footprint of one tile fits within the DTCM tile
-    budget, using the vector tile sizes of the strategy pass as alignment
-    constraints and preferring exact divisors of the loop ranges. The
-    footprint is the sum of the DTCM buffers of the root op and of the ops
-    fused with it (input slices, output staging buffers, an accumulator for a
-    split reduction, and the scratch tiles of the Zvt asm). The budget is the
-    DTCM size minus the stack and the reserve, rounded down to 4 KB.
+    budget, using the refined vector tile sizes as alignment constraints and
+    preferring exact divisors of the loop ranges. The footprint is the sum of
+    the DTCM buffers of the root op and of the ops fused with it (input slices,
+    output staging buffers, an accumulator for a split reduction, and the
+    scratch tiles of the Zvt asm). The budget is the DTCM size minus the stack
+    and the reserve, rounded down to 4 KB.
     For Zvt matrix contractions and convolutions it sets M/N vector tiles of
     up to 64 and vector reduction tiles of 1, and enables loop peeling;
-    otherwise the RVV sizes of the strategy pass are kept. For RVV contractions
+    otherwise it refines RVV vector tile sizes using structural LinalgOp
+    interfaces (preserving IREE's strategy sizes for 2D reuse contractions,
+    bare spatial convolutions, NCHW convolutions/poolings that only IREE
+    decomposes, and prime/unaligned reduction ranges). For RVV contractions
     with reuse across both M and N, it sets promote_operands; the reduction
     loops of Zvt and unpromoted ops are not split: they stream one step at a
     time.

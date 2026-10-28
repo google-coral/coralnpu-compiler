@@ -22,9 +22,9 @@
 // RUN:     --implicit-check-not=warning:
 
 // CoralNPUTileSizeSelectionDTCM runs after LLVMCPUSelectLoweringStrategyPass.
-// It keeps the vector tile sizes of the strategy pass (except for Zvt), sets
-// the DTCM tile sizes (cache_parallel, cache_reduction), and sets the
-// distribution tile sizes to cache_parallel.
+// It refines the vector tile sizes (Zvt or RVV), sets the DTCM tile sizes
+// (cache_parallel, cache_reduction), and sets the distribution tile sizes to
+// cache_parallel.
 // For an RVV contraction, the DTCM pass also sets promote_operands, so that
 // CoralNPUPromoteOperands copies the tiles to DTCM (promote_operands.mlir).
 //
@@ -247,11 +247,13 @@ func.func @conv_3x3_n24(%in: tensor<1x34x34x16xi8>, %w: tensor<3x3x16x24xi8>) ->
   return %r : tensor<1x32x32x24xi32>
 }
 
-// N = 20 splits into neither 12- nor 8-column tiles, so the convolution keeps
-// the RVV sizes.
+// N = 20 splits into neither 12- nor 8-column Zvt tiles, so the convolution
+// uses RVV with ConvTileAndDecomposeExpert (`ow = 4`, `oc = 20`, so `oc` is
+// untiled at the vector level).
 // CHECK-LABEL: func.func @conv_3x3_n20
+// CHECK-SAME: pipeline = #iree_cpu.pipeline<ConvTileAndDecomposeExpert>
 // CHECK: linalg.generic
-// CHECK-SAME: vector_common_parallel = [1, 1, 8, 10, 0, 0, 0]
+// CHECK-SAME: vector_common_parallel = [0, 1, 4, 0, 0, 0, 0], vector_reduction = [0, 0, 0, 0, 1, 1, 1]
 func.func @conv_3x3_n20(%in: tensor<1x34x34x16xi8>, %w: tensor<3x3x16x20xi8>) -> tensor<1x32x32x20xi32> {
   %c0 = arith.constant 0 : i32
   %e = tensor.empty() : tensor<1x32x32x20xi32>
@@ -259,6 +261,40 @@ func.func @conv_3x3_n20(%in: tensor<1x34x34x16xi8>, %w: tensor<3x3x16x20xi8>) ->
   %r = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>}
        ins(%in, %w : tensor<1x34x34x16xi8>, tensor<3x3x16x20xi8>) outs(%f : tensor<1x32x32x20xi32>) -> tensor<1x32x32x20xi32>
   return %r : tensor<1x32x32x20xi32>
+}
+
+// A 2D NHWC convolution with F = 1 has its unit batch and output channel
+// dimensions folded away into a 5-loop generic (`outputChannel` is empty), so
+// RVV falls back to the non-channel-last 2D conv rule (`[1, 16, 0, 0, 0]`).
+// CHECK-LABEL: func.func @conv_3x3_f1
+// CHECK-SAME: pipeline = #iree_cpu.pipeline<DoubleTilingExpert>
+// CHECK: linalg.generic
+// CHECK-SAME: vector_common_parallel = [1, 16, 0, 0, 0], vector_reduction = [0, 0, 1, 1, 1]
+func.func @conv_3x3_f1(%in: tensor<1x34x34x16xf32>, %w: tensor<3x3x16x1xf32>) -> tensor<1x32x32x1xf32> {
+  %c0 = arith.constant 0.0 : f32
+  %e = tensor.empty() : tensor<1x32x32x1xf32>
+  %f = linalg.fill ins(%c0 : f32) outs(%e : tensor<1x32x32x1xf32>) -> tensor<1x32x32x1xf32>
+  %r = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>}
+       ins(%in, %w : tensor<1x34x34x16xf32>, tensor<3x3x16x1xf32>) outs(%f : tensor<1x32x32x1xf32>) -> tensor<1x32x32x1xf32>
+  return %r : tensor<1x32x32x1xf32>
+}
+
+// Widening 2D NHWC depthwise conv (c = 120, i8 -> i32): RVV snaps c from 32
+// to 30 (cRegs = 8), sets ow = 16 / 8 = 2, and unrolls kw = 3 (to 0). The
+// DTCM pass pre-tiles c to 30 before shrinking oh to 4 so the tile keeps a
+// taller spatial frame with fewer duplicated halo rows.
+// CHECK-LABEL: func.func @depthwise_3x3_c120
+// CHECK-SAME: pipeline = #iree_cpu.pipeline<ConvTileAndDecomposeExpert>
+// CHECK: linalg.generic
+// CHECK-SAME: cache_parallel = [0, 4, 0, 30, 0, 0], cache_reduction = [0, 0, 0, 0, 0, 0], distribution = [0, 4, 0, 30, 0, 0]
+// CHECK-SAME: vector_common_parallel = [0, 1, 2, 30, 0, 0], vector_reduction = [0, 0, 0, 0, 1, 0]
+func.func @depthwise_3x3_c120(%in: tensor<1x34x34x120xi8>, %w: tensor<3x3x120xi8>) -> tensor<1x32x32x120xi32> {
+  %c0 = arith.constant 0 : i32
+  %e = tensor.empty() : tensor<1x32x32x120xi32>
+  %f = linalg.fill ins(%c0 : i32) outs(%e : tensor<1x32x32x120xi32>) -> tensor<1x32x32x120xi32>
+  %r = linalg.depthwise_conv_2d_nhwc_hwc {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>}
+       ins(%in, %w : tensor<1x34x34x120xi8>, tensor<3x3x120xi8>) outs(%f : tensor<1x32x32x120xi32>) -> tensor<1x32x32x120xi32>
+  return %r : tensor<1x32x32x120xi32>
 }
 
 // 1x4 and 4x1 Zvt strips: N = 128 takes 64-column tiles, M = 128 64-row ones.
@@ -389,32 +425,31 @@ func.func @matmul_zvt_fallback(%a: tensor<32x32xf32>, %b: tensor<32x32xf32>, %sc
 
 // Decomposed softmax (max reduction -> exp+sum root reduction -> div 2D
 // consumer): non-root ops share the root's [64, 256] domain and innermost
-// reduction loop, so cache_reduction stays [0, 0]. Input + output is 2 KB/row
-// (128 KB untiled). With 24 KB, 8 rows (16 KB) fit at the strategy alignment 8.
-// With 4 KB (SMALL), the search relaxes alignment to 1, shrinks to 2 rows
-// (4 KB), and clamps vector_common_parallel to [2, 0]. With 1 MB (HIGHMEM), it
-// stays untiled.
+// reduction loop, so cache_reduction stays [0, 0] and RVV refines all three ops
+// to vector_common_parallel = [1, 0] with reduction/inner_parallel = [0, 16].
+// Input + output is 2 KB/row (128 KB untiled). With 24 KB, 8 rows (16 KB) fit.
+// With 4 KB (SMALL), 2 rows (4 KB) fit. With 1 MB (HIGHMEM), it stays untiled.
 // CHECK-LABEL: func.func @softmax_dispatch_0
 // CHECK:         linalg.generic
-// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [8, 0], vector_reduction = [0, 8]>
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // CHECK:         linalg.generic
-// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [8, 0], cache_reduction = [0, 0], distribution = [8, 0], vector_common_parallel = [8, 0], vector_reduction = [0, 8]>
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [8, 0], cache_reduction = [0, 0], distribution = [8, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // CHECK:         linalg.generic
-// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [8, 0], vector_inner_parallel = [0, 8]>
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 // SMALL-LABEL: func.func @softmax_dispatch_0
 // SMALL:         linalg.generic
-// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // SMALL:         linalg.generic
-// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 0], cache_reduction = [0, 0], distribution = [2, 0], vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 0], cache_reduction = [0, 0], distribution = [2, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // SMALL:         linalg.generic
-// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 // HIGHMEM-LABEL: func.func @softmax_dispatch_0
 // HIGHMEM:         linalg.generic
-// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [8, 0], vector_reduction = [0, 8]>
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // HIGHMEM:         linalg.generic
-// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0], cache_reduction = [0, 0], distribution = [0, 0], vector_common_parallel = [8, 0], vector_reduction = [0, 8]>
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0], cache_reduction = [0, 0], distribution = [0, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // HIGHMEM:         linalg.generic
-// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [8, 0], vector_inner_parallel = [0, 8]>
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 func.func @softmax(%x: tensor<64x256xf32>) -> tensor<64x256xf32> {
   %e = tensor.empty() : tensor<64x256xf32>
   %r = linalg.softmax dimension(1) ins(%x : tensor<64x256xf32>) outs(%e : tensor<64x256xf32>) -> tensor<64x256xf32>
@@ -424,30 +459,29 @@ func.func @softmax(%x: tensor<64x256xf32>) -> tensor<64x256xf32> {
 // Softmax fused with a 2D post-scale consumer: 2 inputs (x, w) + 1 output of
 // 16x512 f32 need 6 KB/row (96 KB untiled). With 24 KB, 4 rows (24 KB) fit.
 // With 4 KB (SMALL), even 1 row (6 KB) exceeds the budget and cache_reduction
-// cannot split, so the pass keeps the 1-row parallel tile [1, 0] and clamps
-// vector_common_parallel from [2, 0] to [1, 0] without emitting a warning.
-// With 1 MB (HIGHMEM), it stays untiled.
+// cannot split, so the pass keeps the 1-row parallel tile [1, 0] without
+// emitting a warning. With 1 MB (HIGHMEM), it stays untiled.
 // CHECK-LABEL: func.func @softmax_scaled_dispatch_0
 // CHECK:         linalg.generic
-// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // CHECK:         linalg.generic
-// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [4, 0], cache_reduction = [0, 0], distribution = [4, 0], vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [4, 0], cache_reduction = [0, 0], distribution = [4, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // CHECK:         linalg.generic
-// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 // SMALL-LABEL: func.func @softmax_scaled_dispatch_0
 // SMALL:         linalg.generic
-// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 8]>
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // SMALL:         linalg.generic
-// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [1, 0], cache_reduction = [0, 0], distribution = [1, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 8]>
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [1, 0], cache_reduction = [0, 0], distribution = [1, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // SMALL:         linalg.generic
-// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 8]>
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 // HIGHMEM-LABEL: func.func @softmax_scaled_dispatch_0
 // HIGHMEM:         linalg.generic
-// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // HIGHMEM:         linalg.generic
-// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0], cache_reduction = [0, 0], distribution = [0, 0], vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0], cache_reduction = [0, 0], distribution = [0, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // HIGHMEM:         linalg.generic
-// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 func.func @softmax_scaled(%x: tensor<16x512xf32>, %w: tensor<16x512xf32>) -> tensor<16x512xf32> {
   %e = tensor.empty() : tensor<16x512xf32>
   %s = linalg.softmax dimension(1) ins(%x : tensor<16x512xf32>) outs(%e : tensor<16x512xf32>) -> tensor<16x512xf32>
@@ -462,33 +496,30 @@ func.func @softmax_scaled(%x: tensor<16x512xf32>, %w: tensor<16x512xf32>) -> ten
 }
 
 // Unaligned softmax row count (196x256 f32, 2 KB/row, 392 KB untiled):
-// parallel vector tiles snap to static slices so producer reductions do not
-// fuse into the root's vector_reduction loop. With 24 KB, 8 rows (16 KB) fit
-// and 196 % 8 != 0 snaps vector_common_parallel from [8, 0] to [1, 0]. With
-// 4 KB (SMALL), 2 rows (4 KB) divide 196 and clamp vector_common_parallel to
-// [2, 0]. With 1 MB (HIGHMEM), the DTCM tile stays [0, 0] and
-// vector_common_parallel snaps to gcd(196, 8) = [4, 0].
+// RVV refines vector_common_parallel to [1, 0] and vector_reduction to [0, 16],
+// so DTCM shrinks along exact divisors of 196: 7 rows (14 KB) for 24 KB DTCM,
+// 2 rows (4 KB) for 4 KB DTCM (SMALL), and untiled [0, 0] for 1 MB (HIGHMEM).
 // CHECK-LABEL: func.func @softmax_unaligned_dispatch_0
 // CHECK:         linalg.generic
-// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 8]>
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // CHECK:         linalg.generic
-// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [8, 0], cache_reduction = [0, 0], distribution = [8, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 8]>
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [7, 0], cache_reduction = [0, 0], distribution = [7, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // CHECK:         linalg.generic
-// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 8]>
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 // SMALL-LABEL: func.func @softmax_unaligned_dispatch_0
 // SMALL:         linalg.generic
-// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // SMALL:         linalg.generic
-// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 0], cache_reduction = [0, 0], distribution = [2, 0], vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 0], cache_reduction = [0, 0], distribution = [2, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // SMALL:         linalg.generic
-// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 // HIGHMEM-LABEL: func.func @softmax_unaligned_dispatch_0
 // HIGHMEM:         linalg.generic
-// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [4, 0], vector_reduction = [0, 8]>
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // HIGHMEM:         linalg.generic
-// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0], cache_reduction = [0, 0], distribution = [0, 0], vector_common_parallel = [4, 0], vector_reduction = [0, 8]>
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0], cache_reduction = [0, 0], distribution = [0, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 // HIGHMEM:         linalg.generic
-// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [4, 0], vector_inner_parallel = [0, 8]>
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 func.func @softmax_unaligned(%x: tensor<196x256xf32>) -> tensor<196x256xf32> {
   %e = tensor.empty() : tensor<196x256xf32>
   %r = linalg.softmax dimension(1) ins(%x : tensor<196x256xf32>) outs(%e : tensor<196x256xf32>) -> tensor<196x256xf32>
@@ -515,6 +546,125 @@ func.func @vecmat_f32(%x: tensor<640xf32>, %w: tensor<640x1024xf32>) -> tensor<1
   %f = linalg.fill ins(%cst : f32) outs(%e : tensor<1024xf32>) -> tensor<1024xf32>
   %r = linalg.vecmat ins(%x, %w : tensor<640xf32>, tensor<640x1024xf32>) outs(%f : tensor<1024xf32>) -> tensor<1024xf32>
   return %r : tensor<1024xf32>
+}
+
+// Widening integer vecmat (512xi8 * 512x1000xi8 -> 1000xi32): 1000 % 64 = 40 >
+// 32, so RVV picks one LMUL=8 accumulator group (32) and peels the 8-element
+// remainder (`enable_loop_peeling`).
+// CHECK-LABEL: func.func @vecmat_i8_i32_1000_dispatch_0
+// CHECK-SAME:    pipeline = #iree_cpu.pipeline<DoubleTilingExpert>, {enable_loop_peeling}
+// CHECK:         linalg.generic
+// CHECK-SAME:      vector_common_parallel = [32, 0], vector_reduction = [0, 1]
+func.func @vecmat_i8_i32_1000(%x: tensor<512xi8>, %w: tensor<512x1000xi8>) -> tensor<1000xi32> {
+  %c0 = arith.constant 0 : i32
+  %e = tensor.empty() : tensor<1000xi32>
+  %f = linalg.fill ins(%c0 : i32) outs(%e : tensor<1000xi32>) -> tensor<1000xi32>
+  %r = linalg.generic {indexing_maps = [affine_map<(n, k) -> (k)>, affine_map<(n, k) -> (k, n)>, affine_map<(n, k) -> (n)>],
+                       iterator_types = ["parallel", "reduction"]}
+       ins(%x, %w : tensor<512xi8>, tensor<512x1000xi8>) outs(%f : tensor<1000xi32>) {
+  ^bb0(%a: i8, %b: i8, %o: i32):
+    %a32 = arith.extsi %a : i8 to i32
+    %b32 = arith.extsi %b : i8 to i32
+    %m = arith.muli %a32, %b32 : i32
+    %s = arith.addi %o, %m : i32
+    linalg.yield %s : i32
+  } -> tensor<1000xi32>
+  return %r : tensor<1000xi32>
+}
+
+// 2D transpose (64x64xf32): RVV tiles both parallel dimensions to 8x8 for
+// in-register transpose shuffles.
+// CHECK-LABEL: func.func @transpose_2d_f32_dispatch_0
+// CHECK-SAME:    pipeline = #iree_cpu.pipeline<DoubleTilingExpert>
+// CHECK:         linalg.generic
+// CHECK-SAME:      vector_common_parallel = [8, 8]
+func.func @transpose_2d_f32(%x: tensor<64x64xf32>) -> tensor<64x64xf32> {
+  %e = tensor.empty() : tensor<64x64xf32>
+  %r = linalg.transpose ins(%x : tensor<64x64xf32>) outs(%e : tensor<64x64xf32>) permutation = [1, 0]
+  return %r : tensor<64x64xf32>
+}
+
+// Channel-first NCHW pooling: IREE's strategy pass selects
+// ConvTileAndDecomposeExpert; because RVV does not decompose NCHW poolings, it
+// preserves the strategy pass's decomposable vector tile sizes.
+// CHECK-LABEL: func.func @pooling_nchw_sum_dispatch_0
+// CHECK-SAME:    pipeline = #iree_cpu.pipeline<ConvTileAndDecomposeExpert>
+// CHECK:         linalg.generic
+// CHECK-SAME:      vector_common_parallel = [1, 2, 1, 8, 0, 0], vector_reduction = [0, 0, 0, 0, 1, 3]
+func.func @pooling_nchw_sum(%in: tensor<1x16x34x34xf32>) -> tensor<1x16x32x32xf32> {
+  %cst = arith.constant 0.0 : f32
+  %e = tensor.empty() : tensor<1x16x32x32xf32>
+  %w = tensor.empty() : tensor<3x3xf32>
+  %f = linalg.fill ins(%cst : f32) outs(%e : tensor<1x16x32x32xf32>) -> tensor<1x16x32x32xf32>
+  %r = linalg.pooling_nchw_sum {dilations = dense<1> : vector<2xi64>, strides = dense<1> : vector<2xi64>}
+       ins(%in, %w : tensor<1x16x34x34xf32>, tensor<3x3xf32>) outs(%f : tensor<1x16x32x32xf32>) -> tensor<1x16x32x32xf32>
+  return %r : tensor<1x16x32x32xf32>
+}
+
+// Row reduction over a prime extent (197): divisor snapping collapses the
+// 16-lane reduction tile to 1 (< 4 lanes), so RVV preserves the strategy
+// pass's masked vector tile sizes ([8, 0] and [0, 8]).
+// CHECK-LABEL: func.func @reduce_sum_197_dispatch_0
+// CHECK:         linalg.generic
+// CHECK-SAME:      vector_common_parallel = [8, 0], vector_reduction = [0, 8]
+func.func @reduce_sum_197(%x: tensor<64x197xf32>) -> tensor<64xf32> {
+  %cst = arith.constant 0.0 : f32
+  %e = tensor.empty() : tensor<64xf32>
+  %f = linalg.fill ins(%cst : f32) outs(%e : tensor<64xf32>) -> tensor<64xf32>
+  %r = linalg.reduce ins(%x : tensor<64x197xf32>) outs(%f : tensor<64xf32>) dimensions = [1]
+    (%in: f32, %acc: f32) {
+      %s = arith.addf %in, %acc : f32
+      linalg.yield %s : f32
+    }
+  return %r : tensor<64xf32>
+}
+
+// IREE splits the hand-written softmax into a max-reduction dispatch and an
+// exp-sum + normalization dispatch. The latter keeps one-row DTCM tiles
+// although its 4096-element rows exceed the budget, and its normalization takes
+// the root's 16-lane reduction tile as its inner-parallel tile.
+// CHECK-LABEL: func.func @softmax_f32_dispatch_0
+// CHECK:         linalg.generic
+// CHECK-SAME:      vector_common_parallel = [1, 0], vector_reduction = [0, 16]
+// CHECK-LABEL: func.func @softmax_f32_dispatch_1
+// CHECK:         linalg.generic
+// CHECK-SAME:      distribution = [1, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]
+// CHECK:         linalg.generic
+// CHECK-SAME:      vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]
+func.func @softmax_f32(%in: tensor<8x4096xf32>) -> tensor<8x4096xf32> {
+  %neg_inf = arith.constant 0xFF800000 : f32
+  %zero = arith.constant 0.0 : f32
+  %em = tensor.empty() : tensor<8xf32>
+  %fm = linalg.fill ins(%neg_inf : f32) outs(%em : tensor<8xf32>) -> tensor<8xf32>
+  %max = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>],
+                         iterator_types = ["parallel", "reduction"]}
+      ins(%in : tensor<8x4096xf32>) outs(%fm : tensor<8xf32>) {
+  ^bb0(%x: f32, %acc: f32):
+    %m = arith.maximumf %x, %acc : f32
+    linalg.yield %m : f32
+  } -> tensor<8xf32>
+  %es = tensor.empty() : tensor<8xf32>
+  %fs = linalg.fill ins(%zero : f32) outs(%es : tensor<8xf32>) -> tensor<8xf32>
+  %sum = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>, affine_map<(d0, d1) -> (d0)>],
+                         iterator_types = ["parallel", "reduction"]}
+      ins(%in, %max : tensor<8x4096xf32>, tensor<8xf32>) outs(%fs : tensor<8xf32>) {
+  ^bb0(%x: f32, %m: f32, %acc: f32):
+    %d = arith.subf %x, %m : f32
+    %ex = math.exp %d : f32
+    %s = arith.addf %acc, %ex : f32
+    linalg.yield %s : f32
+  } -> tensor<8xf32>
+  %eo = tensor.empty() : tensor<8x4096xf32>
+  %out = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>, affine_map<(d0, d1) -> (d0)>, affine_map<(d0, d1) -> (d0, d1)>],
+                         iterator_types = ["parallel", "parallel"]}
+      ins(%in, %max, %sum : tensor<8x4096xf32>, tensor<8xf32>, tensor<8xf32>) outs(%eo : tensor<8x4096xf32>) {
+  ^bb0(%x: f32, %m: f32, %s: f32, %o: f32):
+    %d = arith.subf %x, %m : f32
+    %ex = math.exp %d : f32
+    %q = arith.divf %ex, %s : f32
+    linalg.yield %q : f32
+  } -> tensor<8x4096xf32>
+  return %out : tensor<8x4096xf32>
 }
 
 // A streamed reduction loop without a vector tile (vectorSize <= 0) keeps its

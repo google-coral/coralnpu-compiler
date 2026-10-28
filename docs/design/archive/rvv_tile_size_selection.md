@@ -542,14 +542,14 @@ and `vectorWidth = std::max<int64_t>(1, (vlenBits / 8) / elemBytes)`:
 
 ### 2.2 Implementation Tasks (`code` step)
 
-- [ ] **Task 1**: Move `DTCMRoot` and outermost-first `classifyLoops` to
+- [x] **Task 1**: Move `DTCMRoot` and outermost-first `classifyLoops` to
       `CoralNPUTileSizeSelectionUtils.{h,cpp}`, and add `hasWideningInput` and
       `inferConvDims`.
   - *Target*: `compiler/Transforms/CoralNPUTileSizeSelectionUtils.h`,
     `compiler/Transforms/CoralNPUTileSizeSelectionUtils.cpp`,
     `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`
   - *Verify*: `bazel test --config=dev //tests/transforms:lit`
-- [ ] **Task 2**: Implement `CoralNPUTileSizeSelectionRVV.{h,cpp}`
+- [x] **Task 2**: Implement `CoralNPUTileSizeSelectionRVV.{h,cpp}`
       (`refineRVVTileSizes` and `syncNonRootRVVConfigs` operating on
       `const DTCMRoot &root` with outermost-first `parallelLoops` and
       `reductionLoops`), integrate `refineRVVTileSizes`, 2D `NHWC` depthwise
@@ -562,7 +562,7 @@ and `vectorWidth = std::max<int64_t>(1, (vlenBits / 8) / elemBytes)`:
     `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`,
     `compiler/Transforms/BUILD.bazel`
   - *Verify*: `bazel build --config=dev @iree_core//tools:iree-compile`
-- [ ] **Task 3**: Update existing LIT expectations and add `@conv_3x3_f1`,
+- [x] **Task 3**: Update existing LIT expectations and add `@conv_3x3_f1`,
       `@depthwise_3x3_c120`, `@vecmat_i8_i32_1000`, `@transpose_2d_f32`,
       `@pooling_nchw_sum`, `@reduce_sum_197`, and `@softmax_f32` in
       `tests/transforms/tile_size_selection_dtcm.mlir` and
@@ -570,7 +570,7 @@ and `vectorWidth = std::max<int64_t>(1, (vlenBits / 8) / elemBytes)`:
   - *Target*: `tests/transforms/tile_size_selection_dtcm.mlir`,
     `tests/transforms/tile_size_selection_footprint.mlir`
   - *Verify*: `bazel test --config=dev //tests/transforms:lit`
-- [ ] **Task 4 (Build & Doc Sync)**: Sync `compiler/Transforms/CMakeLists.txt`,
+- [x] **Task 4 (Build & Doc Sync)**: Sync `compiler/Transforms/CMakeLists.txt`,
       `compiler/Target/CoralNPUTargetBackend.cpp`, `compiler/Transforms/Passes.td`,
       `docs/design/INDEX.md`, `docs/design/dtcm_tiling.md`, and
       `docs/design/tiling_levels_explained.md`, and run the CI test suite.
@@ -581,19 +581,23 @@ and `vectorWidth = std::max<int64_t>(1, (vlenBits / 8) / elemBytes)`:
   - *Verify*: `bazel test --config=dev //tests:ci`
 
 ### 2.3 Implementation Notes & Adaptations
-- *(None yet)*
+- In `tests/transforms/tile_size_selection_footprint.mlir`, extended
+  `@softmax_scaled_max` with an unfused 2D parallel producer (`%ex`, kept
+  unfused by an external capture) that only feeds `%sum`, directly exercising
+  the `onlyFeedsReduction` branch of `syncNonRootRVVConfigs` alongside the
+  stored 2D parallel producer `%mul`.
 
 ### 2.4 Documentation Archive Checklist (`archive` step — Pre-Submit)
 Run this step in the final implementation CL before uploading for review:
 
-- [ ] Fold lasting architectural changes (including non-obvious "Why Not X"
+- [x] Fold lasting architectural changes (including non-obvious "Why Not X"
       rejected-alternative rationales) into `docs/design/dtcm_tiling.md` and
       `docs/design/tiling_levels_explained.md`, and update
       `docs/design/INDEX.md` if a component doc was added or its scope changed.
-- [ ] Move this document from
+- [x] Move this document from
       `docs/design/changes/rvv_tile_size_selection.md` to
       `docs/design/archive/rvv_tile_size_selection.md` using `git mv`.
-- [ ] Format modified code with `./scripts/format-code.sh`.
+- [x] Format modified code with `./scripts/format-code.sh`.
 
 ---
 

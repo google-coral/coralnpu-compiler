@@ -17,6 +17,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "compiler/Transforms/CoralNPUTileSizeSelectionFootprint.h"
+#include "compiler/Transforms/CoralNPUTileSizeSelectionRVV.h"
 #include "compiler/Transforms/CoralNPUTileSizeSelectionUtils.h"
 #include "compiler/Transforms/Passes.h"
 
@@ -70,34 +71,6 @@ namespace mlir::coralnpu_compiler {
 #include "compiler/Transforms/Passes.h.inc"
 
 namespace {
-
-// The root op of a dispatch and its loops, for the DTCM tile-size selection.
-struct DTCMRoot {
-  Operation *op = nullptr;  // has the strategy config
-  IREE::CPU::LoweringConfigAttr config;
-  SmallVector<int64_t> loopRanges;          // static ranges
-  SmallVector<unsigned> parallelLoops;      // outermost first
-  SmallVector<unsigned> reductionLoops;     // outermost first
-  SmallVector<TilingInterface> nonRootOps;  // multi-op reduction peers
-};
-
-// Appends the parallel and reduction loop indices of `tilingOp` in
-// outermost-first order.
-void classifyLoops(TilingInterface tilingOp,
-                   SmallVectorImpl<unsigned> &parallelLoops,
-                   SmallVectorImpl<unsigned> &reductionLoops) {
-  for (auto [index, iterType] :
-       llvm::enumerate(tilingOp.getLoopIteratorTypes())) {
-    switch (iterType) {
-      case utils::IteratorType::parallel:
-        parallelLoops.push_back(index);
-        break;
-      case utils::IteratorType::reduction:
-        reductionLoops.push_back(index);
-        break;
-    }
-  }
-}
 
 // Returns the static loop ranges of `op`, or `std::nullopt` if any loop has a
 // dynamic range.
@@ -511,6 +484,7 @@ struct SelectedTileSizes {
   SmallVector<int64_t> dtcmTileSizes;
   SmallVector<int64_t> vectorParallelSizes;
   SmallVector<int64_t> vectorReductionSizes;
+  std::optional<IREE::CPU::LoweringPipeline> rvvPipeline;
   bool useZvt = false;
   bool parallelClamped = false;
   bool reductionClamped = false;
@@ -521,8 +495,10 @@ struct SelectedTileSizes {
 // when `streamReduction` prevents splitting the reduction loop), or emits an op
 // error and returns failure.
 FailureOr<SelectedTileSizes> selectDTCMTileSizes(
-    const DTCMRoot &root, const DTCMFootprintModel &footprintModel,
-    int64_t budgetBytes) {
+    FunctionOpInterface funcOp, const DTCMRoot &root,
+    const DTCMFootprintModel &footprintModel, int64_t budgetBytes) {
+  // The RVV vector tile sizes of the strategy pass, for a root that does not
+  // use Zvt.
   SelectedTileSizes selected;
   selected.vectorParallelSizes = getTilingLevelSizes(
       root, IREE::CPU::TilingLevel::VectorCommonParallelTiles);
@@ -548,6 +524,10 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
     selected.useZvt = true;
     streamReduction = true;
     std::tie(zvtMLoop, zvtNLoop) = getZvtMNLoops(linalgOp);
+  } else {
+    selected.rvvPipeline =
+        refineRVVTileSizes(funcOp, root, selected.vectorParallelSizes,
+                           selected.vectorReductionSizes);
   }
 
   // When the search shrinks a DTCM tile, it aligns the tile to a multiple of
@@ -564,6 +544,28 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
   // tile with full K and little reuse in DTCM. Search for the tile with the
   // best reuse for the budget.
   selected.dtcmTileSizes = root.loopRanges;
+
+  // On 2D channel-last depthwise convolutions without a channel multiplier,
+  // pre-tile the channel dimension to a single RVV vector tile so the DTCM
+  // shrink loop preserves taller spatial tiles with fewer duplicated input
+  // halo rows.
+  if (!selected.useZvt && linalgOp) {
+    auto dims = inferConvDims(root.op);
+    if (succeeded(dims) && dims->inputChannel.empty() &&
+        dims->outputChannel.empty() && dims->depth.size() == 1 &&
+        dims->outputImage.size() == 2 && !root.parallelLoops.empty() &&
+        dims->depth[0] == root.parallelLoops.back()) {
+      unsigned c = dims->depth[0];
+      int64_t cVec = selected.vectorParallelSizes[c];
+      if (cVec > 0 && cVec < root.loopRanges[c] &&
+          root.loopRanges[c] % cVec == 0 &&
+          footprintModel.estimate(
+              selected.dtcmTileSizes, selected.vectorParallelSizes,
+              selected.vectorReductionSizes, streamReduction) > budgetBytes) {
+        selected.dtcmTileSizes[c] = cVec;
+      }
+    }
+  }
 
   bool fallback = false;
   // Shrink the DTCM tile until its buffers (and Zvt scratch tiles, if any) fit
@@ -671,17 +673,27 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
   return selected;
 }
 
-// Enables loop peeling in the translation info of `funcOp`.
-LogicalResult enableLoopPeeling(FunctionOpInterface funcOp) {
+// Updates the pass pipeline (if `pipeline` is set) and the loop-peeling flag
+// in the translation info of `funcOp`.
+LogicalResult updateTranslationInfo(
+    FunctionOpInterface funcOp,
+    std::optional<IREE::CPU::LoweringPipeline> pipeline, bool enablePeeling) {
   MLIRContext *context = funcOp.getContext();
   IREE::Codegen::TranslationInfoAttr translationInfo =
       getTranslationInfo(funcOp);
+  Attribute passPipeline =
+      pipeline ? Attribute(IREE::CPU::PipelineAttr::get(context, *pipeline))
+               : translationInfo.getPassPipeline();
   NamedAttrList config(translationInfo.getConfiguration());
-  config.set(getEnableLoopPeelingStr(), UnitAttr::get(context));
+  if (enablePeeling) {
+    config.set(getEnableLoopPeelingStr(), UnitAttr::get(context));
+  } else {
+    config.erase(getEnableLoopPeelingStr());
+  }
   translationInfo = IREE::Codegen::TranslationInfoAttr::get(
-      context, translationInfo.getPassPipeline(),
-      translationInfo.getCodegenSpec(), translationInfo.getWorkgroupSize(),
-      translationInfo.getSubgroupSize(), config.getDictionary(context));
+      context, passPipeline, translationInfo.getCodegenSpec(),
+      translationInfo.getWorkgroupSize(), translationInfo.getSubgroupSize(),
+      config.getDictionary(context));
   return setTranslationInfo(funcOp, translationInfo);
 }
 
@@ -692,8 +704,20 @@ void setTilingLevel(MLIRContext *context, IREE::CPU::TilingLevel level,
                   getTilingLevelAttr(context, sizes));
 }
 
+// Sets the tiling level `level` to `sizes` in `configItems`, or erases `level`
+// when all entries in `sizes` are 0.
+void setOrEraseTilingLevel(MLIRContext *context, IREE::CPU::TilingLevel level,
+                           ArrayRef<int64_t> sizes,
+                           NamedAttrList &configItems) {
+  if (llvm::any_of(sizes, [](int64_t s) { return s != 0; })) {
+    setTilingLevel(context, level, sizes, configItems);
+  } else {
+    configItems.erase(IREE::CPU::getTilingLevelName(level));
+  }
+}
+
 // Writes `selected` to the lowering config of `root.op`, and updates `funcOp`
-// and non-root `computeOps` when Zvt is used.
+// and non-root `computeOps` when Zvt or refined RVV sizes are used.
 LogicalResult applySelectedTileSizes(FunctionOpInterface funcOp,
                                      const DTCMRoot &root,
                                      ArrayRef<Operation *> computeOps,
@@ -720,60 +744,87 @@ LogicalResult applySelectedTileSizes(FunctionOpInterface funcOp,
   setTilingLevel(context, IREE::CPU::TilingLevel::CacheReductionTiles,
                  cacheReductionSizes, configItems);
 
-  // Write back the vector tile sizes only if this pass changed them (Zvt sizes
-  // or clamped sizes), so that the other attributes of the levels stay.
-  if (selected.useZvt || selected.parallelClamped) {
-    setTilingLevel(context, IREE::CPU::TilingLevel::VectorCommonParallelTiles,
-                   selected.vectorParallelSizes, configItems);
-  }
-  if (selected.useZvt || selected.reductionClamped) {
-    setTilingLevel(context, IREE::CPU::TilingLevel::VectorReductionTiles,
-                   selected.vectorReductionSizes, configItems);
-  }
-  // Keep non-root ops' vector tile sizes synchronized when strategy configs
-  // are clamped or snapped to static slices.
-  if (!selected.useZvt &&
-      (selected.parallelClamped || selected.reductionClamped)) {
-    for (TilingInterface nonRootOp : root.nonRootOps) {
-      Operation *op = nonRootOp.getOperation();
-      auto nrConfig = getLoweringConfig<IREE::CPU::LoweringConfigAttr>(op);
-      if (!nrConfig) continue;
-      NamedAttrList nrItems(nrConfig.getConfig());
-      if (selected.parallelClamped &&
-          nrConfig.hasTilingLevel(static_cast<unsigned>(
-              IREE::CPU::TilingLevel::VectorCommonParallelTiles))) {
-        setTilingLevel(context,
-                       IREE::CPU::TilingLevel::VectorCommonParallelTiles,
-                       selected.vectorParallelSizes, nrItems);
-      }
-      if (selected.reductionClamped) {
-        for (auto level : {IREE::CPU::TilingLevel::VectorReductionTiles,
-                           IREE::CPU::TilingLevel::VectorInnerParallelTiles}) {
-          if (nrConfig.hasTilingLevel(static_cast<unsigned>(level))) {
-            setTilingLevel(context, level, selected.vectorReductionSizes,
-                           nrItems);
+  // Write back the vector tile sizes only if this pass changed them (Zvt,
+  // refined RVV, or clamped sizes), so that the other attributes of the levels
+  // stay when strategy sizes are kept.
+  if (selected.rvvPipeline) {
+    configItems.erase(IREE::CPU::getTilingLevelName(
+        IREE::CPU::TilingLevel::VectorInnerParallelTiles));
+    setOrEraseTilingLevel(context,
+                          IREE::CPU::TilingLevel::VectorCommonParallelTiles,
+                          selected.vectorParallelSizes, configItems);
+    setOrEraseTilingLevel(context, IREE::CPU::TilingLevel::VectorReductionTiles,
+                          selected.vectorReductionSizes, configItems);
+  } else {
+    if (selected.useZvt || selected.parallelClamped) {
+      setTilingLevel(context, IREE::CPU::TilingLevel::VectorCommonParallelTiles,
+                     selected.vectorParallelSizes, configItems);
+    }
+    if (selected.useZvt || selected.reductionClamped) {
+      setTilingLevel(context, IREE::CPU::TilingLevel::VectorReductionTiles,
+                     selected.vectorReductionSizes, configItems);
+    }
+    // Keep non-root ops' vector tile sizes synchronized when strategy configs
+    // are clamped or snapped to static slices.
+    if (!selected.useZvt &&
+        (selected.parallelClamped || selected.reductionClamped)) {
+      for (TilingInterface nonRootOp : root.nonRootOps) {
+        Operation *op = nonRootOp.getOperation();
+        auto nrConfig = getLoweringConfig<IREE::CPU::LoweringConfigAttr>(op);
+        if (!nrConfig) continue;
+        NamedAttrList nrItems(nrConfig.getConfig());
+        if (selected.parallelClamped &&
+            nrConfig.hasTilingLevel(static_cast<unsigned>(
+                IREE::CPU::TilingLevel::VectorCommonParallelTiles))) {
+          setTilingLevel(context,
+                         IREE::CPU::TilingLevel::VectorCommonParallelTiles,
+                         selected.vectorParallelSizes, nrItems);
+        }
+        if (selected.reductionClamped) {
+          for (auto level :
+               {IREE::CPU::TilingLevel::VectorReductionTiles,
+                IREE::CPU::TilingLevel::VectorInnerParallelTiles}) {
+            if (nrConfig.hasTilingLevel(static_cast<unsigned>(level))) {
+              setTilingLevel(context, level, selected.vectorReductionSizes,
+                             nrItems);
+            }
           }
         }
+        setLoweringConfig(op, IREE::CPU::LoweringConfigAttr::get(
+                                  context, nrItems.getDictionary(context)));
       }
-      setLoweringConfig(op, IREE::CPU::LoweringConfigAttr::get(
-                                context, nrItems.getDictionary(context)));
     }
   }
 
-  // Zvt needs loop peeling, and the other compute ops must follow the Zvt
-  // tiles of the root op.
-  if (selected.useZvt) {
-    // Peel partial DTCM and vector tiles (e.g. 80 by 64): Zvt needs static
-    // shapes. setTranslationInfo cannot fail today; propagate a failure anyway.
-    if (failed(enableLoopPeeling(funcOp))) return failure();
+  // Update translation_info and non-root compute ops when Zvt or refined RVV
+  // sizes replace the strategy pass's vector config.
+  if (selected.useZvt || selected.rvvPipeline) {
+    bool needsPeeling = selected.useZvt;
+    if (!needsPeeling) {
+      for (unsigned i : root.parallelLoops) {
+        int64_t t = selected.vectorParallelSizes[i];
+        if (t > 1 && root.loopRanges[i] % t != 0) {
+          needsPeeling = true;
+          break;
+        }
+      }
+    }
+    if (failed(updateTranslationInfo(funcOp, selected.rvvPipeline,
+                                     needsPeeling))) {
+      return failure();
+    }
 
     // The strategy pass derived the vector tile sizes of the other compute ops
-    // from the RVV tile sizes of the root op. Erase their lowering configs, so
-    // that these ops follow the Zvt tiles of the root op through fusion.
+    // from the initial tile sizes of the root op. Erase their lowering configs
+    // so they follow the root op through fusion, then re-attach synchronized
+    // multi-op reduction configs if needed.
     for (Operation *computeOp : computeOps) {
-      // Keep the lowering config of the root op.
       if (computeOp == root.op) continue;
       eraseLoweringConfig(computeOp);
+    }
+    if (selected.rvvPipeline) {
+      syncNonRootRVVConfigs(root, selected.vectorParallelSizes,
+                            selected.vectorReductionSizes);
     }
   }
 
@@ -831,7 +882,7 @@ struct CoralNPUTileSizeSelectionDTCMPass
 
     DTCMFootprintModel footprintModel(root->op, computeOps, buffersPerOperand);
     FailureOr<SelectedTileSizes> selected =
-        selectDTCMTileSizes(*root, footprintModel, budgetBytes);
+        selectDTCMTileSizes(funcOp, *root, footprintModel, budgetBytes);
     if (failed(selected)) {
       signalPassFailure();
       return;

@@ -59,25 +59,30 @@ hal.executable private @stored_producer {
 }
 
 // Multi-op reduction with a stored 2D parallel producer (%mul = %x * %w), a
-// non-root %max reduction over %mul, a root %exp_sum reduction, and a 2D %div
-// consumer. Storing %mul prevents RematerializeParallelOpsPass from folding it
-// into %max, exercising getDTCMRoot on an unfused 2D parallel producer
-// (2 parallel loops > 1 root parallel loop) alongside a non-root reduction.
+// non-root %max reduction over %mul, an unfused 2D parallel producer (%ex) that
+// only feeds the root %sum reduction, and a 2D %div consumer. Storing %mul
+// prevents RematerializeParallelOpsPass from folding it into %max so it gets an
+// inner-parallel lowering_config, while %ex (kept unfused by an external
+// capture) only feeds %sum so syncNonRootRVVConfigs leaves %ex without a
+// lowering_config to fuse into %sum.
 // Footprint per row: x (2 KB) + w (2 KB) + stored mul (2 KB) + div (2 KB) =
 // 8 KB/row (128 KB untiled). With 24 KB, 2 rows (16 KB) fit.
 // CHECK-LABEL: func.func @softmax_scaled_max()
 //       CHECK:   linalg.generic
 //  CHECK-SAME:     iterator_types = ["parallel", "parallel"]
-//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 //       CHECK:   linalg.generic
 //  CHECK-SAME:     iterator_types = ["parallel", "reduction"]
-//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
-//       CHECK:   linalg.generic
-//  CHECK-SAME:     iterator_types = ["parallel", "reduction"]
-//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 0], cache_reduction = [0, 0], distribution = [2, 0], vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
 //       CHECK:   linalg.generic
 //  CHECK-SAME:     iterator_types = ["parallel", "parallel"]
-//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+//   CHECK-NOT:     lowering_config
+//       CHECK:   linalg.generic
+//  CHECK-SAME:     iterator_types = ["parallel", "reduction"]
+//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 0], cache_reduction = [0, 0], distribution = [2, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 16]>
+//       CHECK:   linalg.generic
+//  CHECK-SAME:     iterator_types = ["parallel", "parallel"]
+//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 16]>
 hal.executable private @softmax_scaled_max {
   hal.executable.variant public @embedded_elf_riscv_32 target(#executable_target) {
     hal.executable.export public @softmax_scaled_max ordinal(0) layout(#pipeline_layout) count(%arg0: !hal.device) -> (index, index, index) {
@@ -109,19 +114,25 @@ hal.executable private @softmax_scaled_max {
           %m = arith.maxnumf %in, %acc : f32
           linalg.yield %m : f32
         } -> tensor<16xf32>
-        %fsum = linalg.fill ins(%cst0 : f32) outs(%e1 : tensor<16xf32>) -> tensor<16xf32>
-        %sum = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>, affine_map<(d0, d1) -> (d0)>], iterator_types = ["parallel", "reduction"]} ins(%x, %max : tensor<16x512xf32>, tensor<16xf32>) outs(%fsum : tensor<16xf32>) {
-        ^bb0(%in: f32, %m: f32, %acc: f32):
+        %ex = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>, affine_map<(d0, d1) -> (d0, d1)>], iterator_types = ["parallel", "parallel"]} ins(%x, %max : tensor<16x512xf32>, tensor<16xf32>) outs(%e2 : tensor<16x512xf32>) {
+        ^bb0(%in: f32, %m: f32, %out: f32):
+          %idx = tensor.extract %max[%c0] : tensor<16xf32>
           %d = arith.subf %in, %m : f32
-          %ex = math.exp %d : f32
-          %s = arith.addf %ex, %acc : f32
+          %d2 = arith.addf %d, %idx : f32
+          %e = math.exp %d2 : f32
+          linalg.yield %e : f32
+        } -> tensor<16x512xf32>
+        %fsum = linalg.fill ins(%cst0 : f32) outs(%e1 : tensor<16xf32>) -> tensor<16xf32>
+        %sum = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>], iterator_types = ["parallel", "reduction"]} ins(%ex : tensor<16x512xf32>) outs(%fsum : tensor<16xf32>) {
+        ^bb0(%in: f32, %acc: f32):
+          %s = arith.addf %in, %acc : f32
           linalg.yield %s : f32
         } -> tensor<16xf32>
         %div = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>, affine_map<(d0, d1) -> (d0)>, affine_map<(d0, d1) -> (d0, d1)>], iterator_types = ["parallel", "parallel"]} ins(%x, %max, %sum : tensor<16x512xf32>, tensor<16xf32>, tensor<16xf32>) outs(%e2 : tensor<16x512xf32>) {
         ^bb0(%in: f32, %m: f32, %s: f32, %out: f32):
           %d = arith.subf %in, %m : f32
-          %ex = math.exp %d : f32
-          %q = arith.divf %ex, %s : f32
+          %e = math.exp %d : f32
+          %q = arith.divf %e, %s : f32
           linalg.yield %q : f32
         } -> tensor<16x512xf32>
         iree_tensor_ext.dispatch.tensor.store %div, %b3, offsets = [0, 0], sizes = [16, 512], strides = [1, 1] : tensor<16x512xf32> -> !iree_tensor_ext.dispatch.tensor<writeonly:tensor<16x512xf32>>

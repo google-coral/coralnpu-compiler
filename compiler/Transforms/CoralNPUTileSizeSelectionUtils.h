@@ -15,17 +15,47 @@
 #ifndef COMPILER_TRANSFORMS_CORALNPUTILESIZESELECTIONUTILS_H_
 #define COMPILER_TRANSFORMS_CORALNPUTILESIZESELECTIONUTILS_H_
 
+// IREE:
+#include "iree/compiler/Codegen/Dialect/CPU/IR/IREECPUTypes.h"
+
 // MLIR:
+#include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
+#include "mlir/Interfaces/TilingInterface.h"
 #include "mlir/Support/LogicalResult.h"
 
 // LLVM:
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace mlir::coralnpu_compiler {
+
+// The root op of a dispatch and its loops, for the DTCM tile-size selection.
+struct DTCMRoot {
+  Operation *op = nullptr;  // has the strategy config
+  iree_compiler::IREE::CPU::LoweringConfigAttr config;
+  SmallVector<int64_t> loopRanges;          // static ranges
+  SmallVector<unsigned> parallelLoops;      // outermost first
+  SmallVector<unsigned> reductionLoops;     // outermost first
+  SmallVector<TilingInterface> nonRootOps;  // multi-op reduction peers
+};
+
+// Classifies loops of `tilingOp` into parallel and reduction loops (outermost
+// first).
+void classifyLoops(TilingInterface tilingOp,
+                   SmallVectorImpl<unsigned> &parallelLoops,
+                   SmallVectorImpl<unsigned> &reductionLoops);
+
+// Returns true if `op`'s first DPS input has a narrower integer/float bit width
+// (>= 8 bits) than `op`'s first result.
+bool hasWideningInput(linalg::LinalgOp op);
+
+// Infers the convolution dimensions of `op` if it is a named or generic
+// convolution or pooling (including 3/4-input quantized ops).
+FailureOr<linalg::ConvolutionDimensions> inferConvDims(Operation *op);
 
 // Parses VLEN from target CPU features: the largest N among +zvl<N>b.
 FailureOr<int64_t> getVlenFromTargetFeatures(FunctionOpInterface funcOp);

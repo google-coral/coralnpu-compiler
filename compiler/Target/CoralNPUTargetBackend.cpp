@@ -425,10 +425,10 @@ void CoralNPUTargetBackend::buildConfigurationPassPipeline(
   // including the vector (register) levels.
   modulePassManager.addPass(createLLVMCPUSelectLoweringStrategyPass());
 
-  // Refine the lowering config of the root op: the DTCM pass sets the DTCM
-  // (cache-level) tile sizes, and sets the distribution tile sizes to the DTCM
-  // parallel tile sizes. The vector tile sizes stay as IREE set them, except
-  // for Zvt contractions.
+  // Refine the lowering config of the root op: the DTCM pass refines the Zvt
+  // and RVV vector tile sizes and pipelines, sets the DTCM (cache-level) tile
+  // sizes, sets the distribution tile sizes to the DTCM parallel tile sizes,
+  // and synchronizes non-root reduction configs.
   CoralNPUTileSizeSelectionDTCMOptions dtcmOptions;
   dtcmOptions.dtcmSizeKb = options_.dtcmSizeKb;
   dtcmOptions.stackSizeKb = options_.stackSizeKb;

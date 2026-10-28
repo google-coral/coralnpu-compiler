@@ -8,14 +8,16 @@ The tile sizes are selected in two steps during the configuration phase of the c
 - **`CoralNPUTileSizeSelectionDTCMPass`**
   ([CoralNPUTileSizeSelectionDTCM.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp))
   then refines the `lowering_config` of the root operation (`getDTCMRoot`): it
-  computes the DTCM-level tile sizes (and the vector tile sizes of Zvt
-  contractions and convolutions) and sets the workgroup (`distribution`) tile
-  sizes to the DTCM parallel tile sizes (`cache_parallel`). For non-Zvt
-  dispatches (including multi-op reductions such as decomposed
-  `linalg.softmax`), non-root compute operations keep the `lowering_config` set
-  by `LLVMCPUSelectLoweringStrategyPass`: IREE's cache and vector parallel
-  tiling passes anchor on the unique operation with `distribution` (the root),
-  and RISC-V vectorization infers vector sizes directly from the tiled IR.
+  selects Zvt matrix-unit or refined RVV vector tile sizes and CPU lowering
+  pipelines ([CoralNPUTileSizeSelectionRVV.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionRVV.cpp)),
+  computes the DTCM-level tile sizes (`cache_parallel`, `cache_reduction`), and
+  sets the workgroup (`distribution`) tile sizes to `cache_parallel`. When RVV
+  refines a multi-op reduction dispatch (such as decomposed `linalg.softmax`),
+  `syncNonRootRVVConfigs` synchronizes the non-root operations'
+  `vector_common_parallel`, `vector_reduction`, and `vector_inner_parallel`
+  configs with the root's clamped reduction tile and leaves pure parallel
+  producers that only feed reductions without a `lowering_config` so they fuse
+  into their reduction consumers.
 
 In the translation phase, **`CoralNPUPromoteOperandsPass`** ([CoralNPUPromoteOperands.cpp](../../compiler/Transforms/CoralNPUPromoteOperands.cpp)) copies the DTCM tiles to DTCM (see [DTCM Promotion](#dtcm-promotion)).
 
@@ -116,7 +118,93 @@ This level is crucial for memory-constrained accelerators like the Coral NPU.
 
 ### 3. Level 2: Vector (`VectorCommonParallelTiles` & `VectorReductionTiles`)
 
-*   **Configured by**: IREE's `LLVMCPUSelectLoweringStrategyPass`. For a Zvt contraction or convolution, `CoralNPUTileSizeSelectionDTCMPass` replaces `vector_common_parallel` with the Zvt tile sizes, and sets `vector_reduction` to 1 (the Zvt asm takes a K of 1). It also clamps any vector tile that is larger than its DTCM tile.
+*   **Configured by**: IREE's `LLVMCPUSelectLoweringStrategyPass`, then refined
+    by `CoralNPUTileSizeSelectionDTCMPass`: for a Zvt contraction or
+    convolution, it replaces `vector_common_parallel` with the Zvt tile sizes
+    and sets `vector_reduction` to 1; for non-Zvt dispatches,
+    `refineRVVTileSizes`
+    ([CoralNPUTileSizeSelectionRVV.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionRVV.cpp))
+    refines RVV register tiles and pipelines (`DoubleTilingExpert` or
+    `ConvTileAndDecomposeExpert`) across elementwise, broadcast, transpose,
+    convolution/pooling, zero-reuse or K-innermost contraction, and reduction
+    operations (retaining IREE's strategy sizes for 2D contractions with reuse,
+    pack/unpack dispatches, data-tiled convolutions, and prime-extent reductions
+    where divisor snapping would collapse vector lanes). Finally, it clamps any
+    vector tile that is larger than its DTCM tile, updates `enable_loop_peeling`
+    when any parallel vector tile `> 1` does not divide its loop range, and
+    synchronizes non-root multi-op reduction configs via
+    `syncNonRootRVVConfigs`.
+*   **RVV Refinement Rules (`CoralNPUTileSizeSelectionRVV`)**:
+    IREE's generic RISC-V strategy in `KernelDispatch.cpp` uses conservative
+    vector widths (e.g., capping reductions to `16 / elementBytes` bytes and
+    splitting `cache_reduction` on multi-op reductions). `refineRVVTileSizes`
+    overrides those defaults using structural `LinalgOp` analysis:
+    *   **All-Parallel Operations**: Standalone 2D+ transposes whose input and
+        output maps have different innermost dimensions get an $8 \times 8$
+        register tile so `GenericVectorizationPass` emits `vector.transpose`
+        register shuffles instead of scalar strided loads. Pure broadcasts
+        vectorize the innermost loop to `(range % vectorWidth == 0 ? 8 : 4) *
+        vectorWidth`. Elementwise dispatches vectorize the innermost loop to
+        `LMUL=4` (`4 * vectorWidth`), or `LMUL=8` (`8 * vectorWidth`) when the
+        innermost range is a multiple of `8 * vectorWidth`, peak live register
+        pressure is at most 3 `LMUL=8` register groups (`<= 24` of 32 registers),
+        the body has no expensive divisions/rounding/transcendentals, no input
+        is wider than the result, and the innermost parallel dimension is
+        contiguous across all operands that reference it (unrolling the
+        second-innermost parallel loop up to `pickTileDivisor(outerRange, 8)`
+        on broadcast inputs when the effective inner tile is at most
+        `2 * vectorWidth`).
+    *   **Convolutions & Poolings**: Grouped channel-last convolutions vectorize
+        channels to `8 * vectorWidth` under `ConvTileAndDecomposeExpert`. 2D
+        channel-last depthwise convolutions without a channel multiplier select
+        `cTile = pickTileDivisor(cRange, (isWidening ? 8 : 4) * vectorWidth)`
+        and unroll output width to `min((32 / (isWidening ? 2 : 4)) / cRegs, 8)`
+        under `ConvTileAndDecomposeExpert` (unrolling filter width `KW <= 5` on
+        widening depthwise convs), while other depthwise convolutions vectorize
+        the innermost parallel loop to `4 * vectorWidth`. Channel-last 1D/2D
+        poolings and regular convolutions with channel-last filters select
+        `ConvTileAndDecomposeExpert` via `setChannelLastWindowVectorSizes`:
+        `8 * vectorWidth` (`LMUL=8`, or `4 * vectorWidth` when the block has
+        transcendentals) with `owTile = 4` (or `owTile = 7` at `LMUL=4` on unit
+        width stride when `OW >= 5` has an odd divisor in `{5, 7}` and no
+        divisor in `{2, 3}`, or `owTile = 1` when `C % vectorWidth != 0`). If
+        `LLVMCPUSelectLoweringStrategyPass` selected `ConvTileAndDecomposeExpert`
+        for a layout where `refineRVVTileSizes` does not select
+        `ConvTileAndDecomposeExpert` (or for bare spatial convolutions without
+        batch or channel dimensions), IREE's strategy sizes are retained.
+    *   **Zero-Reuse, Quantized, & `K`-Innermost Contractions**: 2-input 2D
+        contractions with `M > 1` and `N > 1` whose `K` is not innermost in
+        both inputs keep IREE's register tiles (`shouldKeepStrategyRVVSizes`).
+        With base `vecTile = (outTy.isF32() ? 8 : 4) * vectorWidth`, zero-reuse
+        `vecmat` vectorizes `N` to `vecTile` (or `16 * vectorWidth` / `8 *
+        vectorWidth` with loop peeling on widening integer `i8/i16 -> i32`
+        `vecmat`); `matvec` vectorizes `M` to `vecTile` when `M` is innermost
+        in the LHS map (otherwise `min(4, vectorWidth)`); and 2D `M x N`
+        contractions reaching `matchContraction` (such as 3/4-input quantized
+        contractions or `K`-innermost contractions) select
+        `mTile = pickTileDivisor(M, 8)` and
+        `nTile = (mTile <= 4 ? 4 : 2) * vectorWidth`. When `K` is innermost in
+        both inputs and `gcd(vectorWidth, K) >= 4`, if the effective `M x N`
+        tile has `M >= 2` and `N >= 4` (`wideMN`), `K` is tiled to
+        `1 * vectorWidth`; otherwise parallel tiles reset to `1` and `K` is
+        vectorized to `(hasWideningInput ? 8 : 4) * vectorWidth`.
+    *   **Single-Op & Multi-Op Reductions**: Single-op parallel-inner column
+        reductions vectorize the innermost parallel loop to
+        `(range % vectorWidth == 0 ? 8 : 4) * vectorWidth`. Contiguous row
+        reductions and multi-op reductions keep parallel vector tiles at `1`
+        and vectorize the innermost reduction loop to `4 * effVw` (where `effVw`
+        scales `vectorWidth` by `outBits / inBits` on widening inputs), clamping
+        shared reduction dimensions to the minimum across `root.nonRootOps` and
+        snapping tiles to exact divisors via `capVectorSizes` (retaining IREE's
+        masked strategy sizes if divisor snapping collapses a vector-wide tile
+        below `min(vectorWidth, 4)` lanes). In multi-op reduction dispatches
+        (such as decomposed `linalg.softmax`), `syncNonRootRVVConfigs` assigns
+        matching `vector_common_parallel` + `vector_reduction` to non-root
+        reductions and `vector_common_parallel` + `vector_inner_parallel` to
+        stored or post-reduction parallel ops, while leaving pure parallel
+        producers that only feed reductions (`onlyFeedsReduction`) without a
+        `lowering_config` so they fuse into their reduction consumers without
+        materializing wide stack arrays.
 *   **Note**: IREE limits the vector tile sizes so that the tiles of all operands fit in the vector register file (`limitVectorTileSizes`). For RISC-V, this needs IREE patch 0011: `getRegisterSpaceBitsIfKnown` returns 32 x VLEN, and the matmul path also applies the limit. IREE patch 0012 gives the batch loops of contractions (e.g. `linalg.batch_matvec`) the vector tile size 1.
 *   **Purpose**: To tile the cache-level tiles down to sizes that can fit directly into the processor's registers (register file). This is the final tiling step before vectorization.
 *   **Hardware Constraint**: Number of vector registers (e.g., 32 in RISC-V V extension) and vector register width (VLEN).
@@ -155,8 +243,8 @@ configuration phase:
 ```mermaid
 graph TD
     Input[Input IR] --> Strategy[LLVMCPUSelectLoweringStrategyPass]
-    Strategy -->|Sets the pipeline, distribution, vector_common_parallel & vector_reduction| DTCMPass[CoralNPUTileSizeSelectionDTCMPass]
-    DTCMPass -->|Sets distribution = cache_parallel, cache_reduction; Zvt vector sizes| Output[Configured IR]
+    Strategy -->|Sets initial pipeline, distribution, vector_common_parallel & vector_reduction| DTCMPass[CoralNPUTileSizeSelectionDTCMPass]
+    DTCMPass -->|Sets distribution = cache_parallel, cache_reduction; Zvt & refined RVV vector sizes| Output[Configured IR]
 ```
 
 ### Summary of Lowering Pipeline Flow (CPUDoubleTilingExpert)
@@ -190,8 +278,13 @@ graph TD
 
 1.  **Parallel loops** are aligned to `vector_common_parallel`, and **reduction loops** to `vector_reduction`. A vector tile size of 0 means that the loop has no alignment at first.
 2.  The search starts from the full loop ranges, so a loop that fits stays
-    untiled. When it shrinks a tile, it halves the tile and aligns it down to a
-    multiple of the alignment. Then it takes the largest multiple of the
+    untiled (for a 2D channel-last depthwise convolution without a channel
+    multiplier whose untiled footprint exceeds the DTCM budget, the channel
+    loop is pre-tiled to a single exact-divisor RVV vector tile before the
+    shrink loop so the search keeps taller spatial $H \times W$ tiles). When it
+    shrinks a tile, it
+    halves the tile and aligns it down to a multiple of the alignment. Then it
+    takes the largest multiple of the
     alignment that divides the loop range, so that there is no partial DTCM
     tile. If the range is not a multiple of the alignment, it takes the largest
     divisor of the range that is at least the alignment (at most half the tile
