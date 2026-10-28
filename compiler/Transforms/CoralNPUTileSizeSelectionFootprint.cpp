@@ -863,15 +863,15 @@ int64_t DTCMFootprintModel::estimate(ArrayRef<int64_t> tileSizes,
   }
 
   // The loop ranges for the input slices: a streamed reduction loop reads one
-  // vector step of the inputs at a time.
+  // vector step of the inputs at a time (all of it without a vector tile).
   SmallVector<int64_t> inputRanges(loopRanges);
   if (streamReduction) {
     for (auto [range, vectorSize, iteratorType] :
          llvm::zip_equal(inputRanges, vectorReductionSizes, iteratorTypes)) {
-      if (iteratorType != utils::IteratorType::reduction) {
+      if (iteratorType != utils::IteratorType::reduction || vectorSize <= 0) {
         continue;
       }
-      range = std::min(range, std::max<int64_t>(1, vectorSize));
+      range = std::min(range, vectorSize);
     }
   }
 

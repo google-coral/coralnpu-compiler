@@ -7,8 +7,9 @@ The code TODOs for later changes have tags (e.g. `TODO(DMA)`).
 
 ## Summary
 
-For an RVV contraction (`linalg.matmul`, `linalg.batch_matmul`, or a contraction
-`linalg.generic`), the compiler:
+For an RVV contraction with reuse across both M and N (`linalg.matmul`,
+`linalg.batch_matmul`, or a contraction `linalg.generic` with `M > 1` and
+`N > 1`), the compiler:
 
 1. picks a tile whose DTCM buffers fit in the DTCM tile budget;
 2. copies the input tiles to DTCM;
@@ -17,8 +18,11 @@ For an RVV contraction (`linalg.matmul`, `linalg.batch_matmul`, or a contraction
    memory.
 
 Each workgroup computes one DTCM tile. The copies are synchronous vector copies
-for now; DMA comes later (`TODO(DMA)`). A Zvt contraction gets DTCM tile sizes,
-but no promotion (`TODO(zvt)`).
+for now; DMA comes later (`TODO(DMA)`). A Zvt contraction (`TODO(zvt)`) or a
+zero-reuse contraction (`vecmat`, `matvec`, `dot`, where `M == 1` or `N == 1` so
+each matrix element is read only once per reduction pass) gets DTCM tile sizes,
+but no promotion (`hasContractionReuse` in
+[CoralNPUTileSizeSelectionUtils.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionUtils.cpp)).
 
 The DTCM pass decides between Zvt and RVV, but `CoralNPUMatrixCodegen` can also
 lower the vector tiles of an RVV contraction with Zvt asm (e.g. the partial
@@ -69,11 +73,13 @@ computes the footprint, `CoralNPUPromoteOperands` creates the same buffers, and
 `CoralNPUMatrixCodegen` creates the scratch tiles: keep the three in sync. See
 [Level 1](tiling_levels_explained.md#2-level-1-cache-cacheparalleltiles--cachereductiontiles).
 
-A root without promotion (a Zvt contraction or a convolution) reads its inputs
-one vector step of the reduction loops at a time. Thus its DTCM tile does not
-split these loops, and its input slices span one step. The search shrinks the
-parallel loops first (outermost first, to exact divisors of the loop range if
-it can), and then the reduction loops of a promoted root.
+A root without promotion (a Zvt contraction, a zero-reuse contraction, a
+convolution, or a reduction) reads its inputs one vector step of the reduction
+loops at a time (or the full loop range if a reduction loop has no vector tile).
+Thus its DTCM tile does not split these loops, and its input slices span one
+step. The search shrinks the parallel loops first (outermost first, to exact
+divisors of the loop range if it can), and then the reduction loops of a
+promoted root.
 
 ## IR Shape
 

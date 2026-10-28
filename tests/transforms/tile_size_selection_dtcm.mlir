@@ -494,3 +494,79 @@ func.func @softmax_unaligned(%x: tensor<196x256xf32>) -> tensor<196x256xf32> {
   %r = linalg.softmax dimension(1) ins(%x : tensor<196x256xf32>) outs(%e : tensor<196x256xf32>) -> tensor<196x256xf32>
   return %r : tensor<196x256xf32>
 }
+
+// A vector-matrix product has no reuse across M, so it streams K without DTCM
+// operand promotion. With 24 KB, the full N = 1024 fits: x 1 f32 (64 B) +
+// w 1x1024 f32 (4 KB) + output 1024 f32 (4 KB) = 8256 B. With 4 KB (SMALL),
+// N shrinks to 256 (2112 B) while K stays unsplit and unpromoted.
+// CHECK-LABEL: func.func @vecmat_f32_dispatch_0
+// CHECK:         linalg.vecmat
+// CHECK-SAME:      cache_parallel = [0, 0], cache_reduction = [0, 0], distribution = [0, 0]
+// CHECK-NOT:       promote_operands
+// CHECK-SAME:      vector_common_parallel = [32, 0], vector_reduction = [0, 1]
+// SMALL-LABEL: func.func @vecmat_f32_dispatch_0
+// SMALL:         linalg.vecmat
+// SMALL-SAME:      cache_parallel = [256, 0], cache_reduction = [0, 0], distribution = [256, 0]
+// SMALL-NOT:       promote_operands
+// SMALL-SAME:      vector_common_parallel = [32, 0], vector_reduction = [0, 1]
+func.func @vecmat_f32(%x: tensor<640xf32>, %w: tensor<640x1024xf32>) -> tensor<1024xf32> {
+  %cst = arith.constant 0.0 : f32
+  %e = tensor.empty() : tensor<1024xf32>
+  %f = linalg.fill ins(%cst : f32) outs(%e : tensor<1024xf32>) -> tensor<1024xf32>
+  %r = linalg.vecmat ins(%x, %w : tensor<640xf32>, tensor<640x1024xf32>) outs(%f : tensor<1024xf32>) -> tensor<1024xf32>
+  return %r : tensor<1024xf32>
+}
+
+// A streamed reduction loop without a vector tile (vectorSize <= 0) keeps its
+// full loop range in the footprint model rather than clamping to 1: with K = 16
+// untiled, 1024x16 f32 (64 KB) + output 1024 f32 (4 KB) = 68 KB exceeds 24 KB,
+// so the parallel loop shrinks to 256 (16 KB + 1 KB = 17 KB).
+// CHECK-LABEL: func.func @reduce_untiled_k_dispatch_0
+// CHECK:         linalg.generic
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [256, 0], cache_reduction = [0, 0], distribution = [256, 0], vector_common_parallel = [1, 0]>
+#untiled_k_config = #iree_cpu.lowering_config<distribution = [64, 0],
+    vector_common_parallel = [1, 0]>
+#untiled_k_compilation = #iree_codegen.compilation_info<
+    lowering_config = #untiled_k_config, translation_info = #translation>
+func.func @reduce_untiled_k(%x: tensor<1024x16xf32>) -> tensor<1024xf32> {
+  %cst = arith.constant 0.0 : f32
+  %e = tensor.empty() : tensor<1024xf32>
+  %f = linalg.fill ins(%cst : f32) outs(%e : tensor<1024xf32>) -> tensor<1024xf32>
+  %r = linalg.generic {compilation_info = #untiled_k_compilation,
+                       indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>],
+                       iterator_types = ["parallel", "reduction"]}
+      ins(%x : tensor<1024x16xf32>) outs(%f : tensor<1024xf32>) {
+  ^bb0(%in: f32, %acc: f32):
+    %s = arith.addf %in, %acc : f32
+    linalg.yield %s : f32
+  } -> tensor<1024xf32>
+  return %r : tensor<1024xf32>
+}
+
+// With M = 196 and a fused consumer, 49 rows exceed 24 KB (res 49x64 f32 +
+// output 49x64 f32 + 64x64 f32 scratch > 24 KB), and 196 has no divisor in
+// [16, 24]. The search finds the exact divisor 28 in (24, 48] so the Zvt
+// workgroup M slice stays static. With 4 KB (SMALL), even minM = 28 at
+// nTile = 16 exceeds the budget, so the pass falls back to RVV with promotion.
+// CHECK-LABEL: func.func @matmul_zvt_m196_consumer_dispatch_0
+// CHECK:         linalg.matmul
+// CHECK-SAME:      cache_parallel = [28, 0, 0], cache_reduction = [0, 0, 0], distribution = [28, 0, 0]
+// CHECK-SAME:      vector_common_parallel = [16, 0, 0], vector_reduction = [0, 0, 1]
+// SMALL-LABEL: func.func @matmul_zvt_m196_consumer_dispatch_0
+// SMALL:         linalg.matmul
+// SMALL-SAME:      promote_operands = [0, 1, 2]
+func.func @matmul_zvt_m196_consumer(%a: tensor<196x64xf32>, %b: tensor<64x64xf32>, %bias: tensor<64xf32>, %res: tensor<196x64xf32>) -> tensor<196x64xf32> {
+  %cst = arith.constant 0.0 : f32
+  %e = tensor.empty() : tensor<196x64xf32>
+  %f = linalg.fill ins(%cst : f32) outs(%e : tensor<196x64xf32>) -> tensor<196x64xf32>
+  %mm = linalg.matmul ins(%a, %b : tensor<196x64xf32>, tensor<64x64xf32>) outs(%f : tensor<196x64xf32>) -> tensor<196x64xf32>
+  %o = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d1)>, affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0, d1)>],
+                       iterator_types = ["parallel", "parallel"]}
+      ins(%mm, %bias, %res : tensor<196x64xf32>, tensor<64xf32>, tensor<196x64xf32>) outs(%e : tensor<196x64xf32>) {
+  ^bb0(%in: f32, %bi: f32, %re: f32, %out: f32):
+    %s1 = arith.addf %in, %bi : f32
+    %s2 = arith.addf %s1, %re : f32
+    linalg.yield %s2 : f32
+  } -> tensor<196x64xf32>
+  return %o : tensor<196x64xf32>
+}

@@ -298,4 +298,23 @@ bool isZvtMatrixContractionShape(Operation *op) {
            (is(a, mDim, kDim) || convWindow) && subTileM));
 }
 
+bool hasContractionReuse(Operation *op) {
+  auto linalgOp = dyn_cast_if_present<linalg::LinalgOp>(op);
+  if (!linalgOp || !linalg::isaContractionOpInterface(linalgOp)) return false;
+  FailureOr<linalg::ContractionDimensions> dims =
+      linalg::inferContractionDims(linalgOp);
+  if (failed(dims) || dims->k.empty()) return false;
+  SmallVector<int64_t> ranges = linalgOp.getStaticLoopRanges();
+  // Each operand slice is reused across the opposite parallel dimension only
+  // when that dimension has non-zero extent and > 1 (or dynamic) iterations.
+  auto hasExtentReuse = [&](ArrayRef<unsigned> loopIndices) {
+    return llvm::none_of(loopIndices,
+                         [&](unsigned i) { return ranges[i] == 0; }) &&
+           llvm::any_of(loopIndices, [&](unsigned i) {
+             return ShapedType::isDynamic(ranges[i]) || ranges[i] > 1;
+           });
+  };
+  return hasExtentReuse(dims->m) && hasExtentReuse(dims->n);
+}
+
 }  // namespace mlir::coralnpu_compiler

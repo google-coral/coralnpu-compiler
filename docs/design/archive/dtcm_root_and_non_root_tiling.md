@@ -88,7 +88,7 @@
   - Refining RVV register-level vector tile sizes (`vector_common_parallel`,
     `vector_reduction`), CPU lowering pipelines, or synchronized non-root RVV
     lowering configs (addressed in the companion design document
-    [rvv_tile_size_selection.md](rvv_tile_size_selection.md)).
+    [rvv_tile_size_selection.md](../changes/rvv_tile_size_selection.md)).
   - Adding an upstream IREE callback in `LLVMCPUSelectLoweringStrategyPass`
     between root configuration and non-root configuration propagation (tracked
     in **Part 3: Follow-Up Items**).
@@ -439,8 +439,9 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
     - `@softmax`, `@softmax_scaled`, `@softmax_unaligned`, and
       `@softmax_scaled_max` in `tests/transforms/tile_size_selection_dtcm.mlir`
       and `tests/transforms/tile_size_selection_footprint.mlir` in `CL 2b`;
-    - `@vecmat_f32` (`cache_reduction = [0, 0]`, no `promote_operands`) and
-      `@matmul_zvt_m196_consumer` (`cache_parallel = [28, 0, 0]`) in
+    - `@vecmat_f32` (`cache_reduction = [0, 0]`, no `promote_operands`),
+      `@reduce_untiled_k` (`cache_parallel = [364, 0]` with untiled `K = 16`),
+      and `@matmul_zvt_m196_consumer` (`cache_parallel = [28, 0, 0]`) in
       `tests/transforms/tile_size_selection_dtcm.mlir` in `CL 2c`.
 - **Negative / Fallback Tests**:
   - `bazel test --config=dev //tests/transforms:lit` verifying
@@ -532,7 +533,8 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   - `tests/transforms/tile_size_selection_dtcm.mlir`
       - Add `--implicit-check-not=warning:` (`CL 2a`), `@softmax`,
         `@softmax_scaled`, and `@softmax_unaligned` (`CL 2b`), and
-        `@vecmat_f32` and `@matmul_zvt_m196_consumer` (`CL 2c`).
+        `@vecmat_f32`, `@reduce_untiled_k`, and `@matmul_zvt_m196_consumer`
+        (`CL 2c`).
   - `tests/transforms/tile_size_selection_footprint.mlir`
       - Add `@softmax_scaled_max` executable-source LIT test (`CL 2b`).
 
@@ -605,7 +607,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   - *Verify*: `bazel test --config=dev //tests/models/linalg:all //tests:check_generated`
 
 #### CL 2c: Gate Contraction Promotion on Reuse & Keep Zvt `M` Tiles on Exact Divisors
-- [ ] **Task 7**: Add `hasContractionReuse(Operation *op)` to
+- [x] **Task 7**: Add `hasContractionReuse(Operation *op)` to
       `CoralNPUTileSizeSelectionUtils.{h,cpp}`, set
       `streamReduction = !hasContractionReuse(root.op)` and gate
       `promote_operands` on `!selected.useZvt && hasContractionReuse(root.op)`
@@ -618,14 +620,14 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
     `compiler/Transforms/CoralNPUTileSizeSelectionFootprint.h`,
     `compiler/Transforms/CoralNPUTileSizeSelectionFootprint.cpp`
   - *Verify*: `bazel test --config=dev //tests/transforms:lit`
-- [ ] **Task 8**: Update `setZvtVectorSizes` and `shrinkLoops` in
+- [x] **Task 8**: Update `setZvtVectorSizes` and `shrinkLoops` in
       `CoralNPUTileSizeSelectionDTCM.cpp` to snap `minM` up to a divisor of
       `ranges[m]`, search `(tile / 2, tile - 1]` for unaligned exact divisors,
       and skip shrinking `zvtMLoop` when no divisor `>= align` exists.
   - *Target*: `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`
   - *Verify*: `bazel test --config=dev //tests/transforms:lit`
-- [ ] **Task 9 (CL 2c Tests, Docs & CI Sync)**: Add `@vecmat_f32` and
-      `@matmul_zvt_m196_consumer` LIT tests to
+- [x] **Task 9 (CL 2c Tests, Docs & CI Sync)**: Add `@vecmat_f32`,
+      `@reduce_untiled_k`, and `@matmul_zvt_m196_consumer` LIT tests to
       `tests/transforms/tile_size_selection_dtcm.mlir`, re-enable
       `efficientnet_test` (`tags = ["ci"]`) in `tests/examples/BUILD.bazel`, and
       update `Passes.td`, `docs/design/dtcm_tiling.md`, and
@@ -668,14 +670,14 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
 ### 2.4 Documentation Archive Checklist (`archive` step — Pre-Submit)
 Run this step in the final implementation CL before uploading for review:
 
-- [ ] Fold lasting architectural changes (including non-obvious "Why Not X"
+- [x] Fold lasting architectural changes (including non-obvious "Why Not X"
       rejected-alternative rationales) into `docs/design/dtcm_tiling.md` and
       `docs/design/tiling_levels_explained.md`, and update
       `docs/design/INDEX.md` if a component doc was added or its scope changed.
-- [ ] Move this document from
+- [x] Move this document from
       `docs/design/changes/dtcm_root_and_non_root_tiling.md` to
       `docs/design/archive/dtcm_root_and_non_root_tiling.md` using `git mv`.
-- [ ] Format modified code with `./scripts/format-code.sh`.
+- [x] Format modified code with `./scripts/format-code.sh`.
 
 ---
 

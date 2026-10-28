@@ -95,8 +95,9 @@ def CoralNPUTileSizeSelectionDTCM : InterfacePass<"coralnpu-tile-size-selection-
     DTCM size minus the stack and the reserve, rounded down to 4 KB.
     For Zvt matrix contractions and convolutions it sets M/N vector tiles of
     up to 64 and vector reduction tiles of 1, and enables loop peeling;
-    otherwise the RVV sizes of the strategy pass are kept. The reduction loops
-    of Zvt ops and of convolutions are not split: they stream one step at a
+    otherwise the RVV sizes of the strategy pass are kept. For RVV contractions
+    with reuse across both M and N, it sets promote_operands; the reduction
+    loops of Zvt and unpromoted ops are not split: they stream one step at a
     time.
   }];
   let constructor = [{

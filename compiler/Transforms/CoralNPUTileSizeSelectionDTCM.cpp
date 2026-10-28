@@ -56,6 +56,7 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 #define DEBUG_TYPE "coralnpu-tile-size-selection"
@@ -293,10 +294,13 @@ FailureOr<DTCMRoot> getDTCMRoot(FunctionOpInterface funcOp,
 // false if no loop can shrink. A tile shrinks to about half, aligned down to
 // the alignment of its loop in `alignments` (a loop without an alignment does
 // not shrink), and to an exact divisor of the loop range in `ranges` if there
-// is one. The loops whose range is a multiple of the alignment shrink first.
-// `zvtNLoop` is the N loop of a Zvt root, if any.
+// is one (for an unaligned range, the largest one at most half the tile, else
+// the largest one below the tile). The loops whose range is a multiple of the
+// alignment shrink first. `zvtMLoop` and `zvtNLoop` are the M and N loops of a
+// Zvt root, if any; an unaligned Zvt M without such a divisor does not shrink.
 bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
-                 ArrayRef<int64_t> ranges, std::optional<unsigned> zvtNLoop,
+                 ArrayRef<int64_t> ranges, std::optional<unsigned> zvtMLoop,
+                 std::optional<unsigned> zvtNLoop,
                  MutableArrayRef<int64_t> dtcmTileSizes) {
   // Shrink the aligned loops first: they can shrink to exact divisors.
   for (bool onlyAligned : {true, false}) {
@@ -315,10 +319,16 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
         // Find the largest multiple of `align` that divides the range.
         while (next > align && range % next != 0) next -= align;
       } else if (loopIdx != zvtNLoop) {
-        // Find the largest divisor of the range that is at least `align`, if
-        // there is one.
+        // Find the largest divisor of the range that is at least `align`
+        // (at most half the tile if possible), if there is one.
         int64_t div = dtcmTileSizes[loopIdx] / 2;
         while (div >= align && range % div != 0) --div;
+        if (div < align) {
+          div = dtcmTileSizes[loopIdx] - 1;
+          while (div >= align && range % div != 0) --div;
+        }
+        // Keep Zvt M workgroup slices static to avoid stack-buffer fallback.
+        if (div < align && loopIdx == zvtMLoop) continue;
         if (div >= align) next = div;
       }
       dtcmTileSizes[loopIdx] = next;
@@ -435,8 +445,8 @@ bool setZvtVectorSizes(const DTCMRoot &root,
                                                                   : 8;
   if (nTile == 16 && ranges[m] % 64 == 0) mTile = 64;
   // The smallest DTCM tile that the search reaches with these vector tiles: it
-  // does not split K (Zvt streams it), and it does not shrink the parallel
-  // loops without a vector tile.
+  // does not split K (Zvt streams it), it does not shrink the parallel loops
+  // without a vector tile, and it keeps M on an exact divisor of its range.
   SmallVector<int64_t> dtcmTileSizes(ranges);
   for (unsigned i : root.parallelLoops) {
     if (vectorParallelSizes[i] > 0) dtcmTileSizes[i] = vectorParallelSizes[i];
@@ -450,7 +460,11 @@ bool setZvtVectorSizes(const DTCMRoot &root,
     zvtSizes[n] = nTile < ranges[n] ? nTile : 0;
     zvtSizes[m] = mTile < ranges[m] ? mTile : 0;
     dtcmTileSizes[n] = std::min(nTile, ranges[n]);
-    dtcmTileSizes[m] = std::min(mTile, ranges[m]);
+    // Snap the minimum M tile up to the smallest divisor of ranges[m] so Zvt M
+    // workgroup slices stay static.
+    int64_t minM = std::min(mTile, ranges[m]);
+    while (ranges[m] % minM != 0) ++minM;
+    dtcmTileSizes[m] = minM;
     if (footprintModel.estimate(dtcmTileSizes, zvtSizes, zvtReductionSizes,
                                 /*streamReduction=*/true) <= budgetBytes) {
       break;
@@ -504,8 +518,8 @@ struct SelectedTileSizes {
 
 // Selects the DTCM and vector tile sizes for `root` that fit within
 // `budgetBytes` (falling back to a 1x1x... parallel tile with a missed remark
-// when `!root.nonRootOps.empty()` prevents splitting the reduction loop), or
-// emits an op error and returns failure.
+// when `streamReduction` prevents splitting the reduction loop), or emits an op
+// error and returns failure.
 FailureOr<SelectedTileSizes> selectDTCMTileSizes(
     const DTCMRoot &root, const DTCMFootprintModel &footprintModel,
     int64_t budgetBytes) {
@@ -515,25 +529,25 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
   selected.vectorReductionSizes =
       getTilingLevelSizes(root, IREE::CPU::TilingLevel::VectorReductionTiles);
 
-  // A root without promotion (a Zvt root or a convolution) streams its
-  // reduction loops one vector step at a time, and the DTCM tile does not
-  // split them. A promoted root copies the reduction range of its DTCM tile to
-  // DTCM.
+  // A root without promotion (a Zvt root, or any root other than an RVV
+  // contraction with reuse) streams its reduction loops one vector step at a
+  // time, and the DTCM tile does not split them. A promoted root copies the
+  // reduction range of its DTCM tile to DTCM.
   auto linalgOp = dyn_cast<linalg::LinalgOp>(root.op);
-  bool isConvolution = linalgOp && linalg::isaConvolutionOpInterface(linalgOp);
-  bool streamReduction = isConvolution;
+  bool hasReuseContraction = hasContractionReuse(root.op);
+  bool streamReduction = !hasReuseContraction;
 
   // The Zvt asm takes vector tiles with a K of 1, and streams K. It must load
   // both inputs with Zvt element types: a root whose input a fused op computes
   // (e.g. a dequantization) stays on RVV, with promotion.
-  std::optional<unsigned> zvtNLoop;
+  std::optional<unsigned> zvtMLoop, zvtNLoop;
   if (isZvtMatrixContraction(root.op) && isZvtReadableInputs(root.op) &&
       setZvtVectorSizes(root, footprintModel, budgetBytes,
                         selected.vectorParallelSizes,
                         selected.vectorReductionSizes)) {
     selected.useZvt = true;
     streamReduction = true;
-    zvtNLoop = getZvtMNLoops(linalgOp).second;
+    std::tie(zvtMLoop, zvtNLoop) = getZvtMNLoops(linalgOp);
   }
 
   // When the search shrinks a DTCM tile, it aligns the tile to a multiple of
@@ -558,16 +572,17 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
              selected.dtcmTileSizes, selected.vectorParallelSizes,
              selected.vectorReductionSizes, streamReduction) > budgetBytes) {
     if (shrinkLoops(root.parallelLoops, parallelAlignments, root.loopRanges,
-                    zvtNLoop, selected.dtcmTileSizes)) {
+                    zvtMLoop, zvtNLoop, selected.dtcmTileSizes)) {
       continue;
     }
 
-    // The DTCM tile does not split streamed reduction loops or reduction loops
-    // shared with non-root reduction/elementwise ops (where CacheReductionTiles
-    // would recompute producer reductions on every outer reduction step).
-    if (!(streamReduction || !root.nonRootOps.empty()) &&
+    // The DTCM tile does not split streamed reduction loops (including
+    // multi-op reductions, where CacheReductionTiles would recompute producer
+    // reductions on every outer reduction step).
+    if (!streamReduction &&
         shrinkLoops(root.reductionLoops, reductionAlignments, root.loopRanges,
-                    /*zvtNLoop=*/std::nullopt, selected.dtcmTileSizes)) {
+                    /*zvtMLoop=*/std::nullopt, /*zvtNLoop=*/std::nullopt,
+                    selected.dtcmTileSizes)) {
       continue;
     }
 
@@ -575,7 +590,7 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
     // set these alignments to 1, and try to shrink again.
     bool unalignedFallback =
         setZeroAlignmentsToOne(root.parallelLoops, parallelAlignments);
-    if (!(streamReduction || !root.nonRootOps.empty())) {
+    if (!streamReduction) {
       unalignedFallback |=
           setZeroAlignmentsToOne(root.reductionLoops, reductionAlignments);
     }
@@ -600,11 +615,10 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
       continue;
     }
 
-    // Non-contraction multi-op reductions do not allocate promoted DTCM buffers
-    // and cannot split their reduction loop without recomputing producer
-    // reductions, so keep the 1x1x... parallel tile when a single row exceeds
-    // the budget.
-    if (!root.nonRootOps.empty()) {
+    // Roots with streamed reduction loops do not allocate promoted DTCM
+    // buffers and do not split their reduction loops, so keep the 1x1x...
+    // parallel tile when a single parallel element exceeds the budget.
+    if (streamReduction) {
       LDBG() << root.op->getName()
              << ": workload cannot fit in DTCM even with 1x1x... parallel tile "
                 "size; keeping 1x1x... parallel tile";
@@ -764,13 +778,12 @@ LogicalResult applySelectedTileSizes(FunctionOpInterface funcOp,
   }
 
   // Ask CoralNPUPromoteOperandsPass to copy the tiles of all operands of an
-  // RVV contraction to DTCM (the inputs, the accumulator and the output).
+  // RVV contraction with reuse to DTCM (the inputs, the accumulator and the
+  // output).
   // TODO(zvt): promote the operands of Zvt contractions too.
-  auto linalgOp = dyn_cast<linalg::LinalgOp>(root.op);
-  if (!selected.useZvt && linalgOp &&
-      linalg::isaContractionOpInterface(linalgOp)) {
+  if (!selected.useZvt && hasContractionReuse(root.op)) {
     SmallVector<int64_t> operandNumbers =
-        llvm::to_vector(llvm::seq<int64_t>(0, linalgOp->getNumOperands()));
+        llvm::to_vector(llvm::seq<int64_t>(0, root.op->getNumOperands()));
     configItems.set(kPromoteOperandsName,
                     Builder(context).getI64ArrayAttr(operandNumbers));
   }

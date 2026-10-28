@@ -99,6 +99,10 @@ bool isZvtMatrixContraction(Operation *op);
 // isZvtMatrixContraction without the target feature check.
 bool isZvtMatrixContractionShape(Operation *op);
 
+// Returns true if `op` is a contraction with extent > 1 (or dynamic) along
+// both M and N, excluding zero-reuse matvec, vecmat, and dot products.
+bool hasContractionReuse(Operation *op);
+
 }  // namespace mlir::coralnpu_compiler
 
 #endif  // COMPILER_TRANSFORMS_CORALNPUTILESIZESELECTIONUTILS_H_

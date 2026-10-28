@@ -7,10 +7,15 @@ The tile sizes are selected in two steps during the configuration phase of the c
 - IREE's **`LLVMCPUSelectLoweringStrategyPass`** picks the lowering pipeline and the tile sizes of all levels, including the vector (register) levels. It attaches a `lowering_config` to the compute operations and a `translation_info` to the function of each dispatch.
 - **`CoralNPUTileSizeSelectionDTCMPass`**
   ([CoralNPUTileSizeSelectionDTCM.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp))
-  then refines the `lowering_config` of the root operation: it computes the
-  DTCM-level tile sizes (and the vector tile sizes of Zvt contractions and
-  convolutions) and sets the workgroup (`distribution`) tile sizes to the DTCM
-  parallel tile sizes (`cache_parallel`).
+  then refines the `lowering_config` of the root operation (`getDTCMRoot`): it
+  computes the DTCM-level tile sizes (and the vector tile sizes of Zvt
+  contractions and convolutions) and sets the workgroup (`distribution`) tile
+  sizes to the DTCM parallel tile sizes (`cache_parallel`). For non-Zvt
+  dispatches (including multi-op reductions such as decomposed
+  `linalg.softmax`), non-root compute operations keep the `lowering_config` set
+  by `LLVMCPUSelectLoweringStrategyPass`: IREE's cache and vector parallel
+  tiling passes anchor on the unique operation with `distribution` (the root),
+  and RISC-V vectorization infers vector sizes directly from the tiled IR.
 
 In the translation phase, **`CoralNPUPromoteOperandsPass`** ([CoralNPUPromoteOperands.cpp](../../compiler/Transforms/CoralNPUPromoteOperands.cpp)) copies the DTCM tiles to DTCM (see [DTCM Promotion](#dtcm-promotion)).
 
@@ -189,26 +194,40 @@ graph TD
     multiple of the alignment. Then it takes the largest multiple of the
     alignment that divides the loop range, so that there is no partial DTCM
     tile. If the range is not a multiple of the alignment, it takes the largest
-    divisor of the range that is at least the alignment, if there is one (but
+    divisor of the range that is at least the alignment (at most half the tile
+    if possible, else the largest divisor below the tile), if there is one (but
     not for the N loop of a Zvt contraction, which Zvt cannot lower with all
-    column remainders). The loops whose ranges are multiples of their alignments
-    shrink first, and the outermost loop first. The search does not shrink the
-    streamed reduction loops of a Zvt contraction or of a convolution, nor the
-    reduction loop of a multi-op reduction dispatch (such as decomposed
-    `linalg.softmax`). If the footprint still does not fit, the search relaxes
+    column remainders; and for the M loop of a Zvt contraction, if no such
+    divisor exists, the loop does not shrink so workgroup M slices stay static
+    and do not fall back from the static Zvt microkernel to masked RVV outer
+    products on the stack). The loops whose ranges are multiples of their
+    alignments shrink first, and the outermost loop first. The search does not
+    shrink the streamed reduction loops of a Zvt contraction or of an
+    unpromoted operation (such as a convolution, a zero-reuse contraction, or a
+    multi-op reduction like decomposed `linalg.softmax`, where splitting
+    `cache_reduction` would recompute producer reductions inside the outer
+    reduction loop). If the footprint still does not fit, the search relaxes
     the alignments (see
     [Graceful Degradation](#graceful-degradation-alignment-fallback)).
 3.  After the search, a vector tile that is larger than its DTCM tile is
     clamped to the DTCM tile size. For a multi-op reduction dispatch, each
     parallel vector tile also snaps to a divisor of the DTCM tile (or `1` when
     the DTCM tile leaves a partial boundary tile) so parallel slices stay
-    static at the `vector_reduction` tiling stage and producer reductions do
-    not fuse inside the root's `vector_reduction` loop.
+    static at the `vector_reduction` tiling stage (allowing `extract_slice`
+    folding on 1D producer reduction results) and producer reductions do not
+    fuse inside the root's `vector_reduction` loop.
 
 
 ## DTCM Promotion
 
-For an RVV contraction (not a Zvt contraction), `CoralNPUTileSizeSelectionDTCMPass` adds `promote_operands` to the lowering config of the root operation. In the translation phase, IREE patch 0014 calls a CoralNPU hook (`afterCacheTilingHook`) after the cache-level tiling. The hook adds `CoralNPUPromoteOperandsPass` if the root operation has `promote_operands`. The pass makes the buffers of the footprint model (see [Level 1](#2-level-1-cache-cacheparalleltiles--cachereductiontiles)) real:
+For an RVV contraction with reuse across both M and N (not a Zvt contraction or
+a zero-reuse contraction such as `vecmat`, `matvec`, or `dot`),
+`CoralNPUTileSizeSelectionDTCMPass` adds `promote_operands` to the lowering
+config of the root operation. In the translation phase, IREE patch 0014 calls a
+CoralNPU hook (`afterCacheTilingHook`) after the cache-level tiling. The hook
+adds `CoralNPUPromoteOperandsPass` if the root operation has
+`promote_operands`. The pass makes the buffers of the footprint model (see
+[Level 1](#2-level-1-cache-cacheparalleltiles--cachereductiontiles)) real:
 
 *   **Input slices**: The pass copies each tile that the fused operations read from memory (a slice of a binding, or a whole binding) to a DTCM buffer, with a `bufferization.materialize_in_destination` operation. If a fused producer reads the tile, the copy comes before the producer (e.g. the `i8` tile before a fused `arith.sitofp`). IREE fuses a producer into the tile loop only through a slice of its result, and the tiling makes no slice of an input that no tiled loop indexes (e.g. the RHS when only M is tiled). So the pass first clones such elementwise producers into the tile loop, and their inputs get DTCM copies too.
 *   **Accumulator**: If the tile splits K, or if the root result is stored directly, the root operation accumulates in a DTCM buffer (its `linalg.fill` writes into DTCM).

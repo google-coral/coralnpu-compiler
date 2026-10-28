@@ -57,7 +57,8 @@ class DTCMFootprintModel {
   // a loop without a vector tile); the scratch tiles, and the temporaries of an
   // unpack root, depend on them. If `streamReduction`, the root reads its
   // inputs one vector step of the reduction loops at a time (e.g. a root
-  // without promotion), so the input slices span one step of these loops.
+  // without promotion), so the input slices span one step of these loops (all
+  // of a loop without a vector tile).
   int64_t estimate(ArrayRef<int64_t> tileSizes,
                    ArrayRef<int64_t> vectorParallelSizes,
                    ArrayRef<int64_t> vectorReductionSizes,
