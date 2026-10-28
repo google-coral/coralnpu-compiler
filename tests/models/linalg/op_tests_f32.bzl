@@ -139,15 +139,7 @@ def linalg_op_tests_f32(name = "linalg_op_f32_tests", check_mlir_files = None, g
     op_tests_f32(name = "pooling_ndhwc_max_f32", instances = ["(1,7,7,7,4)(3,3,3)", "(1,12,15,20,8)(2,3,4)", "(1,17,33,35,9)(2,3,3)"], test = "pooling_ndhwc_max_f32.mlir")
     op_tests_f32(name = "pooling_ndhwc_min_f32", instances = ["(1,7,7,7,4)(3,3,3)", "(1,12,15,20,8)(2,3,4)", "(1,17,33,35,9)(2,3,3)"], test = "pooling_ndhwc_min_f32.mlir")
 
-    # Softmax fails in reference compilation targeting llvm-cpu in check_gen
-    # ('vector.store' op write affecting operations on global resources).
-    # TODO: Enable this test when check_gen reference compilation for softmax is fixed.
-    # op_tests_f32(
-    #     name = "softmax_f32",
-    #     instances = ["(4,8)", "(120,256)", "(300,450)"],
-    #     test = "softmax_f32.mlir",
-    #     tags = ["manual", "f32"],
-    # )
+    op_tests_f32(name = "softmax_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "softmax_f32.mlir")
     op_tests_f32(name = "copy_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "copy_f32.mlir")
     op_tests_f32(name = "fill_rng_2d_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "fill_rng_2d_f32.mlir")
     op_tests_f32(name = "index_f32", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "index_f32.mlir")

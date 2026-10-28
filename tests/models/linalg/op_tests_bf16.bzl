@@ -136,15 +136,7 @@ def linalg_op_tests_bf16(name = "linalg_op_bf16_tests", check_mlir_files = None,
     op_tests_bf16(name = "pooling_ndhwc_max_bf16", instances = ["(1,7,7,7,4)(3,3,3)", "(1,12,15,20,8)(2,3,4)", "(1,17,33,35,9)(2,3,3)"], test = "pooling_ndhwc_max_bf16.mlir")
     op_tests_bf16(name = "pooling_ndhwc_min_bf16", instances = ["(1,7,7,7,4)(3,3,3)", "(1,12,15,20,8)(2,3,4)", "(1,17,33,35,9)(2,3,3)"], test = "pooling_ndhwc_min_bf16.mlir")
 
-    # Softmax fails in reference compilation targeting llvm-cpu in check_gen
-    # ('vector.store' op write affecting operations on global resources).
-    # TODO: Enable this test when check_gen reference compilation for softmax is fixed.
-    # op_tests_bf16(
-    #     name = "softmax_bf16",
-    #     instances = ["(4,8)", "(120,256)", "(300,450)"],
-    #     test = "softmax_bf16.mlir",
-    #     tags = ["manual", "bf16"],
-    # )
+    op_tests_bf16(name = "softmax_bf16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "softmax_bf16.mlir")
     op_tests_bf16(name = "copy_bf16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "copy_bf16.mlir")
     op_tests_bf16(name = "fill_rng_2d_bf16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "fill_rng_2d_bf16.mlir")
     op_tests_bf16(name = "index_bf16", instances = ["(4,8)", "(120,256)", "(300,450)"], test = "index_bf16.mlir")

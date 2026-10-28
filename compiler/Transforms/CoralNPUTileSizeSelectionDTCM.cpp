@@ -54,6 +54,7 @@
 // Standard library:
 #include <algorithm>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <utility>
 
@@ -73,9 +74,10 @@ namespace {
 struct DTCMRoot {
   Operation *op = nullptr;  // has the strategy config
   IREE::CPU::LoweringConfigAttr config;
-  SmallVector<int64_t> loopRanges;       // static ranges
-  SmallVector<unsigned> parallelLoops;   // outermost first
-  SmallVector<unsigned> reductionLoops;  // outermost first
+  SmallVector<int64_t> loopRanges;          // static ranges
+  SmallVector<unsigned> parallelLoops;      // outermost first
+  SmallVector<unsigned> reductionLoops;     // outermost first
+  SmallVector<TilingInterface> nonRootOps;  // multi-op reduction peers
 };
 
 // Appends the parallel and reduction loop indices of `tilingOp` in
@@ -103,6 +105,35 @@ std::optional<SmallVector<int64_t>> getStaticLoopRanges(TilingInterface op) {
   auto [offsets, sizes, strides] =
       getOffsetsSizesAndStrides(op.getIterationDomain(builder));
   return getConstantIntValues(sizes);
+}
+
+// Returns true if `map` is a projected permutation whose results are
+// `AffineDimExpr`s in strictly increasing dimension order (no constant zeros or
+// transposes).
+bool isMonotonicProjectedPermutation(AffineMap map) {
+  int64_t prevDim = -1;
+  for (AffineExpr expr : map.getResults()) {
+    auto dimExpr = dyn_cast<AffineDimExpr>(expr);
+    if (!dimExpr || static_cast<int64_t>(dimExpr.getPosition()) <= prevDim) {
+      return false;
+    }
+    prevDim = dimExpr.getPosition();
+  }
+  return true;
+}
+
+// Returns true if `op` is a single-result non-contraction LinalgOp with
+// monotonic projected-permutation indexing maps, so root-anchored parallel
+// tiling can fuse it with a reduction root sharing the same iteration domain.
+// Contractions are identified via `isaContractionOpInterface` rather than
+// `inferContractionDims` on raw indexing maps so 2-input row reductions over 2D
+// tensors are not misclassified as contractions.
+bool isSupportedMultiOp(Operation *op) {
+  if (op->getNumResults() != 1) return false;
+  auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
+  if (!linalgOp || linalg::isaContractionOpInterface(linalgOp)) return false;
+  return llvm::all_of(linalgOp.getIndexingMapsArray(),
+                      isMonotonicProjectedPermutation);
 }
 
 // Returns the root op if the DTCM tile-size selection supports the dispatch;
@@ -207,12 +238,18 @@ FailureOr<DTCMRoot> getDTCMRoot(FunctionOpInterface funcOp,
   classifyLoops(rootTilingOp, root.parallelLoops, root.reductionLoops);
 
   // CoralNPUTileSizeSelectionDTCM only changes the lowering_config of root.op
-  // and relies on producer/consumer fusion along root.op's parallel loops to
-  // tile other compute ops in the dispatch. If any non-root compute op has
-  // reduction loops or more parallel loops than root.op (e.g. decomposed
-  // linalg.softmax), skip custom tile size selection and keep the lowering
-  // configs of LLVMCPUSelectLoweringStrategyPass
-  // (MultiLoweringConfigGenerator).
+  // and relies on root-anchored producer/consumer fusion along root.op's
+  // parallel loops to tile other compute ops in the dispatch. Non-root compute
+  // ops with reduction loops or more parallel loops than root.op (e.g.
+  // decomposed linalg.softmax) are supported only when both root.op and the
+  // non-root ops are same-block single-result non-contraction ops with
+  // projected-permutation maps sharing root.loopRanges and a single innermost
+  // reduction loop.
+  const bool rootSupportsNonRootOps =
+      !root.loopRanges.empty() &&
+      root.reductionLoops == ArrayRef<unsigned>{static_cast<unsigned>(
+                                 root.loopRanges.size() - 1)} &&
+      isSupportedMultiOp(root.op);
   for (Operation *computeOp : computeOps) {
     if (computeOp == root.op) continue;
     auto tilingOp = dyn_cast<TilingInterface>(computeOp);
@@ -220,19 +257,32 @@ FailureOr<DTCMRoot> getDTCMRoot(FunctionOpInterface funcOp,
     SmallVector<unsigned> opParallelLoops;
     SmallVector<unsigned> opReductionLoops;
     classifyLoops(tilingOp, opParallelLoops, opReductionLoops);
-    if (!opReductionLoops.empty() ||
-        opParallelLoops.size() > root.parallelLoops.size()) {
-      LDBG() << "skip the tile-size selection: the non-root op "
-             << computeOp->getName() << " needs its own tiling config";
-      remark::missed(
-          root.op->getLoc(),
-          remark::RemarkOpts::name("NonRootTiling").category(DEBUG_TYPE))
-          << remark::reason(
-                 "a non-root compute op has reduction loops or more parallel "
-                 "loops than the root op; the dispatch keeps the lowering "
-                 "configs of LLVMCPUSelectLoweringStrategyPass");
-      return failure();
+    if (opReductionLoops.empty() &&
+        opParallelLoops.size() <= root.parallelLoops.size()) {
+      continue;
     }
+
+    // Accept same-block elementwise or reduction ops whose iteration domain
+    // and reduction loop match the root's single-innermost-reduction domain.
+    if (rootSupportsNonRootOps &&
+        computeOp->getBlock() == root.op->getBlock() &&
+        isSupportedMultiOp(computeOp) &&
+        getStaticLoopRanges(tilingOp) == root.loopRanges &&
+        (opReductionLoops.empty() || opReductionLoops == root.reductionLoops)) {
+      root.nonRootOps.push_back(tilingOp);
+      continue;
+    }
+
+    LDBG() << "skip the tile-size selection: the non-root op "
+           << computeOp->getName() << " needs its own tiling config";
+    remark::missed(
+        root.op->getLoc(),
+        remark::RemarkOpts::name("NonRootTiling").category(DEBUG_TYPE))
+        << remark::reason(
+               "a non-root compute op has reduction loops or more parallel "
+               "loops than the root op; the dispatch keeps the lowering "
+               "configs of LLVMCPUSelectLoweringStrategyPass");
+    return failure();
   }
 
   return root;
@@ -288,6 +338,35 @@ bool clampToTileSizes(ArrayRef<int64_t> tileSizes,
     // Skip loops that are not tiled, and vector tiles that already fit.
     if (tileSize <= 0 || vectorSize <= tileSize) continue;
     vectorSize = tileSize;
+    changed = true;
+  }
+  return changed;
+}
+
+// Snaps each parallel loop's vector tile size in `vectorSizes` so that tiling
+// by `dtcmTileSizes` and `vectorSizes` yields a static slice: when the DTCM
+// tile divides the loop range in `ranges`, keeps 0 or snaps to
+// `std::gcd(dtcmSize, vectorSize)`; otherwise sets 1. Returns true if any size
+// changed.
+bool snapParallelVectorSizesToStaticTiles(
+    ArrayRef<unsigned> parallelLoops, ArrayRef<int64_t> ranges,
+    ArrayRef<int64_t> dtcmTileSizes, MutableArrayRef<int64_t> vectorSizes) {
+  bool changed = false;
+  for (unsigned loopIdx : parallelLoops) {
+    int64_t range = ranges[loopIdx];
+    if (range <= 0) continue;
+    int64_t dtcmSize =
+        dtcmTileSizes[loopIdx] > 0 ? dtcmTileSizes[loopIdx] : range;
+    int64_t &vectorSize = vectorSizes[loopIdx];
+    // A partial DTCM parallel tile has dynamic size, so only step 1 produces a
+    // static slice; an exact DTCM parallel tile stays static for any divisor of
+    // `dtcmSize` (or 0 when untiled).
+    int64_t staticSize =
+        range % dtcmSize != 0
+            ? 1
+            : (vectorSize > 0 ? std::gcd(dtcmSize, vectorSize) : 0);
+    if (staticSize == vectorSize) continue;
+    vectorSize = staticSize;
     changed = true;
   }
   return changed;
@@ -424,7 +503,9 @@ struct SelectedTileSizes {
 };
 
 // Selects the DTCM and vector tile sizes for `root` that fit within
-// `budgetBytes`, or emits an op error and returns failure.
+// `budgetBytes` (falling back to a 1x1x... parallel tile with a missed remark
+// when `!root.nonRootOps.empty()` prevents splitting the reduction loop), or
+// emits an op error and returns failure.
 FailureOr<SelectedTileSizes> selectDTCMTileSizes(
     const DTCMRoot &root, const DTCMFootprintModel &footprintModel,
     int64_t budgetBytes) {
@@ -481,8 +562,10 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
       continue;
     }
 
-    // The DTCM tile does not split streamed reduction loops.
-    if (!streamReduction &&
+    // The DTCM tile does not split streamed reduction loops or reduction loops
+    // shared with non-root reduction/elementwise ops (where CacheReductionTiles
+    // would recompute producer reductions on every outer reduction step).
+    if (!(streamReduction || !root.nonRootOps.empty()) &&
         shrinkLoops(root.reductionLoops, reductionAlignments, root.loopRanges,
                     /*zvtNLoop=*/std::nullopt, selected.dtcmTileSizes)) {
       continue;
@@ -492,7 +575,7 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
     // set these alignments to 1, and try to shrink again.
     bool unalignedFallback =
         setZeroAlignmentsToOne(root.parallelLoops, parallelAlignments);
-    if (!streamReduction) {
+    if (!(streamReduction || !root.nonRootOps.empty())) {
       unalignedFallback |=
           setZeroAlignmentsToOne(root.reductionLoops, reductionAlignments);
     }
@@ -517,6 +600,23 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
       continue;
     }
 
+    // Non-contraction multi-op reductions do not allocate promoted DTCM buffers
+    // and cannot split their reduction loop without recomputing producer
+    // reductions, so keep the 1x1x... parallel tile when a single row exceeds
+    // the budget.
+    if (!root.nonRootOps.empty()) {
+      LDBG() << root.op->getName()
+             << ": workload cannot fit in DTCM even with 1x1x... parallel tile "
+                "size; keeping 1x1x... parallel tile";
+      remark::missed(
+          root.op->getLoc(),
+          remark::RemarkOpts::name("DTCMTileSizes").category(DEBUG_TYPE))
+          << remark::reason(
+                 "workload cannot fit in DTCM even with 1x1x... parallel tile "
+                 "size; keeping 1x1x... parallel tile");
+      break;
+    }
+
     // Nothing helped, we couldn't find a tile size that fits in DTCM.
     root.op->emitOpError(
         "workload cannot fit in DTCM even with 1x1x... tile size");
@@ -536,6 +636,15 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
       clampToTileSizes(selected.dtcmTileSizes, selected.vectorParallelSizes);
   selected.reductionClamped =
       clampToTileSizes(selected.dtcmTileSizes, selected.vectorReductionSizes);
+  // Keep parallel slices reaching VectorReductionTiles static on multi-op
+  // reductions so identity extract_slice ops on producer reduction results fold
+  // away instead of fusing producer reductions inside the root's reduction
+  // loop.
+  if (!root.nonRootOps.empty()) {
+    selected.parallelClamped |= snapParallelVectorSizesToStaticTiles(
+        root.parallelLoops, root.loopRanges, selected.dtcmTileSizes,
+        selected.vectorParallelSizes);
+  }
 
   LDBG() << "Selected DTCM tile sizes: "
          << llvm::interleaved_array(selected.dtcmTileSizes);
@@ -606,6 +715,35 @@ LogicalResult applySelectedTileSizes(FunctionOpInterface funcOp,
   if (selected.useZvt || selected.reductionClamped) {
     setTilingLevel(context, IREE::CPU::TilingLevel::VectorReductionTiles,
                    selected.vectorReductionSizes, configItems);
+  }
+  // Keep non-root ops' vector tile sizes synchronized when strategy configs
+  // are clamped or snapped to static slices.
+  if (!selected.useZvt &&
+      (selected.parallelClamped || selected.reductionClamped)) {
+    for (TilingInterface nonRootOp : root.nonRootOps) {
+      Operation *op = nonRootOp.getOperation();
+      auto nrConfig = getLoweringConfig<IREE::CPU::LoweringConfigAttr>(op);
+      if (!nrConfig) continue;
+      NamedAttrList nrItems(nrConfig.getConfig());
+      if (selected.parallelClamped &&
+          nrConfig.hasTilingLevel(static_cast<unsigned>(
+              IREE::CPU::TilingLevel::VectorCommonParallelTiles))) {
+        setTilingLevel(context,
+                       IREE::CPU::TilingLevel::VectorCommonParallelTiles,
+                       selected.vectorParallelSizes, nrItems);
+      }
+      if (selected.reductionClamped) {
+        for (auto level : {IREE::CPU::TilingLevel::VectorReductionTiles,
+                           IREE::CPU::TilingLevel::VectorInnerParallelTiles}) {
+          if (nrConfig.hasTilingLevel(static_cast<unsigned>(level))) {
+            setTilingLevel(context, level, selected.vectorReductionSizes,
+                           nrItems);
+          }
+        }
+      }
+      setLoweringConfig(op, IREE::CPU::LoweringConfigAttr::get(
+                                context, nrItems.getDictionary(context)));
+    }
   }
 
   // Zvt needs loop peeling, and the other compute ops must follow the Zvt

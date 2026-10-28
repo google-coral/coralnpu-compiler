@@ -1,21 +1,21 @@
-// RUN: %iree_compile --compile-to=executable-configurations \
-// RUN:   --coralnpu-roofline-speedup-threshold=0 %s | FileCheck %s
-// RUN: %iree_compile --compile-to=executable-configurations \
-// RUN:   --coralnpu-roofline-speedup-threshold=0 \
+// RUN: iree-compile --mlir-disable-threading --iree-hal-target-device=coralnpu \
+// RUN:   --compile-to=executable-configurations %s | FileCheck %s
+// RUN: iree-compile --mlir-disable-threading --iree-hal-target-device=coralnpu \
+// RUN:   --compile-to=executable-configurations \
 // RUN:   --coralnpu-dtcm-buffers-per-operand=2 %s \
 // RUN:   | FileCheck %s --check-prefix=DOUBLE
-// RUN: %iree_compile --compile-to=executable-configurations \
-// RUN:   --coralnpu-roofline-speedup-threshold=0 --coralnpu-dtcm-size-kb=12 %s \
+// RUN: iree-compile --mlir-disable-threading --iree-hal-target-device=coralnpu \
+// RUN:   --compile-to=executable-configurations --coralnpu-dtcm-size-kb=12 %s \
 // RUN:   2>&1 | FileCheck %s --check-prefix=SMALL --implicit-check-not=warning:
-// RUN: %iree_compile --compile-to=executable-configurations \
-// RUN:   --coralnpu-roofline-speedup-threshold=0 --coralnpu-dtcm-size-kb=1024 %s \
+// RUN: iree-compile --mlir-disable-threading --iree-hal-target-device=coralnpu \
+// RUN:   --compile-to=executable-configurations --coralnpu-dtcm-size-kb=1024 %s \
 // RUN:   | FileCheck %s --check-prefix=HIGHMEM
-// RUN: %iree_compile --compile-to=executable-configurations \
-// RUN:   --coralnpu-roofline-speedup-threshold=0 \
+// RUN: iree-compile --mlir-disable-threading --iree-hal-target-device=coralnpu \
+// RUN:   --compile-to=executable-configurations \
 // RUN:   --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f %s \
 // RUN:   | FileCheck %s --check-prefix=NOZVT
-// RUN: %iree_compile --compile-to=executable-configurations \
-// RUN:   --coralnpu-roofline-speedup-threshold=0 \
+// RUN: iree-compile --mlir-disable-threading --iree-hal-target-device=coralnpu \
+// RUN:   --compile-to=executable-configurations \
 // RUN:   --coralnpu-stack-size-kb=16 --coralnpu-dtcm-reserve-kb=12 \
 // RUN:   --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f %s \
 // RUN:   2>&1 | FileCheck %s --check-prefix=SMALL_NOZVT \
@@ -385,4 +385,112 @@ func.func @matmul_zvt_fallback(%a: tensor<32x32xf32>, %b: tensor<32x32xf32>, %sc
     linalg.yield %s : f32
   } -> tensor<32x32xf32>
   return %o : tensor<32x32xf32>
+}
+
+// Decomposed softmax (max reduction -> exp+sum root reduction -> div 2D
+// consumer): non-root ops share the root's [64, 256] domain and innermost
+// reduction loop, so cache_reduction stays [0, 0]. Input + output is 2 KB/row
+// (128 KB untiled). With 24 KB, 8 rows (16 KB) fit at the strategy alignment 8.
+// With 4 KB (SMALL), the search relaxes alignment to 1, shrinks to 2 rows
+// (4 KB), and clamps vector_common_parallel to [2, 0]. With 1 MB (HIGHMEM), it
+// stays untiled.
+// CHECK-LABEL: func.func @softmax_dispatch_0
+// CHECK:         linalg.generic
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [8, 0], vector_reduction = [0, 8]>
+// CHECK:         linalg.generic
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [8, 0], cache_reduction = [0, 0], distribution = [8, 0], vector_common_parallel = [8, 0], vector_reduction = [0, 8]>
+// CHECK:         linalg.generic
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [8, 0], vector_inner_parallel = [0, 8]>
+// SMALL-LABEL: func.func @softmax_dispatch_0
+// SMALL:         linalg.generic
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// SMALL:         linalg.generic
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 0], cache_reduction = [0, 0], distribution = [2, 0], vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// SMALL:         linalg.generic
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+// HIGHMEM-LABEL: func.func @softmax_dispatch_0
+// HIGHMEM:         linalg.generic
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [8, 0], vector_reduction = [0, 8]>
+// HIGHMEM:         linalg.generic
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0], cache_reduction = [0, 0], distribution = [0, 0], vector_common_parallel = [8, 0], vector_reduction = [0, 8]>
+// HIGHMEM:         linalg.generic
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [8, 0], vector_inner_parallel = [0, 8]>
+func.func @softmax(%x: tensor<64x256xf32>) -> tensor<64x256xf32> {
+  %e = tensor.empty() : tensor<64x256xf32>
+  %r = linalg.softmax dimension(1) ins(%x : tensor<64x256xf32>) outs(%e : tensor<64x256xf32>) -> tensor<64x256xf32>
+  return %r : tensor<64x256xf32>
+}
+
+// Softmax fused with a 2D post-scale consumer: 2 inputs (x, w) + 1 output of
+// 16x512 f32 need 6 KB/row (96 KB untiled). With 24 KB, 4 rows (24 KB) fit.
+// With 4 KB (SMALL), even 1 row (6 KB) exceeds the budget and cache_reduction
+// cannot split, so the pass keeps the 1-row parallel tile [1, 0] and clamps
+// vector_common_parallel from [2, 0] to [1, 0] without emitting a warning.
+// With 1 MB (HIGHMEM), it stays untiled.
+// CHECK-LABEL: func.func @softmax_scaled_dispatch_0
+// CHECK:         linalg.generic
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// CHECK:         linalg.generic
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [4, 0], cache_reduction = [0, 0], distribution = [4, 0], vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// CHECK:         linalg.generic
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+// SMALL-LABEL: func.func @softmax_scaled_dispatch_0
+// SMALL:         linalg.generic
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 8]>
+// SMALL:         linalg.generic
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [1, 0], cache_reduction = [0, 0], distribution = [1, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 8]>
+// SMALL:         linalg.generic
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 8]>
+// HIGHMEM-LABEL: func.func @softmax_scaled_dispatch_0
+// HIGHMEM:         linalg.generic
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// HIGHMEM:         linalg.generic
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0], cache_reduction = [0, 0], distribution = [0, 0], vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// HIGHMEM:         linalg.generic
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+func.func @softmax_scaled(%x: tensor<16x512xf32>, %w: tensor<16x512xf32>) -> tensor<16x512xf32> {
+  %e = tensor.empty() : tensor<16x512xf32>
+  %s = linalg.softmax dimension(1) ins(%x : tensor<16x512xf32>) outs(%e : tensor<16x512xf32>) -> tensor<16x512xf32>
+  %r = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0, d1)>],
+                       iterator_types = ["parallel", "parallel"]}
+      ins(%s, %w : tensor<16x512xf32>, tensor<16x512xf32>) outs(%e : tensor<16x512xf32>) {
+  ^bb0(%in0: f32, %in1: f32, %out: f32):
+    %p = arith.mulf %in0, %in1 : f32
+    linalg.yield %p : f32
+  } -> tensor<16x512xf32>
+  return %r : tensor<16x512xf32>
+}
+
+// Unaligned softmax row count (196x256 f32, 2 KB/row, 392 KB untiled):
+// parallel vector tiles snap to static slices so producer reductions do not
+// fuse into the root's vector_reduction loop. With 24 KB, 8 rows (16 KB) fit
+// and 196 % 8 != 0 snaps vector_common_parallel from [8, 0] to [1, 0]. With
+// 4 KB (SMALL), 2 rows (4 KB) divide 196 and clamp vector_common_parallel to
+// [2, 0]. With 1 MB (HIGHMEM), the DTCM tile stays [0, 0] and
+// vector_common_parallel snaps to gcd(196, 8) = [4, 0].
+// CHECK-LABEL: func.func @softmax_unaligned_dispatch_0
+// CHECK:         linalg.generic
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_reduction = [0, 8]>
+// CHECK:         linalg.generic
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [8, 0], cache_reduction = [0, 0], distribution = [8, 0], vector_common_parallel = [1, 0], vector_reduction = [0, 8]>
+// CHECK:         linalg.generic
+// CHECK-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [1, 0], vector_inner_parallel = [0, 8]>
+// SMALL-LABEL: func.func @softmax_unaligned_dispatch_0
+// SMALL:         linalg.generic
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// SMALL:         linalg.generic
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 0], cache_reduction = [0, 0], distribution = [2, 0], vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+// SMALL:         linalg.generic
+// SMALL-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+// HIGHMEM-LABEL: func.func @softmax_unaligned_dispatch_0
+// HIGHMEM:         linalg.generic
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [4, 0], vector_reduction = [0, 8]>
+// HIGHMEM:         linalg.generic
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0], cache_reduction = [0, 0], distribution = [0, 0], vector_common_parallel = [4, 0], vector_reduction = [0, 8]>
+// HIGHMEM:         linalg.generic
+// HIGHMEM-SAME:      lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [4, 0], vector_inner_parallel = [0, 8]>
+func.func @softmax_unaligned(%x: tensor<196x256xf32>) -> tensor<196x256xf32> {
+  %e = tensor.empty() : tensor<196x256xf32>
+  %r = linalg.softmax dimension(1) ins(%x : tensor<196x256xf32>) outs(%e : tensor<196x256xf32>) -> tensor<196x256xf32>
+  return %r : tensor<196x256xf32>
 }

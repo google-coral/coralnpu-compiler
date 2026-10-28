@@ -184,8 +184,26 @@ graph TD
 `CoralNPUTileSizeSelectionDTCMPass` aligns the DTCM tile sizes to the vector tile sizes that `LLVMCPUSelectLoweringStrategyPass` set:
 
 1.  **Parallel loops** are aligned to `vector_common_parallel`, and **reduction loops** to `vector_reduction`. A vector tile size of 0 means that the loop has no alignment at first.
-2.  The search starts from the full loop ranges, so a loop that fits stays untiled. When it shrinks a tile, it halves the tile and aligns it down to a multiple of the alignment. Then it takes the largest multiple of the alignment that divides the loop range, so that there is no partial DTCM tile. If the range is not a multiple of the alignment, it takes the largest divisor of the range that is at least the alignment, if there is one (but not for the N loop of a Zvt contraction, which Zvt cannot lower with all column remainders). The loops whose ranges are multiples of their alignments shrink first, and the outermost loop first. The search does not shrink the streamed reduction loops of a Zvt contraction or of a convolution. If the footprint still does not fit, the search relaxes the alignments (see [Graceful Degradation](#graceful-degradation-alignment-fallback)).
-3.  After the search, a vector tile that is larger than its DTCM tile is clamped to the DTCM tile size.
+2.  The search starts from the full loop ranges, so a loop that fits stays
+    untiled. When it shrinks a tile, it halves the tile and aligns it down to a
+    multiple of the alignment. Then it takes the largest multiple of the
+    alignment that divides the loop range, so that there is no partial DTCM
+    tile. If the range is not a multiple of the alignment, it takes the largest
+    divisor of the range that is at least the alignment, if there is one (but
+    not for the N loop of a Zvt contraction, which Zvt cannot lower with all
+    column remainders). The loops whose ranges are multiples of their alignments
+    shrink first, and the outermost loop first. The search does not shrink the
+    streamed reduction loops of a Zvt contraction or of a convolution, nor the
+    reduction loop of a multi-op reduction dispatch (such as decomposed
+    `linalg.softmax`). If the footprint still does not fit, the search relaxes
+    the alignments (see
+    [Graceful Degradation](#graceful-degradation-alignment-fallback)).
+3.  After the search, a vector tile that is larger than its DTCM tile is
+    clamped to the DTCM tile size. For a multi-op reduction dispatch, each
+    parallel vector tile also snaps to a divisor of the DTCM tile (or `1` when
+    the DTCM tile leaves a partial boundary tile) so parallel slices stay
+    static at the `vector_reduction` tiling stage and producer reductions do
+    not fuse inside the root's `vector_reduction` loop.
 
 
 ## DTCM Promotion
@@ -249,7 +267,14 @@ Below is a step-by-step walkthrough of how a large matrix multiplication is tile
 
 If the shrink loop reaches the alignment limits (e.g., `M` reaches 4 and `N` reaches 24) and the footprint *still* exceeds DTCM capacity, the compiler falls back to a finer granularity. It resets all loop alignments to `1` and attempts to shrink the tile sizes further (e.g., trying to fit `[2, 24, 32]`, `[1, 12, 16]`, etc.). Then it clamps each vector tile size to the DTCM tile size of the same loop.
 
-This degradation preserves memory correctness (avoiding DTCM overflow) but will result in scalar or less-efficient vector code because the tile sizes are no longer multiples of the register vector widths. If the workload cannot fit even with a `[1, 1, 1]` tile size, the pass emits an error and aborts compilation.
+This degradation preserves memory correctness (avoiding DTCM overflow) but will
+result in scalar or less-efficient vector code because the tile sizes are no
+longer multiples of the register vector widths. For a multi-op reduction
+dispatch (which does not allocate promoted DTCM buffers and does not split its
+reduction loop), if a `1x1x...` parallel tile still exceeds the DTCM budget, the
+pass emits a missed remark and keeps the `1x1x...` parallel tile. For all other
+dispatches, if the workload cannot fit even with a `[1, 1, 1]` tile size, the
+pass emits an error and aborts compilation.
 
 
 ### Step 3: Applying Level 1 (Cache) Tiling

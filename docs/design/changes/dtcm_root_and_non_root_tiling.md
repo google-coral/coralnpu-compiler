@@ -573,7 +573,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   - *Verify*: `bazel test --config=dev //tests:ci`
 
 #### CL 2b: Support Non-Root Compute Ops in `getDTCMRoot` & Enable Softmax Tests
-- [ ] **Task 4**: Extend `getDTCMRoot` and `CoralNPUTileSizeSelectionDTCM.cpp`
+- [x] **Task 4**: Extend `getDTCMRoot` and `CoralNPUTileSizeSelectionDTCM.cpp`
       to record supported non-root compute ops (`isSupportedMultiOp`) in
       `root.nonRootOps`, skip reduction-loop shrinking when
       `streamReduction || !root.nonRootOps.empty()`, break out of the search
@@ -584,7 +584,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   - *Target*: `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`,
     `docs/design/tiling_levels_explained.md`
   - *Verify*: `bazel test --config=dev //tests/transforms:lit`
-- [ ] **Task 5**: Add `@softmax`, `@softmax_scaled`, and `@softmax_unaligned`
+- [x] **Task 5**: Add `@softmax`, `@softmax_scaled`, and `@softmax_unaligned`
       LIT test coverage (`CHECK`, `SMALL`, `HIGHMEM`) to
       `tests/transforms/tile_size_selection_dtcm.mlir`, and add
       `@softmax_scaled_max` executable-source coverage to
@@ -592,7 +592,7 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   - *Target*: `tests/transforms/tile_size_selection_dtcm.mlir`,
     `tests/transforms/tile_size_selection_footprint.mlir`
   - *Verify*: `bazel test --config=dev //tests/transforms:lit`
-- [ ] **Task 6**: Fix `softmax_f32.mlir` and `softmax_bf16.mlir` templates in
+- [x] **Task 6**: Fix `softmax_f32.mlir` and `softmax_bf16.mlir` templates in
       `tests/models/linalg/check_gen_templates/` to pass `outs(%empty)`
       directly, enable `softmax_f32` and `softmax_bf16` in `op_tests_f32.bzl`
       and `op_tests_bf16.bzl`, and generate static `.mlir` test files with
@@ -646,6 +646,24 @@ bool shrinkLoops(ArrayRef<unsigned> loopIndices, ArrayRef<int64_t> alignments,
   `applySelectedTileSizes` using `NamedAttrList`), and updated
   `setZvtVectorSizes` to accept `const DTCMFootprintModel &` and `budgetBytes`
   directly (only mutating the output vector sizes when a Zvt tile fits).
+- Switched the `RUN` lines in `tests/transforms/tile_size_selection_dtcm.mlir`
+  from multi-device `%iree_compile ... --coralnpu-roofline-speedup-threshold=0`
+  to single-device `iree-compile --mlir-disable-threading
+  --iree-hal-target-device=coralnpu` because `CoralNPUAffinityAnnotationPass`
+  checks `isa<linalg::LinalgOp>(*rootOp)` before `DecomposeSoftmaxPass` runs and
+  routes `linalg::SoftmaxOp` (`AggregatedOpInterface`) to the host CPU in
+  multi-device compilations (tracked in **Part 3**).
+- Added `snapParallelVectorSizesToStaticTiles` in `selectDTCMTileSizes` when
+  `!root.nonRootOps.empty()` is `true` after discovering that
+  `softmax_bf16_300_450_check_test` (`300 % 8 != 0`) overflowed 8 KB ITCM
+  (`.text` = 12,425 B): a dynamic parallel slice (`?`) prevents
+  `createOrFold<tensor::ExtractSliceOp>` from folding the identity slice on
+  `%max` during `LLVMCPUTileRootAndFuseInputOperandsPass(VectorReductionTiles)`,
+  fusing `%max` inside every step of `%exp_sum`'s `vector_reduction` loop.
+  Snapping `vector_common_parallel` to `[1, 0]` keeps `%max` outside the
+  reduction loop, shrinking `.text` to 5,483 B with zero vector register spills
+  (covered by `@softmax_unaligned` on `196x256xf32`, and tracked upstream in
+  **Part 3**).
 
 ### 2.4 Documentation Archive Checklist (`archive` step — Pre-Submit)
 Run this step in the final implementation CL before uploading for review:

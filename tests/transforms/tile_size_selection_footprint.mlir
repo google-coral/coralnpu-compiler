@@ -57,3 +57,76 @@ hal.executable private @stored_producer {
     }
   }
 }
+
+// Multi-op reduction with a stored 2D parallel producer (%mul = %x * %w), a
+// non-root %max reduction over %mul, a root %exp_sum reduction, and a 2D %div
+// consumer. Storing %mul prevents RematerializeParallelOpsPass from folding it
+// into %max, exercising getDTCMRoot on an unfused 2D parallel producer
+// (2 parallel loops > 1 root parallel loop) alongside a non-root reduction.
+// Footprint per row: x (2 KB) + w (2 KB) + stored mul (2 KB) + div (2 KB) =
+// 8 KB/row (128 KB untiled). With 24 KB, 2 rows (16 KB) fit.
+// CHECK-LABEL: func.func @softmax_scaled_max()
+//       CHECK:   linalg.generic
+//  CHECK-SAME:     iterator_types = ["parallel", "parallel"]
+//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+//       CHECK:   linalg.generic
+//  CHECK-SAME:     iterator_types = ["parallel", "reduction"]
+//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+//       CHECK:   linalg.generic
+//  CHECK-SAME:     iterator_types = ["parallel", "reduction"]
+//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<cache_parallel = [2, 0], cache_reduction = [0, 0], distribution = [2, 0], vector_common_parallel = [2, 0], vector_reduction = [0, 8]>
+//       CHECK:   linalg.generic
+//  CHECK-SAME:     iterator_types = ["parallel", "parallel"]
+//  CHECK-SAME:     lowering_config = #iree_cpu.lowering_config<vector_common_parallel = [2, 0], vector_inner_parallel = [0, 8]>
+hal.executable private @softmax_scaled_max {
+  hal.executable.variant public @embedded_elf_riscv_32 target(#executable_target) {
+    hal.executable.export public @softmax_scaled_max ordinal(0) layout(#pipeline_layout) count(%arg0: !hal.device) -> (index, index, index) {
+      %x, %y, %z = iree_tensor_ext.dispatch.workgroup_count_from_slice()
+      hal.return %x, %y, %z : index, index, index
+    }
+    builtin.module {
+      func.func @softmax_scaled_max() {
+        %c0 = arith.constant 0 : index
+        %cst0 = arith.constant 0.000000e+00 : f32
+        %ninf = arith.constant 0xFF800000 : f32
+        %b0 = hal.interface.binding.subspan layout(#pipeline_layout) binding(0) alignment(64) offset(%c0) flags("ReadOnly|Indirect") : !iree_tensor_ext.dispatch.tensor<readonly:tensor<16x512xf32>>
+        %b1 = hal.interface.binding.subspan layout(#pipeline_layout) binding(1) alignment(64) offset(%c0) flags("ReadOnly|Indirect") : !iree_tensor_ext.dispatch.tensor<readonly:tensor<16x512xf32>>
+        %b2 = hal.interface.binding.subspan layout(#pipeline_layout) binding(2) alignment(64) offset(%c0) flags(Indirect) : !iree_tensor_ext.dispatch.tensor<writeonly:tensor<16x512xf32>>
+        %b3 = hal.interface.binding.subspan layout(#pipeline_layout) binding(3) alignment(64) offset(%c0) flags(Indirect) : !iree_tensor_ext.dispatch.tensor<writeonly:tensor<16x512xf32>>
+        %x = iree_tensor_ext.dispatch.tensor.load %b0, offsets = [0, 0], sizes = [16, 512], strides = [1, 1] : !iree_tensor_ext.dispatch.tensor<readonly:tensor<16x512xf32>> -> tensor<16x512xf32>
+        %w = iree_tensor_ext.dispatch.tensor.load %b1, offsets = [0, 0], sizes = [16, 512], strides = [1, 1] : !iree_tensor_ext.dispatch.tensor<readonly:tensor<16x512xf32>> -> tensor<16x512xf32>
+        %e2 = tensor.empty() : tensor<16x512xf32>
+        %e1 = tensor.empty() : tensor<16xf32>
+        %mul = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0, d1)>], iterator_types = ["parallel", "parallel"]} ins(%x, %w : tensor<16x512xf32>, tensor<16x512xf32>) outs(%e2 : tensor<16x512xf32>) {
+        ^bb0(%in0: f32, %in1: f32, %out: f32):
+          %p = arith.mulf %in0, %in1 : f32
+          linalg.yield %p : f32
+        } -> tensor<16x512xf32>
+        iree_tensor_ext.dispatch.tensor.store %mul, %b2, offsets = [0, 0], sizes = [16, 512], strides = [1, 1] : tensor<16x512xf32> -> !iree_tensor_ext.dispatch.tensor<writeonly:tensor<16x512xf32>>
+        %fmax = linalg.fill ins(%ninf : f32) outs(%e1 : tensor<16xf32>) -> tensor<16xf32>
+        %max = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>], iterator_types = ["parallel", "reduction"]} ins(%mul : tensor<16x512xf32>) outs(%fmax : tensor<16xf32>) {
+        ^bb0(%in: f32, %acc: f32):
+          %m = arith.maxnumf %in, %acc : f32
+          linalg.yield %m : f32
+        } -> tensor<16xf32>
+        %fsum = linalg.fill ins(%cst0 : f32) outs(%e1 : tensor<16xf32>) -> tensor<16xf32>
+        %sum = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>, affine_map<(d0, d1) -> (d0)>], iterator_types = ["parallel", "reduction"]} ins(%x, %max : tensor<16x512xf32>, tensor<16xf32>) outs(%fsum : tensor<16xf32>) {
+        ^bb0(%in: f32, %m: f32, %acc: f32):
+          %d = arith.subf %in, %m : f32
+          %ex = math.exp %d : f32
+          %s = arith.addf %ex, %acc : f32
+          linalg.yield %s : f32
+        } -> tensor<16xf32>
+        %div = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>, affine_map<(d0, d1) -> (d0)>, affine_map<(d0, d1) -> (d0, d1)>], iterator_types = ["parallel", "parallel"]} ins(%x, %max, %sum : tensor<16x512xf32>, tensor<16xf32>, tensor<16xf32>) outs(%e2 : tensor<16x512xf32>) {
+        ^bb0(%in: f32, %m: f32, %s: f32, %out: f32):
+          %d = arith.subf %in, %m : f32
+          %ex = math.exp %d : f32
+          %q = arith.divf %ex, %s : f32
+          linalg.yield %q : f32
+        } -> tensor<16x512xf32>
+        iree_tensor_ext.dispatch.tensor.store %div, %b3, offsets = [0, 0], sizes = [16, 512], strides = [1, 1] : tensor<16x512xf32> -> !iree_tensor_ext.dispatch.tensor<writeonly:tensor<16x512xf32>>
+        return
+      }
+    }
+  }
+}
