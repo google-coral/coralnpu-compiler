@@ -21,6 +21,9 @@ _MODELS = [
     "add_i32_4_8-4_8",
     "matmul_f32_4_8-8_4",
     "matmul_i8_4_8-8_4",
+    # Zvt: N >= 8, and an i32 accumulator for i8.
+    "matmul_f32_16_8-8_16",
+    "matmul_i8_i32_16_8-8_16",
 ]
 
 [

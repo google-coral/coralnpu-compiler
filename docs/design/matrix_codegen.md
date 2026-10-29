@@ -71,8 +71,10 @@ This pass runs on MLIR `FunctionOpInterface` within `beforeLowerToLLVMHook` and 
 >    fixed by construction rather than left to the unroller — ITCM is small, and
 >    a contraction-level lowering would expand per K step.
 > 3. The fused microkernel and the seed/drain blocks use a fixed register
->    assignment (`t0`–`t6`, `v0`–`v31`); unfused multiply blocks take
->    `^vr` operands that LLVM allocates.
+>    assignment (`t0`–`t6`, `v0`–`v31`); unfused multiply blocks pin their
+>    operands to the bases of slots 0, 1, 2, ... (`getZvtOperandBase`). Zvt
+>    v0.4 requires each operand base to be LMUL-aligned and in the first
+>    $8 / K_{max}$ registers of its 8-register group ($K_{max} = 32 / SEW$).
 >
 > The cost is deliberate: the register allocator is shut out of the microkernel,
 > and the `~{memory}` clobber on the microkernel and seed/drain blocks prevents
@@ -99,14 +101,14 @@ This pass runs on MLIR `FunctionOpInterface` within `beforeLowerToLLVMHook` and 
     *   Because `msetmtype` derives `LMUL`/`ta`/`ma` from `SEW` when `mtwiden != 0` (`SEW8` $\to$ `m1`, `SEW16` $\to$ `m2`, `SEW32` $\to$ `m4`) and programs `TM` and `TK` directly, it fully replaces a `vsetivli` + `msettm` pair. It zeroes `vl`, so `msettn` restores $TN=16$ (or $TN = N \in \{8, 12\}$ when seeding or draining a partial-$N$ tile). No `vset*` instruction appears in any Zvt block.
     *   Blocks that clear, seed or drain the accumulators use the FP32 configuration regardless of input type, since the accumulator tiles are always 32-bit; INT8 and BF16 blocks then switch to the narrow configuration before the operand loads and multiplies (for multi-reduction convolution loop chains whose outer filter loops only compute addresses, the input configuration is hoisted into the tile init block). A seeded FP32 kernel with $N < 16$ re-programs $TN = 16$ after seeding, and a BF16 narrowing drain (`+zvfbfmin`, $M \bmod 4 = 0$) alternates between the FP32 and BF16 configurations every 4 rows.
 3.  **Inline Fused Assembly Microkernels**:
-    *   Uses $K$-packing ($TK=2$ for BF16, $TK=4$ for INT8, when $K \bmod TK = 0$ and every contiguous operand is a full tile) so each `vtfmm.alt.tvv` / `vtmms.tvv` accumulates $TK$ consecutive $K$-steps held in interleaved 4-VR groups, and unrolls the $K$-loop by $8\times$ when $K \ge 32$ and $K \bmod (8 \cdot TK) = 0$, $4\times$ when $K \ge 16$ and $K \bmod (4 \cdot TK) = 0$, or fully without a loop branch when $K \le 4 \cdot TK$ and $K \bmod TK = 0$.
+    *   Uses $K$-packing ($TK=2$ for BF16, $TK=4$ for INT8, when $K \bmod TK = 0$ and every contiguous operand is a full tile) so each `vtfmm.alt.tvv` / `vtmms.tvv` accumulates $TK$ consecutive $K$-steps held in registers $8 / TK$ apart, and unrolls the $K$-loop by $8\times$ when $K \ge 32$ and $K \bmod (8 \cdot TK) = 0$, $4\times$ when $K \ge 16$ and $K \bmod (4 \cdot TK) = 0$, or fully without a loop branch when $K \le 4 \cdot TK$ and $K \bmod TK = 0$.
     *   Masks the operand loads of a partial tile to its $M$ rows or $N$ columns (`vid.v` + `vmsltu.vx` before the loop), so they never read past the operands; with both partial, the two masks wait in registers no operand uses and are copied to `v0` before each operand's loads.
     *   Emits an assembly loop with loop counter `t6` (`li t6, numKSteps / step; 1: ...; addi t6, t6, -1; bnez t6, 1b`), so code size stays bounded regardless of $K$.
     *   BF16 uses `vtfmm.alt.tvv` wherever FP32 uses `vtfmm.tvv` below.
     *   The `vtzero` steps below apply to a zero `acc`; a loaded `acc` seeds the tiles instead (item 6).
     *   **$2 \times 2$ Multi-Tile Grid Accumulation ($32 \times 32$)**:
         *   Zeroes all 4 accumulators: `vtzero mt0`, `vtzero mt4`, `vtzero mt8`, and `vtzero mt12`.
-        *   Loads LHS Tiles 0..1 and RHS Tiles 0..1 for each $kk \in [0, TK)$ into their 4-VR slots, then issues four multiplies (`mt0`, `mt4`, `mt8`, `mt12`) per $TK$ group; each loaded LHS/RHS register group feeds two multiplies.
+        *   Loads LHS Tiles 0..1 and RHS Tiles 0..1 for each $kk \in [0, TK)$ into their slots, then issues four multiplies (`mt0`, `mt4`, `mt8`, `mt12`) per $TK$ group; each loaded LHS/RHS register group feeds two multiplies.
     *   **$1 \times 4$ / $4 \times 1$ Multi-Tile Strip Accumulation ($16 \times 64$ or $64 \times 16$)**:
         *   Zeroes all 4 accumulators: `vtzero mt0`, `vtzero mt4`, `vtzero mt8`, and `vtzero mt12`.
         *   Loads the single-tile operand once per $K$-step and walks a pointer across the 4 tiles of the other operand, then issues four multiplies (`mt0`, `mt4`, `mt8`, `mt12`) per $TK$ group reusing the shared operand.
@@ -123,7 +125,7 @@ This pass runs on MLIR `FunctionOpInterface` within `beforeLowerToLLVMHook` and 
     *   Extracts 32-bit rows from matrix accumulators using `vtmv.v.t` and stores them via `vse32.v` (or narrows 4 rows at a time to BF16 via `vfncvtbf16.f.f.w` + `vse16.v`) directly into Matrix C memory.
     *   Tiles are indexed in row-major order (`tileIdx(m, n) = m * numTilesN + n`): `mt0`, `mt4` (`lui t0, 0x20000`), `mt8` (`lui t0, 0x40000`), and `mt12` (`lui t0, 0x60000`). When `numTilesN == 1` ($2 \times 1$ or $4 \times 1$), `t4` walks sequentially through all $16 \cdot \text{numTilesM}$ output rows without resetting between M-tiles.
 5.  **Non-Fused Fallback**:
-    *   When the chain cannot be fused into a single microkernel (no enclosing `scf.for`, bounds that are not constant or a step that is not 1, a loop body that may write memory, or an LHS/RHS address that is not row-major with k the row or innermost index of A and B), the contraction is lowered on its own: the LHS/RHS vectors stay as MLIR values passed through `^vr` inline-asm operands, and only the configuration preamble, the `vtfmm.tvv` / `vtfmm.alt.tvv` / `vtmms.tvv` multiplies and the tile writeback are emitted. This needs full $16 \times 16$ tiles and the widening `arith.ext` (if any) to be the operand's defining op; otherwise the contraction gets the generic lowering (last bullet).
+    *   When the chain cannot be fused into a single microkernel (no enclosing `scf.for`, bounds that are not constant or a step that is not 1, a loop body that may write memory, or an LHS/RHS address that is not row-major with k the row or innermost index of A and B), the contraction is lowered on its own: the LHS/RHS vectors stay as MLIR values passed through inline-asm operands pinned to the slot bases (A tiles, then B), and only the configuration preamble, the `vtfmm.tvv` / `vtfmm.alt.tvv` / `vtmms.tvv` multiplies and the tile writeback are emitted. This needs full $16 \times 16$ tiles and the widening `arith.ext` (if any) to be the operand's defining op; otherwise the contraction gets the generic lowering (last bullet).
     *   The accumulators are still initialized before the first multiply: a zero `acc` of a standalone contraction is cleared inline in its multiply block; otherwise a separate `vtzero` or seed block runs once immediately before the contraction or the unfused loop. Without this the tiles would retain whatever a previous microkernel left behind.
     *   Contractions the pass does not take are lowered at its end by MLIR's generic contract lowering, because `iree-v3.12.0-0006` makes `LLVMCPUVirtualVectorLowering` skip contract lowering in any function containing a Zvt-shaped contraction.
 6.  **Accumulator Initialization**:
@@ -132,7 +134,7 @@ This pass runs on MLIR `FunctionOpInterface` within `beforeLowerToLLVMHook` and 
 ### 2.4. LLVM RISCV Backend
 The LLVM RISC-V backend supports the Zvt extension (`llvm-project-0001-add-zvt-support.patch`):
 *   **Extension Features** (`RISCVFeatures.td`): `Zvtbase`, `Zvt8e`, `Zvt16e`, `Zvt64e`, `Zvti8i32mm`, `Zvtf8f32mm`, `Zvtf16f32mm`, `Zvtf32f32mm`. `CoralNPUTargetBackend` requests, by default, `+zvtbase,+zvt8e,+zvt16e,+zvti8i32mm,+zvtf16f32mm,+zvtf32f32mm`; `vtfmm.alt.tvv` is enabled by `Zvtf16f32mm` or `Zvtf8f32mm`.
-*   **Instruction Registration** (`RISCVInstrInfoZvt.td`): encodings, pseudos and assembler support for `vtfmm.tvv`, `vtfmm.alt.tvv`, `vtmms.tvv`, `vtmmu.tvv`, `vtzero`, `vtmv.v.t`, `vtmv.t.v`, `msetmtype`, `msettm/tn/tk`, and the tile load/store family.
+*   **Instruction Registration** (`RISCVInstrInfoZvt.td`): Zvt v0.4 encodings, pseudos and assembler support for `vtfmm.tvv`, `vtfmm.alt.tvv`, `vtmms.tvv`, `vtmmu.tvv`, `vtzero`, `vtmv.v.t`, `vtmv.t.v`, `msetmtype`, `msetmtypei`, `msettm/tn/tk`, and the tile load/store family.
 *   **VSETVLI Awareness** (`RISCVInsertVSETVLI.cpp`, `RISCVVSETVLIInfoAnalysis.cpp`): makes the VSETVLI passes account for the SEW/VL demands of Zvt pseudos (intrinsic pseudos only; this pass's inline asm is opaque to them).
 *   **Intrinsics & ISel** (`IntrinsicsRISCVZvt.td`, `RISCVISelDAGToDAG.cpp`): the `llvm.riscv.zvt.*` surface, unused by this pass today (see the note in §2.3).
 

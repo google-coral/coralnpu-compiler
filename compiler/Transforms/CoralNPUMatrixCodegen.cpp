@@ -289,6 +289,13 @@ std::string emitTileZeroAsm(int64_t numTilesM, int64_t numTilesN) {
   return asmStr;
 }
 
+// Returns the base register of Zvt operand slot `slot`. Zvt v0.4 operand bases
+// are LMUL-aligned (LMUL = inBytes) and in the first 8 / KMAX registers of
+// their 8-register group (KMAX = 4 / inBytes), so slot pairs share a group.
+int64_t getZvtOperandBase(int64_t slot, int64_t inBytes) {
+  return 8 * (slot / 2) + (slot % 2) * inBytes;
+}
+
 // `contigA`: k indexes the rows of A, so each K step loads a contiguous row;
 // otherwise a strided column. B is analogous (`contigB`).
 void emitInlineFusedGEMM(OpBuilder& b, Location loc, const TileAddr& lhs,
@@ -333,7 +340,7 @@ void emitInlineFusedGEMM(OpBuilder& b, Location loc, const TileAddr& lhs,
              "t1"},
             {contigB, numTilesN, {"t2", "t4", "t5"}, {2, 3, 4, 5}, "t3"}};
   auto vReg = [&](int64_t s, int64_t kk) {
-    return 8 * (s / 2) + (s % 2) * (4 / tk) + kk * (8 / tk);
+    return getZvtOperandBase(s, inBytes) + kk * (8 / tk);
   };
   auto tStep = [&](const Opnd& o) {
     return o.contig && tk == 4 / inBytes && o.tiles > 1 ? 2 : 1;
@@ -350,11 +357,12 @@ void emitInlineFusedGEMM(OpBuilder& b, Location loc, const TileAddr& lhs,
       fmt("slli {0}, {1}, 4\n\t", o.p[2], o.s);
   // A partial tile's operand loads still take 16 elements, so mask them to the
   // rowsM (A) or colsN (B) valid ones to stay within the operand. With both
-  // partial, the masks wait in slot-0 registers (no operand uses slot 0) and
-  // are copied to v0 before each operand's loads.
+  // partial, the masks wait in v0-v7 registers clear of slot 1's A operand
+  // (v1/v3/v5/v7 for i8, v2-v3/v6-v7 for bf16, v4-v7 for f32) and are copied
+  // to v0 before each operand's loads.
   bool masked[2] = {rowsM < 16, colsN < 16};
-  int64_t maskReg[2] = {masked[0] && masked[1] ? (tk == 4 ? 2 : 1) : 0,
-                        masked[0] && masked[1] ? (tk == 1 ? 2 : 4) : 0};
+  int64_t maskReg[2] = {masked[0] && masked[1] ? (inBytes == 1 ? 2 : 1) : 0,
+                        masked[0] && masked[1] ? (inBytes == 4 ? 2 : 4) : 0};
   if (masked[0] || masked[1]) fmt("vid.v v8\n\t");
   for (int i = 0; i < 2; ++i)
     if (masked[i])
@@ -408,16 +416,17 @@ void lowerContractionToAsm(OpBuilder& b, vector::ContractionOp op,
   std::string constraints;
   Value zero =
       LLVM::ConstantOp::create(b, loc, b.getI64Type(), b.getI64IntegerAttr(0));
+  int64_t slot = 0;
   for (auto [v, tiles] : {std::pair{stripExt(op.getLhs()), numTilesM},
                           std::pair{stripExt(op.getRhs()), numTilesN}}) {
     auto ty = cast<VectorType>(v.getType());
     Type elTy = ty.getElementType();
+    int64_t inBytes = elTy.getIntOrFloatBitWidth() / 8;
     auto matTy = VectorType::get({ty.getNumElements() / 16, 16}, elTy);
-    // The scalable "^vr" operand type is 256 bits (times vscale), i.e. LMUL4,
-    // so operands are 4-register aligned as the RTL requires.
-    VectorType scTy =
-        VectorType::get({256 / elTy.getIntOrFloatBitWidth()}, elTy, {true});
-    for (int64_t t = 0; t < tiles; ++t) {
+    // One 16-element row (LMUL = inBytes at VLEN 128), pinned to the operand
+    // slot bases.
+    VectorType scTy = VectorType::get({8}, elTy, {true});
+    for (int64_t t = 0; t < tiles; ++t, ++slot) {
       Value flat = vector::ExtractOp::create(
           b, loc, vector::ShapeCastOp::create(b, loc, matTy, v), t);
       operands.push_back(
@@ -425,7 +434,8 @@ void lowerContractionToAsm(OpBuilder& b, vector::ContractionOp op,
               b, loc, scTy, b.getStringAttr("llvm.vector.insert"),
               ValueRange{LLVM::PoisonOp::create(b, loc, scTy), flat, zero})
               .getResult(0));
-      constraints += "^vr,";
+      constraints +=
+          llvm::formatv("{{v{0}},", getZvtOperandBase(slot, inBytes)).str();
     }
   }
   constraints += "~{t5},~{t6}";

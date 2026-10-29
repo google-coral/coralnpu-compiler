@@ -11,11 +11,11 @@ tracked.
 Add:
 - Subtarget features Zvtbase, Zvt8e, Zvt16e, Zvt64e, Zvti8i32mm,
   Zvtf8f32mm, Zvtf16f32mm and Zvtf32f32mm.
-- Instruction and encoding definitions in RISCVInstrInfoZvt.td for tile
-  configuration (msetmtype, msettm, msettn, msettk), tile load/store
-  (vtle*, vtse*), tile move (vtmv.v.t, vtmv.t.v), vtzero, vtdiscard and
-  the matrix multiplies (vtmms.tvv, vtmmu.tvv, vtfmm.tvv,
-  vtfmm.alt.tvv).
+- Zvt v0.4 instruction and encoding definitions in RISCVInstrInfoZvt.td
+  for tile configuration (msetmtype, msetmtypei, msettm, msettn,
+  msettk), tile load/store (vtle*, vtse*), tile move (vtmv.v.t,
+  vtmv.t.v), vtzero, vtdiscard and the matrix multiplies (vtmms.tvv,
+  vtmmu.tvv, vtfmm.tvv, vtfmm.alt.tvv).
 - Intrinsic declarations in IntrinsicsRISCVZvt.td and the corresponding
   ISel patterns.
 - Knowledge of the Zvt pseudos in the VSETVLI insertion and analysis
@@ -28,9 +28,9 @@ Add:
  llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp       |  49 ++-
  llvm/lib/Target/RISCV/RISCVInstrInfo.td            |   4 +
  llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td    |   2 +
- llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td         | 395 +++++++++++++++++++++
+ llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td         | 419 +++++++++++++++++++++
  llvm/lib/Target/RISCV/RISCVVSETVLIInfoAnalysis.cpp | 165 +++++++++
- 9 files changed, 824 insertions(+), 2 deletions(-)
+ 9 files changed, 848 insertions(+), 2 deletions(-)
 
 diff --git a/llvm/include/llvm/IR/IntrinsicsRISCV.td b/llvm/include/llvm/IR/IntrinsicsRISCV.td
 index e4ec9e9beb5..3bf9cf47aa1 100644
@@ -147,56 +147,56 @@ index 1f396b61962..0b107068143 100644
 +//===----------------------------------------------------------------------===//
 +
 +def FeatureStdExtZvtbase
-+    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension Base",
++    : RISCVExtension<0, 4, "RISC-V Vector Matrix Extension Base",
 +                     [FeatureStdExtZve32f]>;
 +def HasStdExtZvtbase : Predicate<"Subtarget->hasStdExtZvtbase()">,
 +                       AssemblerPredicate<(all_of FeatureStdExtZvtbase),
 +                           "'Zvtbase' (RISC-V Vector Matrix Extension Base)">;
 +
 +def FeatureStdExtZvt8e
-+    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension 8-bit Element",
++    : RISCVExtension<0, 4, "RISC-V Vector Matrix Extension 8-bit Element",
 +                     [FeatureStdExtZvtbase]>;
 +def HasStdExtZvt8e : Predicate<"Subtarget->hasStdExtZvt8e()">,
 +                     AssemblerPredicate<(all_of FeatureStdExtZvt8e),
 +                         "'Zvt8e' (RISC-V Vector Matrix Extension 8-bit Element)">;
 +
 +def FeatureStdExtZvt16e
-+    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension 16-bit Element",
++    : RISCVExtension<0, 4, "RISC-V Vector Matrix Extension 16-bit Element",
 +                     [FeatureStdExtZvtbase]>;
 +def HasStdExtZvt16e : Predicate<"Subtarget->hasStdExtZvt16e()">,
 +                      AssemblerPredicate<(all_of FeatureStdExtZvt16e),
 +                          "'Zvt16e' (RISC-V Vector Matrix Extension 16-bit Element)">;
 +
 +def FeatureStdExtZvt64e
-+    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension 64-bit Element",
++    : RISCVExtension<0, 4, "RISC-V Vector Matrix Extension 64-bit Element",
 +                     [FeatureStdExtZvtbase]>;
 +def HasStdExtZvt64e : Predicate<"Subtarget->hasStdExtZvt64e()">,
 +                      AssemblerPredicate<(all_of FeatureStdExtZvt64e),
 +                          "'Zvt64e' (RISC-V Vector Matrix Extension 64-bit Element)">;
 +
 +def FeatureStdExtZvti8i32mm
-+    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension Int8-Int32 Matrix Multiply",
++    : RISCVExtension<0, 4, "RISC-V Vector Matrix Extension Int8-Int32 Matrix Multiply",
 +                     [FeatureStdExtZvtbase]>;
 +def HasStdExtZvti8i32mm : Predicate<"Subtarget->hasStdExtZvti8i32mm()">,
 +                          AssemblerPredicate<(all_of FeatureStdExtZvti8i32mm),
 +                              "'Zvti8i32mm' (RISC-V Vector Matrix Extension Int8-Int32 Matrix Multiply)">;
 +
 +def FeatureStdExtZvtf8f32mm
-+    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension FP8-FP32 Matrix Multiply",
++    : RISCVExtension<0, 4, "RISC-V Vector Matrix Extension FP8-FP32 Matrix Multiply",
 +                     [FeatureStdExtZvtbase]>;
 +def HasStdExtZvtf8f32mm : Predicate<"Subtarget->hasStdExtZvtf8f32mm()">,
 +                          AssemblerPredicate<(all_of FeatureStdExtZvtf8f32mm),
 +                              "'Zvtf8f32mm' (RISC-V Vector Matrix Extension FP8-FP32 Matrix Multiply)">;
 +
 +def FeatureStdExtZvtf16f32mm
-+    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension FP16-FP32 Matrix Multiply",
++    : RISCVExtension<0, 4, "RISC-V Vector Matrix Extension FP16-FP32 Matrix Multiply",
 +                     [FeatureStdExtZvtbase]>;
 +def HasStdExtZvtf16f32mm : Predicate<"Subtarget->hasStdExtZvtf16f32mm()">,
 +                           AssemblerPredicate<(all_of FeatureStdExtZvtf16f32mm),
 +                               "'Zvtf16f32mm' (RISC-V Vector Matrix Extension FP16-FP32 Matrix Multiply)">;
 +
 +def FeatureStdExtZvtf32f32mm
-+    : RISCVExtension<0, 3, "RISC-V Vector Matrix Extension FP32-FP32 Matrix Multiply",
++    : RISCVExtension<0, 4, "RISC-V Vector Matrix Extension FP32-FP32 Matrix Multiply",
 +                     [FeatureStdExtZvtbase]>;
 +def HasStdExtZvtf32f32mm : Predicate<"Subtarget->hasStdExtZvtf32f32mm()">,
 +                           AssemblerPredicate<(all_of FeatureStdExtZvtf32f32mm),
@@ -383,10 +383,10 @@ index 86ea79581e7..bb737c618d0 100644
                          ["FPR16", "F"],
 diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td b/llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td
 new file mode 100644
-index 00000000000..a675f0e6688
+index 00000000000..9dd36fdf3c2
 --- /dev/null
 +++ b/llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td
-@@ -0,0 +1,395 @@
+@@ -0,0 +1,419 @@
 +//===-- RISCVInstrInfoZvt.td - RISC-V Vector Matrix Extension -*- tablegen -*-=//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -396,15 +396,15 @@ index 00000000000..a675f0e6688
 +//===----------------------------------------------------------------------===//
 +//
 +// This file describes the instructions of the RISC-V Vector Matrix Extension
-+// (VME), i.e. the Zvt family of extensions, as defined by the draft spec v0.3
-+// (zvt-20260427). These instructions are not yet upstream; they are added here
++// (VME), i.e. the Zvt family of extensions, as defined by the draft spec v0.4
++// (vme0_4). These instructions are not yet upstream; they are added here
 +// so the CoralNPU toolchain can assemble VME programs without raw .insn/.word
 +// directives.
 +//
 +// The matrix tile operand (mtd) reuses the XSfmmbase tile registers (mt0-mt15,
 +// register class TR), whose assembly names already match the VME spec. The tile
 +// number occupies instruction bits [11:8]; matrix-multiply instructions place an
-+// "alternate format" bit at [7], matching sim/coralnpu_zvt.bin_fmt.
++// "alternate format" bit at [7], matching mpact-riscv riscv/riscv_zvt.bin_fmt.
 +//
 +//===----------------------------------------------------------------------===//
 +
@@ -420,7 +420,7 @@ index 00000000000..a675f0e6688
 +  bits<5> rs1;
 +  bits<5> rs2;
 +
-+  let Inst{31-25} = 0b1000001;
++  let Inst{31-25} = 0b1000010;
 +  let Inst{24-20} = rs2;
 +  let Inst{19-15} = rs1;
 +  let Inst{14-12} = OPCFG.Value;
@@ -437,11 +437,34 @@ index 00000000000..a675f0e6688
 +  bits<5> rs1;
 +  bits<5> rd;
 +
-+  let Inst{31-25} = 0b1000010;
++  let Inst{31-25} = 0b1000100;
 +  let Inst{24-20} = rs2val;
 +  let Inst{19-15} = rs1;
 +  let Inst{14-12} = OPCFG.Value;
 +  let Inst{11-7} = rd;
++  let Inst{6-0} = OPC_OP_V.Value;
++
++  let Defs = [VTYPE, VL];
++}
++
++// msetmtypei mtwiden, vsew, altfmt: set mtype.mtwiden and vtype SEW/altfmt
++// from immediates (tm = tk = vl = 0; LMUL derived, or m1 if mtwiden = 0).
++class ZvtMSetMTypeI<string opcodestr>
++    : RVInst<(outs), (ins uimm2:$mtwiden, uimm2:$vsew, uimm1:$altfmt),
++             opcodestr, "$mtwiden, $vsew, $altfmt", [], InstFormatI> {
++  bits<2> mtwiden;
++  bits<2> vsew;
++  bits<1> altfmt;
++
++  let Inst{31-29} = 0b100;
++  let Inst{28} = altfmt;
++  let Inst{27-25} = 0b100;
++  let Inst{24-23} = vsew;
++  let Inst{22-20} = 0b100;
++  let Inst{19-17} = 0b000;
++  let Inst{16-15} = mtwiden;
++  let Inst{14-12} = OPCFG.Value;
++  let Inst{11-7} = 0b00000;
 +  let Inst{6-0} = OPC_OP_V.Value;
 +
 +  let Defs = [VTYPE, VL];
@@ -567,10 +590,11 @@ index 00000000000..a675f0e6688
 +let DecoderNamespace = "Zvt" in {
 +
 +let Predicates = [HasStdExtZvtbase] in {
-+  def MSETMTYPE : ZvtMSetMType<"msetmtype">;
-+  def MSETTN    : ZvtMSetSingle<0b00000, "msettn">;
-+  def MSETTM    : ZvtMSetSingle<0b00001, "msettm">;
-+  def MSETTK    : ZvtMSetSingle<0b00010, "msettk">;
++  def MSETMTYPE  : ZvtMSetMType<"msetmtype">;
++  def MSETMTYPEI : ZvtMSetMTypeI<"msetmtypei">;
++  def MSETTN     : ZvtMSetSingle<0b00000, "msettn">;
++  def MSETTM     : ZvtMSetSingle<0b00001, "msettm">;
++  def MSETTK     : ZvtMSetSingle<0b00010, "msettk">;
 +
 +  def VTMV_V_T : ZvtTileMove<0b010000, (outs VR:$vd), (ins GPR:$rs1),
 +                             "vtmv.v.t", "$vd, $rs1"> {

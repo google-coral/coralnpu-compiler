@@ -17,7 +17,9 @@ if(CORALNPU_ENABLE_VERILATOR)
       "abs_f32_4_8.mlir"
       "add_i32_4_8-4_8.mlir"
       "matmul_f32_4_8-8_4.mlir"
-      "matmul_i8_4_8-8_4.mlir")
+      "matmul_f32_16_8-8_16.mlir"
+      "matmul_i8_4_8-8_4.mlir"
+      "matmul_i8_i32_16_8-8_16.mlir")
     get_filename_component(_BASE_NAME "${_VERILATOR_TEST}" NAME_WE)
     coralnpu_check_test(
       NAME

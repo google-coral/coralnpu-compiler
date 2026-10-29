@@ -44,7 +44,7 @@ module {
           %rhs = vector.transfer_read %arg1[%c0, %c0], %cst_0 : memref<1x16xf32>, vector<1x16xf32>
           %acc = arith.constant dense<0.0> : vector<16x16xf32>
 
-          // CHECK: llvm.inline_asm {{.*}}li t5, 16417{{.*}}li t6, 18{{.*}}msetmtype t5, t6{{.*}}msettn zero, t6{{.*}}vtzero mt0{{.*}}vtfmm.tvv mt0
+          // CHECK: llvm.inline_asm {{.*}}li t5, 16417{{.*}}li t6, 18{{.*}}msetmtype t5, t6{{.*}}msettn zero, t6{{.*}}vtzero mt0{{.*}}vtfmm.tvv mt0{{.*}}"{v0},{v4},~{t5},~{t6}"
           %res = vector.contract {
             indexing_maps = [
               affine_map<(d0, d1, d2) -> (d0, d2)>,
@@ -219,6 +219,39 @@ module {
     }
   }
 
+  // Two N tiles with a dynamic trip count: the operands take slots 0-2.
+  // CHECK-LABEL: hal.executable private @matmul_loop_unfused_2_tiles {
+  hal.executable private @matmul_loop_unfused_2_tiles {
+    hal.executable.variant public @coralnpu_elf target(#target) {
+      builtin.module {
+        // CHECK-LABEL: func.func @matmul_loop_unfused_2_tiles(
+        func.func @matmul_loop_unfused_2_tiles(%arg0: memref<16x8xf32>, %arg1: memref<8x32xf32>, %arg2: memref<16x32xf32>, %n: index) {
+          %c0 = arith.constant 0 : index
+          %c1 = arith.constant 1 : index
+          %cst_0 = arith.constant 0.0 : f32
+          %acc_init = arith.constant dense<0.0> : vector<16x32xf32>
+          // CHECK: scf.for
+          // CHECK: llvm.inline_asm {{.*}}vtfmm.tvv mt0, $0, $1{{.*}}vtfmm.tvv mt4, $0, $2{{.*}}"{v0},{v4},{v8},~{t5},~{t6}"
+          %res = scf.for %iv = %c0 to %n step %c1 iter_args(%acc = %acc_init) -> (vector<16x32xf32>) {
+            %lhs = vector.transfer_read %arg0[%c0, %iv], %cst_0 : memref<16x8xf32>, vector<16x1xf32>
+            %rhs = vector.transfer_read %arg1[%iv, %c0], %cst_0 : memref<8x32xf32>, vector<1x32xf32>
+            %next = vector.contract {
+              indexing_maps = [
+                affine_map<(d0, d1, d2) -> (d0, d2)>,
+                affine_map<(d0, d1, d2) -> (d2, d1)>,
+                affine_map<(d0, d1, d2) -> (d0, d1)>
+              ],
+              iterator_types = ["parallel", "parallel", "reduction"]
+            } %lhs, %rhs, %acc : vector<16x1xf32>, vector<1x32xf32> into vector<16x32xf32>
+            scf.yield %next : vector<16x32xf32>
+          }
+          vector.transfer_write %res, %arg2[%c0, %c0] {in_bounds = [true, true]} : vector<16x32xf32>, memref<16x32xf32>
+          return
+        }
+      }
+    }
+  }
+
   // CHECK-LABEL: hal.executable private @matmul_i8 {
   hal.executable private @matmul_i8 {
     hal.executable.variant public @coralnpu_elf target(#target) {
@@ -234,7 +267,7 @@ module {
 
           // vtzero runs under the f32 config; the i8 config sets altfmt (256)
           // to make operand B signed.
-          // CHECK: llvm.inline_asm {{.*}}li t5, 16417{{.*}}li t6, 18{{.*}}msetmtype t5, t6{{.*}}vtzero mt0{{.*}}li t5, 16419{{.*}}li t6, 256{{.*}}msetmtype t5, t6{{.*}}vtmms.tvv mt0
+          // CHECK: llvm.inline_asm {{.*}}li t5, 16417{{.*}}li t6, 18{{.*}}msetmtype t5, t6{{.*}}vtzero mt0{{.*}}li t5, 16419{{.*}}li t6, 256{{.*}}msetmtype t5, t6{{.*}}vtmms.tvv mt0{{.*}}"{v0},{v1},~{t5},~{t6}"{{.*}}(vector<[8]xi8>, vector<[8]xi8>) -> ()
           %res = vector.contract {
             indexing_maps = [
               affine_map<(d0, d1, d2) -> (d0, d2)>,
@@ -302,8 +335,8 @@ module {
           %acc = arith.constant dense<0.0> : vector<16x16xf32>
 
           // bf16 config: mtwiden=2 (16418), SEW16/LMUL2/altfmt (265). The asm
-          // takes the unextended bf16 values in LMUL4 registers.
-          // CHECK: llvm.inline_asm {{.*}}li t5, 16417{{.*}}li t6, 18{{.*}}msetmtype t5, t6{{.*}}vtzero mt0{{.*}}li t5, 16418{{.*}}li t6, 265{{.*}}msetmtype t5, t6{{.*}}vtfmm.alt.tvv mt0{{.*}}(vector<[16]xbf16>, vector<[16]xbf16>) -> ()
+          // takes the unextended bf16 values in LMUL2 registers.
+          // CHECK: llvm.inline_asm {{.*}}li t5, 16417{{.*}}li t6, 18{{.*}}msetmtype t5, t6{{.*}}vtzero mt0{{.*}}li t5, 16418{{.*}}li t6, 265{{.*}}msetmtype t5, t6{{.*}}vtfmm.alt.tvv mt0{{.*}}"{v0},{v2},~{t5},~{t6}"{{.*}}(vector<[8]xbf16>, vector<[8]xbf16>) -> ()
           %res = vector.contract {
             indexing_maps = [
               affine_map<(d0, d1, d2) -> (d0, d2)>,
@@ -942,6 +975,68 @@ module {
     }
   }
 
+  // BF16 partial M and N tile (8x12): the masks wait in v1 and v4, clear of
+  // the A operand in v2-v3.
+  // CHECK-LABEL: hal.executable private @matmul_partial_mn_bf16 {
+  hal.executable private @matmul_partial_mn_bf16 {
+    hal.executable.variant public @coralnpu_elf target(#target_bf16) {
+      builtin.module {
+        // CHECK-LABEL: func.func @matmul_partial_mn_bf16(
+        func.func @matmul_partial_mn_bf16(%arg0: memref<8x4xbf16>, %arg1: memref<4x12xbf16>, %arg2: memref<8x12xf32>) {
+          // CHECK: llvm.inline_asm {{.*}}vid.v v8\0A\09li t6, 8\0A\09vmsltu.vx v1, v8, t6\0A\09li t6, 12\0A\09vmsltu.vx v4, v8, t6\0A\09vmv1r.v v0, v1\0A\09vlse16.v v2, (t0), t1, v0.t\0A\09vmv1r.v v0, v4\0A\09vle16.v v8, (t2), v0.t\0A\09vtfmm.alt.tvv mt0, v2, v8
+          %c0 = arith.constant 0 : index
+          %c4 = arith.constant 4 : index
+          %c1 = arith.constant 1 : index
+          %cst_0 = arith.constant 0.0 : bf16
+          %zero_2d = arith.constant dense<0.0> : vector<8x12xf32>
+          %res = scf.for %iv = %c0 to %c4 step %c1 iter_args(%acc = %zero_2d) -> (vector<8x12xf32>) {
+            %lhs0 = vector.transfer_read %arg0[%c0, %iv], %cst_0 : memref<8x4xbf16>, vector<8x1xbf16>
+            %rhs0 = vector.transfer_read %arg1[%iv, %c0], %cst_0 : memref<4x12xbf16>, vector<1x12xbf16>
+            %lhs = arith.extf %lhs0 : vector<8x1xbf16> to vector<8x1xf32>
+            %rhs = arith.extf %rhs0 : vector<1x12xbf16> to vector<1x12xf32>
+            %next = vector.contract {
+              indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d2)>, affine_map<(d0, d1, d2) -> (d2, d1)>, affine_map<(d0, d1, d2) -> (d0, d1)>],
+              iterator_types = ["parallel", "parallel", "reduction"]
+            } %lhs, %rhs, %acc : vector<8x1xf32>, vector<1x12xf32> into vector<8x12xf32>
+            scf.yield %next : vector<8x12xf32>
+          }
+          vector.transfer_write %res, %arg2[%c0, %c0] {in_bounds = [true, true]} : vector<8x12xf32>, memref<8x12xf32>
+          return
+        }
+      }
+    }
+  }
+
+  // INT8 partial M and N tile (8x12): the masks wait in v2 and v4, clear of
+  // the A operand in v1 (v1/v3/v5/v7 at tk = 4).
+  // CHECK-LABEL: hal.executable private @matmul_partial_mn_i8 {
+  hal.executable private @matmul_partial_mn_i8 {
+    hal.executable.variant public @coralnpu_elf target(#target) {
+      builtin.module {
+        // CHECK-LABEL: func.func @matmul_partial_mn_i8(
+        func.func @matmul_partial_mn_i8(%arg0: memref<8x4xi8>, %arg1: memref<4x12xi8>, %arg2: memref<8x12xi32>) {
+          // CHECK: llvm.inline_asm {{.*}}vid.v v8\0A\09li t6, 8\0A\09vmsltu.vx v2, v8, t6\0A\09li t6, 12\0A\09vmsltu.vx v4, v8, t6\0A\09vmv1r.v v0, v2\0A\09vlse8.v v1, (t0), t1, v0.t\0A\09vmv1r.v v0, v4\0A\09vle8.v v8, (t2), v0.t\0A\09vtmms.tvv mt0, v1, v8
+          %c0 = arith.constant 0 : index
+          %c4 = arith.constant 4 : index
+          %c1 = arith.constant 1 : index
+          %cst_0 = arith.constant 0 : i8
+          %zero_2d = arith.constant dense<0> : vector<8x12xi32>
+          %res = scf.for %iv = %c0 to %c4 step %c1 iter_args(%acc = %zero_2d) -> (vector<8x12xi32>) {
+            %lhs = vector.transfer_read %arg0[%c0, %iv], %cst_0 : memref<8x4xi8>, vector<8x1xi8>
+            %rhs = vector.transfer_read %arg1[%iv, %c0], %cst_0 : memref<4x12xi8>, vector<1x12xi8>
+            %next = vector.contract {
+              indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d2)>, affine_map<(d0, d1, d2) -> (d2, d1)>, affine_map<(d0, d1, d2) -> (d0, d1)>],
+              iterator_types = ["parallel", "parallel", "reduction"]
+            } %lhs, %rhs, %acc : vector<8x1xi8>, vector<1x12xi8> into vector<8x12xi32>
+            scf.yield %next : vector<8x12xi32>
+          }
+          vector.transfer_write %res, %arg2[%c0, %c0] {in_bounds = [true, true]} : vector<8x12xi32>, memref<8x12xi32>
+          return
+        }
+      }
+    }
+  }
+
   // Partial N tile (16x12) with an N x K RHS: B loads via vlse32.v, the drain
   // writes 12 columns, and iree-v3.12.0-0006 leaves the contraction to this
   // pass (GATE).
@@ -1119,7 +1214,7 @@ module {
       builtin.module {
         // CHECK-LABEL: func.func @conv_1ch_kw_loop(
         func.func @conv_1ch_kw_loop(%arg0: memref<1x4x34x1xi8>, %arg1: memref<3x1x16xi8>, %arg2: memref<16x16xi32>, %ow: index) {
-          // CHECK: llvm.inline_asm {{.*}}vle8.v v4, (t0){{.*}}vle8.v v8, (t2){{.*}}vtmms.tvv mt0, v4, v8{{.*}}add t0, t0, t1
+          // CHECK: llvm.inline_asm {{.*}}vle8.v v1, (t0){{.*}}vle8.v v8, (t2){{.*}}vtmms.tvv mt0, v1, v8{{.*}}add t0, t0, t1
           // CHECK-NOT: scf.for
           %c0 = arith.constant 0 : index
           %c1 = arith.constant 1 : index
@@ -1174,7 +1269,7 @@ module {
         func.func @conv_1ch_strided_outer_product(%arg0: memref<1x4x16x1xi8>, %arg1: memref<3x1x16xi8>, %arg2: memref<3x16xi32>, %ow2: index) {
           // CHECK-DAG: %[[C2:.*]] = arith.constant 2 : index
           // CHECK-DAG: arith.muli %{{.*}}, %[[C2]] : index
-          // CHECK: llvm.inline_asm {{.*}}vlse8.v v4, (t0), t1, v0.t{{.*}}vle8.v v8, (t2){{.*}}vtmms.tvv mt0, v4, v8{{.*}}addi t0, t0, 1
+          // CHECK: llvm.inline_asm {{.*}}vlse8.v v1, (t0), t1, v0.t{{.*}}vle8.v v8, (t2){{.*}}vtmms.tvv mt0, v1, v8{{.*}}addi t0, t0, 1
           // CHECK-NOT: scf.for
           %c0 = arith.constant 0 : index
           %c1 = arith.constant 1 : index

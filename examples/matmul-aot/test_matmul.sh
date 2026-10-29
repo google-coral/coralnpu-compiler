@@ -92,7 +92,7 @@ main() {
 
   echo "[2/2] Compiling without Zvt (RVV only)..."
   compile_vmfb matmul_rvv.vmfb \
-    --coralnpu-target-cpu-features=+m,+f,+zvl128b,+zve32f,+zfbfmin,+zvfbfmin,+zvfbfwma
+    --coralnpu-target-cpu-features=+m,+f,+zbb,+zvl128b,+zve32f,+zfbfmin,+zvfbfmin,+zvfbfwma
 
   echo
   echo "=== Phase 3: Build run_matmul ==="

@@ -6,6 +6,10 @@ End-to-end flow for compiling and running JAX models (with plans to support
 other frontends) through IREE, targeting CoralNPU-style RISCV-32 execution.
 Currently, this uses host-side simulation instead of physical hardware.
 
+The compiler targets CoralNPU's matrix extension Zvt v0.4. The default
+`--coralnpu-target-cpu-features` enable the rest of the ISA (RV32IMF with Zbb,
+`zve32f`/`zvl128b` vectors, BF16 and the Zvt subsets).
+
 ## Cloning
 
 To clone the project and its required submodules:

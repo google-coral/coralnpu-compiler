@@ -1,0 +1,138 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lun Dong <lundong@google.com>
+Date: Wed, 28 Oct 2026 00:00:00 -0700
+Subject: [PATCH] Round narrow Zvt FP matmuls as CoralNPU does
+
+CoralNPU rounds the exact sum of the TK BF16 products to odd, and the
+exact sum of the accumulator and the dot product to odd for sources
+narrower than FP32, raising OF once a sum reaches 2^128 (the widening
+dot product then gives infinity, the accumulate FLT_MAX). vtfmm summed
+in double instead, which loses the sticky bit of a term more than 2^53
+below the other, so results were not bit-exact with the hardware. Round
+both from their exact (TwoSum) sums.
+---
+diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
+index 559e772..2dc531c 100644
+--- a/riscv/riscv_zvt_instructions.cc
++++ b/riscv/riscv_zvt_instructions.cc
+@@ -15,8 +15,10 @@
+ #include "riscv/riscv_zvt_instructions.h"
+ 
+ #include <algorithm>
++#include <cmath>
+ #include <cstdint>
+ #include <cstring>
++#include <limits>
+ #include <optional>
+ 
+ #include "absl/log/log.h"
+@@ -373,6 +375,77 @@ int TileSubsetCount(RiscVZvtMatrixState* matrix_state,
+   return std::min(vector_state->vector_length(), effective_tile_edge);
+ }
+ 
++// Rounds `sum + err` to odd, where `sum` is the exact sum rounded to nearest
++// and `err` the remainder.
++float ExactSumToFloatROD(double sum, double err, RiscVFPState* fp_state) {
++  float f = DoubleToFloatROD(sum, fp_state);
++  if (!std::isfinite(sum) || err == 0.0 || static_cast<double>(f) != sum) {
++    return f;
++  }
++  // The exact sum is just off `f`: truncate it toward zero, then set the LSB.
++  if ((err < 0.0) != (sum < 0.0)) f = std::nextafter(f, 0.0f);
++  uint32_t bits;
++  std::memcpy(&bits, &f, sizeof(f));
++  bits |= 1;
++  std::memcpy(&f, &bits, sizeof(f));
++  return f;
++}
++
++// Adds `terms` to `sum` with TwoSum under round-to-nearest; `err` gets the
++// remainder, exact for up to 2 terms. The scope discards the flags it raises.
++double TwoSum(double sum, const double* terms, int n, double& err,
++              RiscVFPState* fp_state) {
++  std::optional<ScopedFPRoundingMode> rn;
++  if (fp_state) {
++    rn.emplace(fp_state->host_fp_interface(), FPRoundingMode::kRoundToNearest);
++  }
++  err = 0.0;
++  for (int i = 0; i < n; i++) {
++    const double s = sum + terms[i];
++    const double b = s - sum;
++    err += (sum - (s - b)) + (terms[i] - b);
++    sum = s;
++  }
++  return sum;
++}
++
++// Returns whether the finite exact sum `sum + err` reaches 2^128, where
++// CoralNPU's round-to-odd overflows, and if so raises OF as it does.
++bool OverflowsROD(double sum, double err) {
++  const double mag = std::fabs(sum);
++  if (!std::isfinite(sum) || mag < 0x1p128 ||
++      (mag == 0x1p128 && err * sum < 0.0)) {
++    return false;
++  }
++  volatile float big = std::numeric_limits<float>::max();
++  big = big * 2.0f;
++  return true;
++}
++
++// Rounds the exact sum of the BF16 `products` to odd, as CoralNPU does; a
++// double sum can lose the sticky bit of a far smaller product.
++float Bf16DotROD(const double* products, int n, RiscVFPState* fp_state) {
++  double err;
++  // Like CoralNPU, an exact-zero dot product is +0.
++  const double sum = TwoSum(0.0, products, n, err, fp_state);
++  // Widening overflows to infinity.
++  if (OverflowsROD(sum, err)) {
++    return std::copysign(std::numeric_limits<float>::infinity(), sum);
++  }
++  return ExactSumToFloatROD(sum, err, fp_state);
++}
++
++// Adds `acc` and `dot` rounded to odd, as CoralNPU's accumulator does for
++// sources narrower than FP32; a double sum can lose the sticky bit.
++float AddROD(float acc, float dot, RiscVFPState* fp_state) {
++  double err;
++  const double term = dot;
++  const double sum = TwoSum(acc, &term, 1, err, fp_state);
++  // Saturates to FLT_MAX on overflow (ExactSumToFloatROD truncates).
++  OverflowsROD(sum, err);
++  return ExactSumToFloatROD(sum, err, fp_state);
++}
++
+ }  // namespace
+ 
+ void RiscVZvtMsetMtypei(const Instruction* inst) {
+@@ -1079,6 +1152,7 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+                 .IgnoreError();
+           } else {
+             double sum_products = 0.0;
++            double products[4];  // tile_k <= RiscVZvtKmax(8).
+             for (int kk = 0; kk < tile_k; kk++) {
+               double product =
+                   static_cast<double>(read_fp_a(a, a_spans, kk, mm)) *
+@@ -1090,10 +1164,13 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+                 product = static_cast<double>(static_cast<float>(product));
+               }
+               sum_products += product;
++              products[kk] = product;
+             }
+ 
+             float sum_products_f;
+-            if (kind != RiscVZvtMatmulKind::kFp32) {
++            if (kind == RiscVZvtMatmulKind::kBf16) {
++              sum_products_f = Bf16DotROD(products, tile_k, fp_state);
++            } else if (kind != RiscVZvtMatmulKind::kFp32) {
+               sum_products_f = DoubleToFloatROD(sum_products, fp_state);
+             } else {
+               sum_products_f = static_cast<float>(sum_products);
+@@ -1107,7 +1184,7 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+ 
+             float final_acc;
+             if (kind != RiscVZvtMatmulKind::kFp32) {
+-              final_acc = DoubleToFloatROD(final_acc_d, fp_state);
++              final_acc = AddROD(initial_acc, sum_products_f, fp_state);
+             } else {
+               final_acc = static_cast<float>(final_acc_d);
+             }

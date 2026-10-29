@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lun Dong <lundong@google.com>
+Date: Wed, 28 Oct 2026 00:00:00 -0700
+Subject: [PATCH] Accept BF16 vtfmm.alt.tvv with vtype.altfmt set
+
+vtfmm.alt.tvv at SEW16 required vtype.altfmt == 0 for BF16 x BF16 and
+trapped with altfmt == 1. That is the reverse of the FP8 case, where the
+opcode selects A's alternate format and altfmt selects B's, and of the
+CoralNPU hardware, which multiplies BF16 x BF16 for vtfmm.alt.tvv with
+altfmt == 1 (tests/cocotb/vme_test vme_matmul_bf16_test) and does not
+implement BF16 x FP16. Accept altfmt == 1 and trap on altfmt == 0.
+---
+diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
+index 8b62189..559e772 100644
+--- a/riscv/riscv_zvt_instructions.cc
++++ b/riscv/riscv_zvt_instructions.cc
+@@ -1265,7 +1265,9 @@ void RiscVZvtVtfmmAlt(const Instruction* inst) {
+   if (sew_bits == 8 && twiden == 4) {
+     kind = altfmt ? RiscVZvtMatmulKind::kFp8E5M2
+                   : RiscVZvtMatmulKind::kFp8E5M2E4M3;
+-  } else if (sew_bits == 16 && twiden == 2 && altfmt == 0) {
++  } else if (sew_bits == 16 && twiden == 2 && altfmt == 1) {
++    // As for FP8, the opcode selects A's alternate format (BF16) and
++    // vtype.altfmt B's; BF16 x FP16 is not supported.
+     kind = RiscVZvtMatmulKind::kBf16;
+   } else {
+     auto* rv_state = static_cast<RiscVState*>(inst->state());

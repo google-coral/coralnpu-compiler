@@ -8,7 +8,9 @@ into the hw_sim MPACT simulator (libcoralnpu_simulator_mpact.so) so it
 executes Zvt matrix instructions, and add the remaining Zfbfmin,
 Zvfbfmin, and Zvfbfwma bfloat16 instructions to CoralNPUM3/M4. Step on
 the calling thread instead of spawning one per run, and keep only the
-cycle and instruction counters.
+cycle and instruction counters. Define the Zvt v0.4 msetmtypei format,
+which the M4 decoder needs from mpact-riscv's riscv_zvt.bin_fmt, and
+size the matrix state to the CoralNPU tile edge (TE = VLEN / 8).
 ---
 diff --git a/sim/BUILD b/sim/BUILD
 --- a/sim/BUILD
@@ -414,7 +416,30 @@ diff --git a/sim/coralnpu_m3_instructions.h b/sim/coralnpu_m3_instructions.h
 diff --git a/sim/coralnpu_m4.bin_fmt b/sim/coralnpu_m4.bin_fmt
 --- a/sim/coralnpu_m4.bin_fmt
 +++ b/sim/coralnpu_m4.bin_fmt
-@@ -52,6 +52,7 @@ decoder CoralNPUM4 {
+@@ -33,6 +33,22 @@ format VMatrix[32] : Inst32Format {
+     unsigned mtile[4] = mtd[4..1];
+ };
+ 
++// Zvt v0.4 msetmtypei (mpact-riscv riscv_format32.bin_fmt); the CoralNPU
++// decoders use their own base formats, so it is repeated here.
++format MsetmtypeiFormat[32] : Inst32Format {
++  fields:
++    unsigned opc1[3];
++    unsigned altfmt[1];
++    unsigned opc2[3];
++    unsigned vsew[2];
++    unsigned opc3[3];
++    unsigned opc4[3];
++    unsigned mtwiden[2];
++    unsigned func3[3];
++    unsigned rd[5];
++    unsigned opcode[7];
++};
++
+ decoder CoralNPUM4 {
+   namespace coralnpu::sim::encoding_m4;
+   opcode_enum = "::coralnpu::sim::isa32_m4::OpcodeEnum";
+@@ -52,6 +68,7 @@ decoder CoralNPUM4 {
      RiscVZbbImmInst32,
      RiscVPrivInst32,
      CoralNPUV2CustomInst32,
@@ -473,12 +498,14 @@ diff --git a/sim/hw_sim/mpact_simulator.cc b/sim/hw_sim/mpact_simulator.cc
  #include "mpact/sim/generic/data_buffer.h"
  #include "mpact/sim/generic/decoder_interface.h"
  #include "mpact/sim/generic/instruction.h"
-@@ -366,6 +371,13 @@ class MpactSimulator final : public CoralNPUSimulator {
+@@ -366,6 +371,15 @@ class MpactSimulator final : public CoralNPUSimulator {
      }
      rv_state_.set_rv_fp(&rv_fp_state_);
      rv_state_.set_rv_vector(&rvv_state_);
-+    auto zvt_state =
-+        ::mpact::sim::riscv::RiscVZvtMatrixState::Create(&rv_state_);
++    // CoralNPU tiles are TE = VLEN / 8 elements on a side (16 for VLEN=128).
++    auto zvt_state = ::mpact::sim::riscv::RiscVZvtMatrixState::Create(
++        &rv_state_,
++        /*tile_elements=*/::coralnpu::sim::kCoralNPUV2VectorByteLength);
 +    CHECK_OK(zvt_state);
 +    rv_zvt_state_ = *std::move(zvt_state);
 +    rv_top_.DisableStatistics();
@@ -487,7 +514,7 @@ diff --git a/sim/hw_sim/mpact_simulator.cc b/sim/hw_sim/mpact_simulator.cc
  
      // Configure the MISA (Machine ISA Register) with 0x40201120:
      // - Bit 30 (MXLEN = 32): 32-bit register width.
-@@ -376,7 +388,7 @@ class MpactSimulator final : public CoralNPUSimulator {
+@@ -376,7 +390,7 @@ class MpactSimulator final : public CoralNPUSimulator {
      rv_state_.misa()->Set(static_cast<uint32_t>(0x40201120));
  
      // Register a full-range memory region with Read/Write/Execute permissions.
@@ -496,7 +523,7 @@ diff --git a/sim/hw_sim/mpact_simulator.cc b/sim/hw_sim/mpact_simulator.cc
      // decoded load/store instructions. Since this simulator wrapper maps memory
      // dynamically without registering explicit regions (using
      // FlatDemandMemory), we must allow all accesses to prevent permission fault
-@@ -430,7 +442,8 @@ class MpactSimulator final : public CoralNPUSimulator {
+@@ -430,7 +444,8 @@ class MpactSimulator final : public CoralNPUSimulator {
                  << ", mcause=0x" << mcause << ", mepc=0x" << mepc << " ("
                  << mepc_disasm << ")"
                  << ", mtval=0x" << mtval << ", vtype=0x" << vtype << ", vl=0x"
@@ -506,7 +533,7 @@ diff --git a/sim/hw_sim/mpact_simulator.cc b/sim/hw_sim/mpact_simulator.cc
        // As on the RTL, ebreak is a usage fault: it sets mcause and mtval (not
        // mepc) and halts the core with the fault bit set.
        if (rv_state_.mcause()) rv_state_.mcause()->Set(kMcauseUsageFault);
-@@ -476,10 +489,11 @@ class MpactSimulator final : public CoralNPUSimulator {
+@@ -476,10 +491,11 @@ class MpactSimulator final : public CoralNPUSimulator {
    ObserverState observer_state_;
    ::mpact::sim::util::FlatDemandMemory memory_;
    DmaMemoryWrapper dma_memory_;
@@ -520,7 +547,7 @@ diff --git a/sim/hw_sim/mpact_simulator.cc b/sim/hw_sim/mpact_simulator.cc
    ObservingDecoder observing_decoder_;
    ::mpact::sim::riscv::RiscVTop rv_top_;
    // The status of the core, as in the status register of the RTL: mpause
-@@ -535,22 +549,25 @@ void MpactSimulator::Run(uint32_t start_addr) {
+@@ -535,22 +551,25 @@ void MpactSimulator::Run(uint32_t start_addr) {
  }
  
  bool MpactSimulator::WaitForTermination(int timeout) {

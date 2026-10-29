@@ -5,7 +5,7 @@ Subject: [PATCH] Speed up Zvt matmul, RVV and dispatch emulation
 
 Emulation overhead dominated the simulator wall time of matmul-heavy
 workloads. Results are bit-identical:
-- RiscVZvtMatmul reads each operand element and Punning() offset once
+- RiscVZvtMatmul reads each operand element and punning offset once
   instead of once per multiply-accumulate (one vtfmm was ~25x slower
   to emulate than a vector instruction).
 - Unmasked vector loads, stores and element-wise ops with vstart == 0
@@ -18,11 +18,11 @@ workloads. Results are bit-identical:
 diff --git a/riscv/riscv_zvt_state.h b/riscv/riscv_zvt_state.h
 --- a/riscv/riscv_zvt_state.h
 +++ b/riscv/riscv_zvt_state.h
-@@ -105,6 +105,8 @@
+@@ -119,6 +119,8 @@ class RiscVZvtMatrixState {
    [[nodiscard]] int tile_buffer_bytes() const {
      return tile_buffer_->size<uint8_t>();
    }
-+  // Raw tile bytes; offsets come from Punning().
++  // Raw tile bytes; offsets come from GetPunningOffset().
 +  auto tile_bytes() { return tile_buffer_->Get<uint8_t>(); }
  
    [[nodiscard]] ::mpact::sim::riscv::RiscVState* riscv_state() const {
@@ -30,112 +30,131 @@ diff --git a/riscv/riscv_zvt_state.h b/riscv/riscv_zvt_state.h
 diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
 --- a/riscv/riscv_zvt_instructions.cc
 +++ b/riscv/riscv_zvt_instructions.cc
-@@ -18,6 +18,8 @@
- #include <cstdint>
+@@ -20,6 +20,8 @@
  #include <cstring>
+ #include <limits>
+ #include <optional>
 +#include <unordered_map>
 +#include <vector>
  
- #include "absl/base/casts.h"
- #include "absl/log/check.h"
+ #include "absl/log/log.h"
  #include "absl/types/span.h"
-@@ -379,6 +381,25 @@
+@@ -927,6 +929,34 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
  // Matrix multiply: C[m,n] += sum_k A[k,m] * B[k,n]
  // ----------------------------------------------------------------------------
  
-+// Punning() offsets of every (row, col) of `tile`, computed once per
-+// (tile edge, element width, tile) and cached.
-+static const int* TileOffsets(RiscVZvtMatrixState* matrix_state,
-+                              int element_width, int tile) {
++namespace {
++
++// Punning offsets of every (row, col) of `tile` at `tew` bits, computed once
++// per (tile edge, TEW, tile) and cached; -1 marks an invalid element.
++const int* TileOffsets(const RiscVZvtMatrixState* matrix_state, int tew,
++                       int tile) {
 +  static auto* cache = new std::unordered_map<uint64_t, std::vector<int>>();
-+  const int kTe = matrix_state->tile_elements();
-+  uint64_t key = (static_cast<uint64_t>(kTe) << 32) | (element_width << 8) | tile;
++  const int te = matrix_state->tile_elements();
++  const uint64_t key =
++      (static_cast<uint64_t>(te) << 32) | (static_cast<uint64_t>(tew) << 8) |
++      static_cast<uint64_t>(tile);
 +  auto it = cache->find(key);
 +  if (it == cache->end()) {
-+    std::vector<int> offsets(kTe * kTe);
-+    for (int row = 0; row < kTe; row++)
-+      for (int col = 0; col < kTe; col++)
-+        offsets[row * kTe + col] =
-+            matrix_state->Punning(tile, row, col, element_width);
++    std::vector<int> offsets(te * te);
++    for (int row = 0; row < te; row++) {
++      for (int col = 0; col < te; col++) {
++        absl::StatusOr<int> offset =
++            matrix_state->GetPunningOffset(tile, row, col, tew);
++        offsets[row * te + col] = offset.ok() ? *offset : -1;
++      }
++    }
 +    it = cache->emplace(key, std::move(offsets)).first;
 +  }
 +  return it->second.data();
 +}
 +
++}  // namespace
++
  void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
-   auto* matrix_state = *m_result;
-@@ -446,23 +467,52 @@
-     return static_cast<uint8_t>(span[kE]);
-   };
+   if (!m_result.ok()) {
+@@ -1135,7 +1165,79 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+       fp_status.emplace(fp_state->host_fp_interface());
+     }
  
-+  // Read each operand element once instead of once per MAC.
-+  constexpr int kMaxK = 4, kMaxEdge = 64;
-+  CHECK(kTileK <= kMaxK && kTileM <= kMaxEdge && kTileN <= kMaxEdge);
-+  float a_f[kMaxK][kMaxEdge], b_f[kMaxK][kMaxEdge];
-+  int32_t a_i[kMaxK][kMaxEdge], b_i[kMaxK][kMaxEdge];
-+  for (int kk = 0; kk < kTileK; kk++) {
-+    for (int mm = 0; mm < kTileM; mm++) {
-+      if (kIsFp) a_f[kk][mm] = read_fp(a, a_spans, kk, mm);
-+      else a_i[kk][mm] = read_int(a, a_spans, kk, mm);
-+    }
-+    for (int nn = 0; nn < kTileN; nn++) {
-+      if (kIsFp) b_f[kk][nn] = read_fp(b, b_spans, kk, nn);
-+      else b_i[kk][nn] = read_int(b, b_spans, kk, nn);
-+    }
-+  }
-+  const int* offsets = TileOffsets(matrix_state, kTileElementWidth, kDestTile);
-+  const int kTe = matrix_state->tile_elements();
-+  absl::Span<uint8_t> tile = matrix_state->tile_bytes();
-   for (int mm = 0; mm < kTileM; mm++) {
-+    if (kIsFp) {
-+      float acc[kMaxEdge];
-+      for (int nn = 0; nn < kTileN; nn++) {
-+        std::memcpy(&acc[nn], &tile[offsets[mm * kTe + nn]], sizeof(float));
-+      }
-+      for (int kk = 0; kk < kTileK; kk++) {
-+        const float a_val = a_f[kk][mm];
-+        for (int nn = 0; nn < kTileN; nn++) {
-+          acc[nn] += a_val * b_f[kk][nn];
+-    for (int mm = 0; mm < tile_m; mm++) {
++    // Read each operand element once instead of once per multiply-accumulate
++    // and resolve the punning offsets once; the arithmetic matches the
++    // per-element loop below.
++    constexpr int kMaxK = 4;
++    constexpr int kMaxEdge = 64;
++    const bool fast = kind != RiscVZvtMatmulKind::kFp64 && tile_k <= kMaxK &&
++                      tile_m <= kMaxEdge && tile_n <= kMaxEdge;
++    if (fast) {
++      float a_f[kMaxK][kMaxEdge], b_f[kMaxK][kMaxEdge];
++      int32_t a_i[kMaxK][kMaxEdge], b_i[kMaxK][kMaxEdge];
++      for (int kk = 0; kk < tile_k; kk++) {
++        for (int mm = 0; mm < tile_m; mm++) {
++          if (is_fp) {
++            a_f[kk][mm] = read_fp_a(a, a_spans, kk, mm);
++          } else {
++            a_i[kk][mm] = read_int_a(a, a_spans, kk, mm);
++          }
++        }
++        for (int nn = 0; nn < tile_n; nn++) {
++          if (is_fp) {
++            b_f[kk][nn] = read_fp_b(b, b_spans, kk, nn);
++          } else {
++            b_i[kk][nn] = read_int_b(b, b_spans, kk, nn);
++          }
 +        }
 +      }
-+      for (int nn = 0; nn < kTileN; nn++) {
-+        std::memcpy(&tile[offsets[mm * kTe + nn]], &acc[nn], sizeof(float));
-+      }
-+    } else {
-+      int32_t acc[kMaxEdge];
-+      for (int nn = 0; nn < kTileN; nn++) {
-+        std::memcpy(&acc[nn], &tile[offsets[mm * kTe + nn]], sizeof(int32_t));
-+      }
-+      for (int kk = 0; kk < kTileK; kk++) {
-+        const int32_t a_val = a_i[kk][mm];
-+        for (int nn = 0; nn < kTileN; nn++) {
-+          acc[nn] += a_val * b_i[kk][nn];
++      const int* offsets = TileOffsets(matrix_state, tew, dest_tile);
++      const int te = matrix_state->tile_elements();
++      absl::Span<uint8_t> tile = matrix_state->tile_bytes();
++      for (int mm = 0; mm < tile_m; mm++) {
++        for (int nn = 0; nn < tile_n; nn++) {
++          const int offset = offsets[mm * te + nn];
++          if (is_fp) {
++            double sum_products = 0.0;
++            double products[kMaxK];
++            for (int kk = 0; kk < tile_k; kk++) {
++              double product = static_cast<double>(a_f[kk][mm]) *
++                               static_cast<double>(b_f[kk][nn]);
++              if (kind == RiscVZvtMatmulKind::kFp32) {
++                product = static_cast<double>(static_cast<float>(product));
++              }
++              sum_products += product;
++              products[kk] = product;
++            }
++            const float sum_products_f =
++                kind == RiscVZvtMatmulKind::kBf16
++                    ? Bf16DotROD(products, tile_k, fp_state)
++                : kind != RiscVZvtMatmulKind::kFp32
++                    ? DoubleToFloatROD(sum_products, fp_state)
++                    : static_cast<float>(sum_products);
++            float initial_acc = 0.0f;
++            if (offset >= 0) {
++              std::memcpy(&initial_acc, &tile[offset], sizeof(float));
++            }
++            const double final_acc_d = static_cast<double>(initial_acc) +
++                                       static_cast<double>(sum_products_f);
++            const float final_acc =
++                kind != RiscVZvtMatmulKind::kFp32
++                    ? AddROD(initial_acc, sum_products_f, fp_state)
++                    : static_cast<float>(final_acc_d);
++            if (offset >= 0) {
++              std::memcpy(&tile[offset], &final_acc, sizeof(float));
++            }
++          } else {
++            int32_t acc = 0;
++            if (offset >= 0) std::memcpy(&acc, &tile[offset], sizeof(acc));
++            for (int kk = 0; kk < tile_k; kk++) acc += a_i[kk][mm] * b_i[kk][nn];
++            if (offset >= 0) std::memcpy(&tile[offset], &acc, sizeof(acc));
++          }
 +        }
 +      }
-+      for (int nn = 0; nn < kTileN; nn++) {
-+        std::memcpy(&tile[offsets[mm * kTe + nn]], &acc[nn], sizeof(int32_t));
-+      }
 +    }
--    for (int nn = 0; nn < kTileN; nn++) {
--      if (kIsFp) {
--        float acc =
--            matrix_state->GetElem<float>(kDestTile, mm, nn, kTileElementWidth);
--        for (int kk = 0; kk < kTileK; kk++) {
--          acc += read_fp(a, a_spans, kk, mm) * read_fp(b, b_spans, kk, nn);
--        }
--        matrix_state->SetElem<float>(kDestTile, mm, nn, kTileElementWidth, acc);
--      } else {
--        int32_t acc = matrix_state->GetElem<int32_t>(kDestTile, mm, nn,
--                                                     kTileElementWidth);
--        for (int kk = 0; kk < kTileK; kk++) {
--          acc += read_int(a, a_spans, kk, mm) * read_int(b, b_spans, kk, nn);
--        }
--        matrix_state->SetElem<int32_t>(kDestTile, mm, nn, kTileElementWidth,
--                                       acc);
--      }
--    }
-   }
++    for (int mm = 0; !fast && mm < tile_m; mm++) {
+       for (int nn = 0; nn < tile_n; nn++) {
+         if (is_fp) {
+           if (kind == RiscVZvtMatmulKind::kFp64) {
 diff --git a/riscv/riscv_top.h b/riscv/riscv_top.h
 --- a/riscv/riscv_top.h
 +++ b/riscv/riscv_top.h
@@ -193,10 +212,7 @@ diff --git a/riscv/riscv_top.cc b/riscv/riscv_top.cc
        // Check for interrupt.
        if (state_->is_interrupt_available()) {
          uint64_t epc = pc;
-@@ -349,11 +356,11 @@ absl::StatusOr<int> RiscVTop::Step(int num) {
-     paused_ |= halted_;
-     count++;
-     // Update counters.
+@@ -352,8 +359,8 @@ absl::StatusOr<int> RiscVTop::Step(int num) {
      counter_opcode_[inst->opcode()].Increment(1);
      counter_num_instructions_.Increment(1);
      // Get the next pc value.
@@ -266,7 +282,7 @@ diff --git a/riscv/riscv_register.h b/riscv/riscv_register.h
 diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memory_instructions.cc
 --- a/riscv/riscv_vector_memory_instructions.cc
 +++ b/riscv/riscv_vector_memory_instructions.cc
-@@ -16,13 +16,15 @@
+@@ -16,6 +16,7 @@
  
  #include <algorithm>
  #include <cstdint>
@@ -274,28 +290,26 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
  
  #include "absl/log/log.h"
  #include "absl/status/status.h"
- #include "absl/strings/str_cat.h"
- #include "mpact/sim/generic/instruction.h"
+@@ -24,6 +25,7 @@
  #include "mpact/sim/generic/register.h"
  #include "riscv/riscv_register.h"
  #include "riscv/riscv_state.h"
 +#include "riscv/riscv_vector_instruction_helpers.h"
  #include "riscv/riscv_vector_state.h"
+ #include "riscv/riscv_zvt_state.h"
  
-@@ -70,8 +72,10 @@ absl::Status WriteBackLoadData(int vector_register_byte_length,
+@@ -71,7 +73,9 @@ absl::Status WriteBackLoadData(int vector_register_byte_length,
    // Iterate over the number of registers to write.
    for (int reg = start_reg; (reg < max_regs) && (value_count > 0); reg++) {
      // Allocate data buffer for the new register data.
 -    auto* dest_db = dest_op->CopyDataBuffer(reg);
--    auto dest_span = dest_db->Get<T>();
 +    auto* dest_db = (dest_op->latency() == 0)
 +                        ? dest_op->GetRegister(reg)->data_buffer()
 +                        : dest_op->CopyDataBuffer(reg);
-+    auto dest_span = dest_db->Get<T>();
+     auto dest_span = dest_db->Get<T>();
      // Write data into register subject to masking.
      int max_entry = std::min(elements_per_vector, item_index + value_count);
-     for (int i = item_index; i < max_entry; i++) {
-@@ -81,7 +85,7 @@ absl::Status WriteBackLoadData(int vector_register_byte_length,
+@@ -82,7 +86,7 @@ absl::Status WriteBackLoadData(int vector_register_byte_length,
        load_data_index++;
        value_count--;
      }
@@ -304,21 +318,16 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
      item_index = 0;
    }
    return absl::OkStatus();
-@@ -236,16 +240,69 @@ void VlStrided(int element_width, const Instruction* inst) {
+@@ -241,17 +245,70 @@ void VlStrided(int element_width, const Instruction* inst) {
    int num_elements = rv_vector->vector_length();
    int num_elements_loaded = num_elements - start;
  
 -  // Allocate address data buffer.
 +  auto* rv32_state = static_cast<RiscVState*>(inst->state());
    auto* db_factory = inst->state()->db_factory();
--  auto* address_db = db_factory->Allocate<uint64_t>(num_elements_loaded);
--
--  // Allocate the value data buffer that the loaded data is returned in.
--  auto* value_db = db_factory->Allocate(num_elements_loaded * element_width);
--
-   // Get the source mask (stored in a single vector register).
-   auto* src_mask_op = static_cast<RV32VectorSourceOperand*>(inst->Source(2));
-   auto src_masks = src_mask_op->GetRegister(0)->data_buffer()->Get<uint8_t>();
++  // Get the source mask (stored in a single vector register).
++  auto* src_mask_op = static_cast<RV32VectorSourceOperand*>(inst->Source(2));
++  auto src_masks = src_mask_op->GetRegister(0)->data_buffer()->Get<uint8_t>();
 +  uint64_t max_addr = rv32_state->max_physical_address();
 +  if (start == 0 && num_elements > 0 && stride > 0 &&
 +      inst->child() != nullptr && base <= max_addr &&
@@ -373,14 +382,19 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
 +  }
 +
 +  // Allocate address data buffer.
-+  auto* address_db = db_factory->Allocate<uint64_t>(num_elements_loaded);
-+
-+  // Allocate the value data buffer that the loaded data is returned in.
-+  auto* value_db = db_factory->Allocate(num_elements_loaded * element_width);
+   auto* address_db = db_factory->Allocate<uint64_t>(num_elements_loaded);
  
+   // Allocate the value data buffer that the loaded data is returned in.
+   auto* value_db = db_factory->Allocate(num_elements_loaded * element_width);
+ 
+-  // Get the source mask (stored in a single vector register).
+-  auto* src_mask_op = static_cast<RV32VectorSourceOperand*>(inst->Source(2));
+-  auto src_masks = src_mask_op->GetRegister(0)->data_buffer()->Get<uint8_t>();
+-
    // Allocate a byte mask data buffer for the load.
    auto* mask_db = db_factory->Allocate<bool>(num_elements_loaded);
-@@ -267,7 +324,6 @@ void VlStrided(int element_width, const Instruction* inst) {
+ 
+@@ -272,7 +329,6 @@ void VlStrided(int element_width, const Instruction* inst) {
    // Set up the context, and submit the load.
    auto* context = new VectorLoadContext(value_db, mask_db, element_width, start,
                                          rv_vector->vector_length());
@@ -388,7 +402,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    value_db->set_latency(0);
    rv32_state->LoadMemory(inst, address_db, mask_db, element_width, value_db,
                           inst->child(), context);
-@@ -446,6 +502,23 @@ void VlRegister(int num_regs, int element_width_bytes,
+@@ -451,6 +507,23 @@ void VlRegister(int num_regs, int element_width_bytes,
      rv_vector->clear_vstart();
      return;
    }
@@ -412,7 +426,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    int num_elements_loaded = num_elements - start;
    // Allocate data buffers.
    auto* db_factory = inst->state()->db_factory();
-@@ -471,7 +544,6 @@ void VlRegister(int num_regs, int element_width_bytes,
+@@ -476,7 +549,6 @@ void VlRegister(int num_regs, int element_width_bytes,
    // Set up context and submit load.
    auto* context = new VectorLoadContext(data_db, mask_db, element_width_bytes,
                                          start, num_elements);
@@ -420,12 +434,13 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    data_db->set_latency(0);
    rv32_state->LoadMemory(inst, address_db, mask_db, element_width_bytes,
                           data_db, inst->child(), context);
-@@ -764,8 +836,41 @@ void StoreVectorStrided(int vector_length, int vstart, int emul,
+@@ -769,8 +841,41 @@ void StoreVectorStrided(int vector_length, int vstart, int emul,
  
    // Compute total number of elements to be stored.
    int num_elements = vector_length;
+-  // Allocate data buffers.
 +  auto* rv32_state = static_cast<RiscVState*>(inst->state());
-+  auto* db_factory = inst->state()->db_factory();
+   auto* db_factory = inst->state()->db_factory();
 +  uint64_t total_bytes = static_cast<uint64_t>(num_elements) * sizeof(T);
 +  if (vstart == 0 && num_elements > 0 &&
 +      stride == static_cast<int64_t>(sizeof(T)) &&
@@ -458,12 +473,11 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
 +      return;
 +    }
 +  }
-   // Allocate data buffers.
--  auto* db_factory = inst->state()->db_factory();
++  // Allocate data buffers.
    auto* address_db = db_factory->Allocate<uint64_t>(num_elements);
    auto addresses = address_db->Get<uint64_t>();
    auto* store_data_db = db_factory->Allocate(num_elements * sizeof(T));
-@@ -784,7 +889,6 @@ void StoreVectorStrided(int vector_length, int vstart, int emul,
+@@ -789,7 +894,6 @@ void StoreVectorStrided(int vector_length, int vstart, int emul,
      store_data[i - vstart] = GetInstructionSource<T>(inst, 0, i);
    }
    // Perform the store.
@@ -471,7 +485,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    rv32_state->StoreMemory(inst, address_db, mask_db, sizeof(T), store_data_db);
    address_db->DecRef();
    mask_db->DecRef();
-@@ -996,6 +1100,22 @@ void VsRegister(int num_regs, const Instruction* inst) {
+@@ -1001,6 +1105,22 @@ void VsRegister(int num_regs, const Instruction* inst) {
      rv_vector->clear_vstart();
      return;
    }
@@ -494,7 +508,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    int num_elements_stored = num_elements - start;
    // Allocate data buffers.
    auto* db_factory = inst->state()->db_factory();
-@@ -1011,7 +1131,6 @@ void VsRegister(int num_regs, const Instruction* inst) {
+@@ -1016,7 +1136,6 @@ void VsRegister(int num_regs, const Instruction* inst) {
      masks[i - start] = true;
      data[i - start] = GetInstructionSource<uint8_t>(inst, 0, i);
    }  // Submit store.
@@ -505,7 +519,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
 diff --git a/riscv/riscv_instruction_helpers.h b/riscv/riscv_instruction_helpers.h
 --- a/riscv/riscv_instruction_helpers.h
 +++ b/riscv/riscv_instruction_helpers.h
-@@ -384,11 +384,10 @@ inline void RVLoad(const Instruction* instruction) {
+@@ -385,11 +385,10 @@ inline void RVLoad(const Instruction* instruction) {
    auto* value_db =
        instruction->state()->db_factory()->Allocate(sizeof(ValueType));
    value_db->set_latency(0);
@@ -530,7 +544,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
  
  #include "absl/log/log.h"
  #include "absl/strings/str_cat.h"
-@@ -103,33 +104,89 @@ void RiscVSetMaskBinaryVectorMaskOp(RiscVVectorState* rv_vector,
+@@ -103,13 +104,26 @@ void RiscVSetMaskBinaryVectorMaskOp(RiscVVectorState* rv_vector,
    rv_vector->clear_vstart();
  }
  
@@ -560,7 +574,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    if (rv_vector->vector_exception()) return;
    auto* dest_op =
        static_cast<RV32VectorDestinationOperand*>(inst->Destination(0));
-   // Get the vector start element index and compute where to start
+@@ -117,11 +131,9 @@ void RiscVMaskBinaryVectorMaskOp(RiscVVectorState* rv_vector,
    // the operation.
    int num_elements = rv_vector->vector_length();
    int vector_index = rv_vector->vstart();
@@ -574,8 +588,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    // Get the vector mask.
    auto* mask_op = static_cast<RV32VectorSourceOperand*>(inst->Source(2));
    bool vm_unmasked_bit = false;
-   if (inst->SourcesSize() > 3) {
-     vm_unmasked_bit = GetInstructionSource<bool>(inst, 3);
+@@ -130,6 +142,51 @@ void RiscVMaskBinaryVectorMaskOp(RiscVVectorState* rv_vector,
    }
    const bool mask_used = !vm_unmasked_bit;
    auto mask_span = mask_op->GetRegister(0)->data_buffer()->Get<uint8_t>();
@@ -640,10 +653,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    RiscVMaskBinaryVectorMaskOp<Vs2, Vs1>(
        rv_vector, inst, [op](Vs2 vs2, Vs1 vs1, bool mask_value) -> bool {
          if (mask_value) {
-@@ -244,12 +300,12 @@ void RiscVMaskNullaryVectorOp(RiscVVectorState* rv_vector,
-   rv_vector->clear_vstart();
- }
- 
+@@ -247,9 +303,9 @@ void RiscVMaskNullaryVectorOp(RiscVVectorState* rv_vector,
  // This helper function handles the case of unary vector
  // operations. It implements all the checking necessary for both widening and
  // narrowing operations.
@@ -1022,7 +1032,8 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    if (rv_vector->vector_exception()) return;
    if (rv_vector->vstart()) {
      rv_vector->vector_exception();
-@@ -692,18 +966,39 @@ void RiscVBinaryReductionVectorOp(RiscVVectorState* rv_vector,
+@@ -692,20 +966,41 @@ void RiscVBinaryReductionVectorOp(RiscVVectorState* rv_vector,
+   auto mask_span = mask_op->GetRegister(0)->data_buffer()->Get<uint8_t>();
    Vd accumulator =
        static_cast<Vd>(generic::GetInstructionSource<Vs1>(inst, 1, 0));
 -  for (int i = 0; i < num_elements; i++) {
@@ -1072,3 +1083,4 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
 +  }
    rv_vector->clear_vstart();
  }
+ 
