@@ -52,15 +52,22 @@ static uint64_t iree_hal_coralnpu_hash_elf(iree_const_byte_span_t elf_image) {
   return h;
 }
 
+// Writes |phdr|'s data and zeroes the rest, stopping at |heap_start| if it is
+// in the zeroed part.
 static void iree_hal_coralnpu_load_segment(coralnpu_simulator_t *sim,
                                            const uint8_t *data,
-                                           const iree_elf32_phdr_t *phdr) {
+                                           const iree_elf32_phdr_t *phdr,
+                                           uint32_t heap_start) {
   if (phdr->p_filesz != 0) {
     coralnpu_simulator_write_mem(sim, phdr->p_paddr, data + phdr->p_offset,
                                  phdr->p_filesz);
   }
-  iree_hal_coralnpu_simulator_zero_mem(sim, phdr->p_paddr + phdr->p_filesz,
-                                       phdr->p_memsz - phdr->p_filesz);
+  uint32_t zero_begin = phdr->p_paddr + phdr->p_filesz;
+  uint32_t zero_end = phdr->p_paddr + phdr->p_memsz;
+  // The runtime writes the heap data it uses, and the stack (after the heap)
+  // is the firmware's own.
+  if (heap_start >= zero_begin && heap_start < zero_end) zero_end = heap_start;
+  iree_hal_coralnpu_simulator_zero_mem(sim, zero_begin, zero_end - zero_begin);
 }
 
 // Reads an optional |symbol_name|, leaving |*out_value| untouched if absent.
@@ -97,7 +104,8 @@ iree_status_t iree_hal_coralnpu_simulator_load_elf_with_layout(
             (const iree_elf32_phdr_t *)(data + ehdr->e_phoff +
                                         i * sizeof(iree_elf32_phdr_t));
         if (phdr->p_type == IREE_ELF_PT_LOAD && phdr->p_memsz != 0) {
-          iree_hal_coralnpu_load_segment(sim, data, phdr);
+          iree_hal_coralnpu_load_segment(
+              sim, data, phdr, elf_meta_cache[c].layout.heap_start_addr);
         }
       }
       *out_layout = elf_meta_cache[c].layout;
@@ -116,6 +124,8 @@ iree_status_t iree_hal_coralnpu_simulator_load_elf_with_layout(
   iree_hal_coralnpu_read_optional_symbol(elf_image, "__dtcm_start",
                                          &dtcm_start);
   iree_hal_coralnpu_read_optional_symbol(elf_image, "__dtcm_size", &dtcm_size);
+  IREE_RETURN_IF_ERROR(iree_hal_coralnpu_executable_find_symbol(
+      elf_image, "__heap_start", &out_layout->heap_start_addr, NULL));
 
   bool entry_is_executable = false;
 
@@ -144,7 +154,8 @@ iree_status_t iree_hal_coralnpu_simulator_load_elf_with_layout(
       entry_is_executable = true;
     }
 
-    iree_hal_coralnpu_load_segment(sim, data, phdr);
+    iree_hal_coralnpu_load_segment(sim, data, phdr,
+                                   out_layout->heap_start_addr);
   }
 
   if (!entry_is_executable) {
@@ -159,9 +170,6 @@ iree_status_t iree_hal_coralnpu_simulator_load_elf_with_layout(
   IREE_RETURN_IF_ERROR(iree_hal_coralnpu_executable_find_symbol(
       elf_image, "coralnpu_dispatch_request",
       &out_layout->dispatch_request_addr, &out_layout->dispatch_request_size));
-
-  IREE_RETURN_IF_ERROR(iree_hal_coralnpu_executable_find_symbol(
-      elf_image, "__heap_start", &out_layout->heap_start_addr, NULL));
 
   IREE_RETURN_IF_ERROR(iree_hal_coralnpu_executable_find_symbol(
       elf_image, "__heap_end", &out_layout->heap_end_addr, NULL));

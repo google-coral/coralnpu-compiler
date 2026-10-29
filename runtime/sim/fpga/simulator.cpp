@@ -182,14 +182,18 @@ class FpgaSimulator final : public CoralNPUSimulator {
                    "device not connected.\n");
       return;
     }
-    // Set start PC, pulse reset, release
-    spi_.write_word(kCsrBase + 4, start_addr);
-    spi_.write_word(kCsrBase, 1);
+    // Pulse reset, writing the whole CSR beat (reset +0, start PC +4,
+    // read-only status +8) without write_word's read-modify-write round trips.
+    uint32_t csr[4] = {1, start_addr, 0, 0};
+    spi_.v2_write_lines(kCsrBase, reinterpret_cast<const uint8_t*>(csr),
+                        /*num_beats=*/1);
     if (usleep(1000) < 0) {
       std::fprintf(stderr, "[CoralNPU FPGA] Warning: usleep failed: %s\n",
                    std::strerror(errno));
     }
-    spi_.write_word(kCsrBase, 0);
+    csr[0] = 0;
+    spi_.v2_write_lines(kCsrBase, reinterpret_cast<const uint8_t*>(csr),
+                        /*num_beats=*/1);
   }
 
   // |timeout| counts simulator steps, so bound the wall clock instead.
@@ -202,6 +206,7 @@ class FpgaSimulator final : public CoralNPUSimulator {
     }
 
     constexpr double timeout_sec = 30.0;
+    constexpr auto kSpinTime = std::chrono::milliseconds(100);
     auto start = std::chrono::steady_clock::now();
     int retries = 0;
     constexpr int kMaxRetries = 10;
@@ -235,6 +240,9 @@ class FpgaSimulator final : public CoralNPUSimulator {
       if (val == 1) {
         return true;
       }
+      // Short dispatches halt within a few polls, each a link round trip, so
+      // only sleep between polls of long ones.
+      if (std::chrono::steady_clock::now() - start < kSpinTime) continue;
       if (usleep(10000) < 0) {
         std::fprintf(stderr, "[CoralNPU FPGA] Warning: usleep failed: %s\n",
                      std::strerror(errno));

@@ -29,6 +29,15 @@ _FPGA_DATA = [
     "//runtime/sim/fpga:libcoralnpu_simulator_fpga.so",
 ]
 
+_FPGA_COMPILE_FLAGS = [
+    "--iree-hal-target-device=coralnpu",
+    "--coralnpu-dtcm-size-kb=1024",
+    "--coralnpu-linker-script-path=$(execpath //crt:coralnpu_tcm_highmem.ld)",
+    # Bind only used ranges; the runtime copies writable bindings per dispatch.
+    "--iree-scheduling-optimize-bindings=false",
+    "> /dev/null",
+]
+
 _CHECK_TESTS = [
     "add_i32",
     "matmul",
@@ -45,12 +54,7 @@ _CHECK_TESTS = [
     coralnpu_bytecode_module(
         name = "npu_compile_tests_%s_vmfb" % test_id,
         src = "%s.mlir" % test_id,
-        flags = [
-            "--iree-hal-target-device=coralnpu",
-            "--coralnpu-dtcm-size-kb=1024",
-            "--coralnpu-linker-script-path=$(execpath //crt:coralnpu_tcm_highmem.ld)",
-            "> /dev/null",
-        ],
+        flags = _FPGA_COMPILE_FLAGS,
         module_name = "%s.vmfb" % test_id,
         tags = ["ci"],
         deps = [
@@ -122,12 +126,7 @@ genrule(
 coralnpu_bytecode_module(
     name = "mobilenet_v2_compile_test_vmfb",
     src = ":mobilenet_v2.mlir",
-    flags = [
-        "--iree-hal-target-device=coralnpu",
-        "--coralnpu-dtcm-size-kb=1024",
-        "--coralnpu-linker-script-path=$(execpath //crt:coralnpu_tcm_highmem.ld)",
-        "> /dev/null",
-    ],
+    flags = _FPGA_COMPILE_FLAGS,
     module_name = "mobilenet_v2.vmfb",
     tags = ["manual"],
     deps = [
