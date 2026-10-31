@@ -45,65 +45,25 @@
 
 ## Design Documents & Two-CL Workflow
 - For non-trivial changes (new passes, operation enablements, third-party
-  patches, or changes >150 LOC), suggest following the two-CL Spec-Driven
-  Development workflow using the `/design-doc` and `/implement-design` skills
-  (see `./docs/design/README.md`,
-  `./.agents/skills/design-doc/references/standards.md`, and
-  `./.agents/skills/implement-design/references/standards.md` for full details):
-  1. **CL 1 (Design CL — `/design-doc`)**:
-     - `/design-doc draft [<change>]` (or
-       `/design-doc draft-from-commits [<commits>] [<change>]` for existing
-       commits): Verify codebase context, challenge assumptions, right-size
-       scope (tightening the spec and moving deferred slices to **Part 3:
-       Follow-Up Items**, or splitting tasks into staged `CL 2a`, `CL 2b`, ...),
-       author `./docs/design/changes/<change>.md` (based on
-       `./docs/design/changes/TEMPLATE.md`), and stop for developer review.
-     - `/design-doc audit [<change>]`: After developer review, spawn a
-       repeatable isolated subagent (with no chat history and a narrow view of
-       `<change>.md` and its referenced files) for blind comprehension and
-       specification verification without overwriting the doc automatically.
-     - `/design-doc revise [<change>]`: Iterate on inline `A:` notes or Gerrit
-       review comments until CL 1 receives `+2`.
-  2. **CL 2 (Implementation CL — `/implement-design`)**:
-     - `/implement-design code [<change>]`: Implement the tasks in
-       `<change>.md` (working in Bazel `--config=dev` first and syncing
-       `CMakeLists.txt`, `refresh_compile_commands` in `BUILD.bazel`, and
-       `README.md` once approved). Adapt flexibly to the codebase or propose
-       better solutions as needed, provided you inform the developer and keep
-       `./docs/design/changes/<change>.md` updated. Record out-of-scope
-       follow-ups in **Part 3: Follow-Up Items** of `<change>.md` for Gerrit
-       review.
-     - `/implement-design audit [<change>] [<commits>]`: Spawn a repeatable
-       isolated subagent (with no chat history) to audit `git diff` against
-       `<change>.md` for spec drift, edge cases, test integrity, and code style
-       / comment density before or during local review.
-     - `/implement-design archive [<change>]`: Fold lasting architectural
-       changes into `./docs/design/<component>.md`, archive the change doc via
-       `git mv ./docs/design/changes/<change>.md
-       ./docs/design/archive/<change>.md`, and run `./scripts/format-code.sh`.
-     - `/implement-design file-followups [<change>]`: After CL 2 receives `+2`
-       in Gerrit, file reviewer-approved Part 3 follow-ups into Buganizer under
-       component `564546727` (with explicit user authorization).
-- **Buganizer Component `564546727` (`issues` CLI)**:
-  - When `/google/bin/releases/issues-cli/issues` is available, run it with
-    `BypassSandbox: true`: use `issues readonly render <id>`,
-    `issues readonly list-updates <id>`, and
-    `issues readonly search "componentid:564546727 status:open <keywords>" --limit 5`
-    for read-only lookups, and require explicit user authorization before
-    creating tickets via
-    `issues mutate create --component_id=564546727 --title="<title>" --priority=<P1|P2|P3> --type=BUG --description_file=./agent-temp/.bug_desc.md`.
-  - If `/google/bin/releases/issues-cli/issues` does not exist on the machine,
-    skip the CLI commands and either note in `<change>.md` that Buganizer was
-    not searched (`draft`) or present the suggested tickets for manual filing
-    (`file-followups`).
+  patches, or changes >150 LOC), suggest starting the two-CL workflow with
+  `/design-doc draft <change>` (or `/design-doc draft-from-commits [<commits>]
+  <change>` for existing commits; see `./docs/design/README.md`).
 - **Documentation Tiers in `./docs/design/`**:
   - `./docs/design/INDEX.md`: Map of living component docs to source paths and
-    passes.
+    passes (check this first when exploring a compiler subsystem).
   - `./docs/design/<component>.md`: Living component architecture at `HEAD`.
-  - `./docs/design/changes/<change>.md`: Active, unmerged change designs/plans.
-  - `./docs/design/archive/<change>.md`: Historical completed change plans
-    (reference for past alternatives and trade-offs only; do not treat as
-    current architecture).
+  - `./docs/design/changes/<change>.md`: Active, unmerged change design briefs.
+  - `./docs/design/archive/<change>.md`: Historical completed change briefs
+    (reference for past trade-offs only; do not treat as current architecture).
+- **Buganizer Component `564546727` (`issues` CLI)**:
+  - When `/google/bin/releases/issues-cli/issues` is available, run it (passing
+    `BypassSandbox: true` if present in the tool schema) for read-only lookups
+    (`issues readonly render|list-updates|search`), and require explicit user
+    authorization before creating tickets
+    (`issues mutate create --component_id=564546727 ...`). If `issues` is
+    missing or fails with a LOAS/ACL restriction (`RPC_RESTRICTIONS_VIOLATION`
+    or `LabelACLRejected`), treat Buganizer as unavailable and proceed without
+    it.
 
 ## Third-party code
 - Do NOT modify `third_party/iree`, `third_party/llvm-project`, or
@@ -177,7 +137,10 @@
   out-parameters, or `std::vector` where appropriate.
 - Document every function you add or modify. If a function is declared in a `.h`
   header file, place its documentation comment on the header declaration rather
-  than the `.cc`/`.cpp` definition.
+  than the `.cc`/`.cpp` definition; if it is already documented in a TableGen
+  (`.td`) definition (such as pass constructors in `Passes.h` mirroring
+  `Passes.td`), keep the documentation in the `.td` file and do not duplicate it
+  in `.h` or `.cpp`.
 - In code you add or modify, include a brief comment for non-obvious conditions
   (`if`) and loops (`for`, `while`) explaining their rationale and intent (why,
   not what); omit comments when the code is self-explanatory.
@@ -192,10 +155,17 @@
   `iree_compiler::isComputeOp`, `TargetBackend::SupportedTypes`) instead of
   maintaining long hardcoded lists of concrete operation types.
 - **Use Native Type Checking:** Prefer `llvm::isa<>` and `llvm::dyn_cast<>` over string comparisons for identifying operations, types, or attributes.
-- **Utilize API Features:** Trust the framework's APIs before writing defensive
-  boilerplate. For example, MLIR's `walk()` safely supports erasing the
+- **Utilize API Features & Upstream Utilities:** Trust the framework's APIs
+  before writing defensive boilerplate, and inspect `#include`d MLIR/IREE
+  `*Utils.h` and `*Interfaces.h` headers (e.g.,
+  `mlir/Dialect/Utils/StaticValueUtils.h`, `mlir/Dialect/Utils/IndexingUtils.h`,
+  `mlir/Dialect/Linalg/Utils/Utils.h`, `iree/compiler/Codegen/Utils/Utils.h`,
+  `iree/compiler/Codegen/Utils/CPUUtils.h`) before writing or moving local
+  helper functions. For example, MLIR's `walk()` safely supports erasing the
   currently visited operation in-place (in post-order, or in pre-order when
-  returning `WalkResult::skip()`) without needing a separate collection vector.
+  returning `WalkResult::skip()`) without needing a separate collection vector,
+  and `StaticValueUtils.h` provides batch utilities like `getConstantIntValues`
+  and `getOffsetsSizesAndStrides`.
 - **Diagnostics, Fallbacks, and Logging:** Keep normal compilation silent on
   `stdout` and `stderr` (see `README.md`):
   - **Errors (`emitError` / `emitOpError` + `signalPassFailure()`):** Use only
@@ -222,6 +192,11 @@
   codegen lowering), share a common utility or explicitly document the peer
   functions that must be kept in sync.
 - **Preserve Semantic Guardrails:** Do not prematurely remove compiler directives (like unfoldable constants or optimization barriers) that protect intermediate passes from unwanted behavior like over-folding. If they need to be removed from the final output, do so in a dedicated final cleanup pass.
+- **Use Worklists for Def-Use and Graph Walks:** Traverse producer-consumer or
+  def-use chains iteratively with an `llvm::SmallVector` worklist (`push_back` /
+  `pop_back_val`) and a visited set (`llvm::SmallPtrSet` or
+  `llvm::SmallDenseSet`) rather than recursion, avoiding call-stack growth on
+  deep operation chains.
 
 ## Code Formatting & Repository Hygiene
 - Update `README.md` whenever you add, rename, or remove user-facing

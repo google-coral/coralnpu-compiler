@@ -6,7 +6,8 @@ to the source directories and compiler passes they cover.
 - **For Agents (`/design-doc` and `/implement-design`)**: Read this index first
   to locate the relevant living component doc(s) before scanning raw C++ source
   files. When adding a new `<component>.md` document or expanding the scope of
-  an existing one during `/implement-design archive`, update the table below.
+  an existing one during `/design-doc draft` (and verifying during
+  `/implement-design archive`), update the table below.
 
 | Component Document                                         | Primary Source Paths & Passes                                                                                       | Scope & Contents                                                                                                 |
 | :--------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------------------- |

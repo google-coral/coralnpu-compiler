@@ -12,80 +12,77 @@ history during `audit`). Project-specific rules live in
 
 ## 1. Spec-Driven Implementation & Adaptation Standards (`code`)
 
-1. **Incremental Task Execution & Contract-Derived Verification**:
-   - Execute tasks in order from **Section 2.2 (Implementation Tasks)** of
-     `<change>.md` (or the current stage `CL 2a`, `CL 2b`, ... if staged).
-   - Derive **Positive Tests** from every **Offered Postcondition** and
-     **Negative / Fallback Tests** from every **Imposed Precondition** and
-     error/fallback path in **Section 1.4 / 1.5**.
-   - Run each task's verification command and mark the task `- [x]` only after
-     compilation, tests, and any spec updates succeed.
+1. **Incremental Task Execution & Verification**:
+   - Execute tasks in order from **Section 3 (Implementation & Verification
+     Plan)** of `<change>.md` (or the current stage `CL 2a`, `CL 2b`, ... if
+     staged), using both `<change>.md` and the updated `<component>.md` (already
+     present in the initial CL 2 commit) as the architectural specification.
+   - Implement the **Positive** and **Negative / Fallback** test cases promised
+     in **Section 3** (and `<component>.md`), and mark each task `- [x]` only
+     after compilation, tests, and any doc updates succeed.
 2. **Bounded Autonomous Self-Repair (3-Strike Rule)**:
    - When a build or test fails, attempt up to **3 autonomous fix-and-retest
      cycles**.
    - If the failure persists after 3 attempts, **stop immediately**, leave the
      task unchecked (`- [ ]`), and report the failure root-cause hypothesis to
      the developer rather than thrashing or weakening test assertions.
-3. **Continuous Spec Synchronicity ("Fixpoint" & Zero-Context Resumability)**:
-   - Keep `<change>.md` at a "fixpoint" (zero divergence between spec and code)
-     at the end of every turn so a fresh zero-history session can resume
-     seamlessly:
-     - **Local / Tactical Adaptations** (adjusting helper signatures, touching
-       an additional caller or build target, or handling a local boundary case):
-       Implement the improvement, update **Part 1 / Part 2** and **Section 2.3
-       (Implementation Notes & Adaptations)** of `<change>.md` in the same turn
-       (following
-       [`../../design-doc/references/standards.md`](../../design-doc/references/standards.md)),
-       and highlight the adaptation to the developer.
+3. **Continuous Doc Synchronicity (At the Right Altitude)**:
+   - Keep `<change>.md` and `<component>.md` synchronized with the code at the
+     end of every turn without dumping low-level C++ mechanics into prose:
+     - **Internal Implementation Details (Refactor Invariance)**: Helper
+       function names, local data structures, or branch ordering that do not
+       alter the architecture, invariants, or observable behavior described in
+       `<component>.md` and `<change>.md` belong in the C++ code only; do **not**
+       transcribe them into `<change>.md`.
+     - **Tactical Adaptations** (touching an additional file/build target,
+       adjusting a public/cross-pass signature in `<change>.md`, or refining an
+       edge-case rule): Update `<change>.md` (including **Implementation Notes &
+       Adaptations** in Section 3) and `<component>.md` in the same turn, and
+       highlight the adaptation to the developer.
      - **Architectural Pivots** (changing module or pipeline boundaries,
-       replacing the core algorithm or data model, adding a third-party patch,
-       or altering user-facing flags/APIs): **Spec modifications that alter
-       architectural contracts require human judgment.** Pause code edits,
-       explain the newly discovered trade-offs to the developer, and update
-       `<change>.md` and the code only after developer sign-off.
+       replacing the core algorithm, adding a third-party patch, or altering
+       user-facing flags/APIs): Pause code edits, explain the newly discovered
+       trade-offs to the developer, and update `<change>.md`, `<component>.md`,
+       and the code only after developer sign-off.
 4. **Strict Scope Discipline (No Unanchored Scope Creep)**:
    - Implement the minimum code required to satisfy the specification and tests
      (YAGNI).
    - Do not bundle unrelated refactorings or adjacent feature work into the CL;
-     record any newly discovered out-of-scope issues under **Part 3: Follow-Up
-     Items** in `<change>.md`.
+     record any newly discovered out-of-scope issues under **Section 4:
+     Follow-Up Items** in `<change>.md`.
 
 ---
 
-## 2. Implementation & Spec-to-Code Drift Audit Rubric (`audit`)
+## 2. Implementation & Semantic Drift Audit Rubric (`audit`)
 
 ### 2.1 Audit Rubric for the Isolated Narrow-View Subagent (`/implement-design audit`)
 
 The isolated zero-history subagent evaluates the implementation diff against
-`<change>.md` and [`../../../AGENTS.md`](../../../AGENTS.md) across three
-dimensions:
+`<change>.md`, `<component>.md`, and [`../../../AGENTS.md`](../../../AGENTS.md)
+across three dimensions:
 
 1. **Blind Implementation Summary**:
    - In 1 short paragraph, explain in your own words what the implementation
-     diff actually does and how it works, based *strictly* on the diff and
-     `<change>.md`.
-2. **4-Way Bidirectional Spec-to-Code Drift Analysis**:
-   - **Specified but Missing / Shortcut**: Requirements, boundary handlers,
-     error/fallback paths, or contracts in `<change>.md` that are absent,
-     stubbed, or hardcoded in the diff, or implemented tasks in **Section 2.2**
-     still left unchecked (`- [ ]`).
-   - **Implemented but Diverges from Spec**: Code that contradicts `<change>.md`
-     (altered signatures, data structures, state transitions, or violated
-     preconditions/postconditions) or adaptations missing from **Section 2.3**.
-   - **Implemented but Unspecified (Scope Creep vs. Refactor Invariance)**: New
-     observable component behavior, public interfaces, configuration/CLI flags,
-     or architectural dependencies introduced in the diff that `<change>.md`
-     does not cover. Apply the **Refactor Invariance Litmus Test**: *"If a
-     behavior-preserving internal refactor that no caller can observe would
-     change this detail, it is an internal implementation detail and does not
-     require spec transcription."*
-   - **Symbol & Terminology Drift**: File paths, symbol/type/enum names, or
-     domain abbreviations in `<change>.md` that do not match the actual
-     identifiers in the codebase at `HEAD`.
-3. **Contract-Derived Test Coverage, Correctness & Project Rules**:
-   - **Contract Test Coverage**: Verify that every **Offered Postcondition** has
-     a positive test and every **Imposed Precondition / Fallback** in **Section
-     1.4 / 1.5** has a negative or fallback test in the diff.
+     diff actually does and how it works, based *strictly* on the diff,
+     `<change>.md`, and `<component>.md`.
+2. **Semantic, Invariant & Doc-Sync Drift Analysis (No C++-in-Prose Enforcement)**:
+   - **Specified Goals/Invariants Missing or Broken**: Goals, invariants,
+     pipeline steps, or fallback behaviors in `<change>.md` and `<component>.md`
+     that are absent, stubbed, or contradicted by the diff, or completed tasks
+     in **Section 3** still left unchecked (`- [ ]`).
+   - **Observable Scope Creep**: New user-facing flags, public interfaces,
+     passes, or architectural dependencies introduced in the diff that
+     `<change>.md` and `<component>.md` do not cover. *(Apply the **Refactor
+     Invariance Rule**: never flag internal helper functions, local variables,
+     or C++ branch expressions for not being transcribed into prose in
+     `<change>.md` or `<component>.md`.)*
+   - **Symbol & File Accuracy**: Verify that every file path, pass name, or
+     symbol explicitly cited in `<change>.md` and `<component>.md` matches the
+     actual identifiers in the codebase at `HEAD`.
+3. **Test Coverage, Correctness & Project Rules**:
+   - **Test Coverage**: Verify that the diff includes positive tests for the new
+     capability and negative/fallback tests for unsupported inputs or violated
+     preconditions promised in **Section 3**.
    - **Correctness & Safety**: Flag logic flaws, unhandled boundary conditions,
      resource/hardware hazards, or missing fallback diagnostics.
    - **Project Rule Compliance**: Verify strict compliance with all
@@ -104,28 +101,24 @@ When the isolated audit subagent finishes:
 
 ---
 
-## 3. Living Component Doc Promotion Standards (`archive`)
+## 3. Living Component Doc Verification & Archival Standards (`archive`)
 
-When folding a completed `<change>.md` into `./docs/design/<component>.md`:
+Because `<component>.md` was already updated in the initial CL 2 (`CL 2a..2n`)
+commit(s) during the design phase, `/implement-design archive` (run in `CL 2` or
+the final stage `CL 2n`) performs a coherence pass and finalizes the docs:
 
-1. **Durable Architecture Only (Timeless `HEAD` Framing)**:
-   - Living component docs record durable architecture, boundaries, contracts,
-     and invariants at `HEAD`.
-   - Never use temporal or change-relative phrasing (*"Recently added..."*,
-     *"This CL introduces..."*, *"Previously, X did Y"*).
-2. **Extend In-Place ("One Contract, One Place" / Anti-Append Rule)**:
-   - Integrate new or updated capabilities directly into the existing sections,
-     diagrams, and tables of `<component>.md` rather than appending a
-     disconnected changelog-style section at the end.
-3. **Preserve "Why Not X" Guardrails, Strip Transient Scaffolding**:
-   - Fold non-obvious rejected-alternative rationales and design constraints
-     from **Section 1.3 (Alternatives Considered)** and **Section 2.3
-     (Adaptations)** into `<component>.md` so future engineers and agents know
-     why simpler-looking alternatives were rejected (Chesterton's fence).
-   - Strip all transient task checklists (`- [x]`), bug numbers, and CL-specific
-     notes (which remain preserved in `docs/design/archive/<change>.md`).
-4. **Prose & Citation Craft**:
-   - Follow **Section 3 (Prose, Terminology & Citation Standards)** of
-     [`../../design-doc/references/standards.md`](../../design-doc/references/standards.md)
-     (natural-language-first explanations without code-symbol dumping, symbol
-     references over fragile line numbers, and falsifiable language).
+1. **Coherence Pass, Timeless `HEAD` Framing & Adaptation Sync in `<component>.md`**:
+   - When a change was split across `CL 2a .. CL 2n` with separate per-stage
+     paragraphs or bullets in `<component>.md`, merge and smooth those separate
+     additions into unified, cohesive prose.
+   - Ensure any adaptations made during `code` (and any non-obvious "Why Not X"
+     guardrails that future engineers need to know) are reflected in-place in
+     `./docs/design/<component>.md` (and `./docs/design/INDEX.md`).
+   - Verify that `<component>.md` contains no temporal phrasing (*"Recently
+     added..."*, *"This CL introduces..."*), transient task checklists, or
+     C++-in-prose dumps, following
+     [`../../design-doc/references/standards.md`](../../design-doc/references/standards.md).
+2. **Archive `<change>.md` via `git mv`**:
+   - Move `./docs/design/changes/<change>.md` to
+     `./docs/design/archive/<change>.md` using `git mv` and check off the
+     final sync item in **Section 3**.
