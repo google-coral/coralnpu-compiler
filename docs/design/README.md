@@ -71,8 +71,9 @@ them as a **2-CL chain**:
            │                    - `docs/design/<component>.md` (+ `INDEX.md`)
            │                    - `.h` / `.td` boundary interfaces (if any)
            ▼
-  2. `/design-doc audit`     -> Spawn isolated zero-history subagent (audits
-           │                    blind comprehension, readability, & accuracy)
+  2. `/design-doc challenge` -> Red-team via adversarial Design Lenses (wide
+     + `/design-doc audit`      search) & narrow-view blind-reader audit
+           │
            ▼
   3. `/design-doc commit`    -> Create (or amend) the commit chain:
            │                    - CL 1: `docs/design/changes/<change>.md`
@@ -111,6 +112,7 @@ them as a **2-CL chain**:
 | :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `/design-doc draft [<change>] <description>`                | Co-designs the change, updates `<component>.md` + `.h`/`.td` interfaces, writes `changes/<change>.md`, and stops for your review.                 |
 | `/design-doc draft-from-commits [<commits>] [<change>]`     | Abstracts and critiques a pre-code design from existing commit(s) (`<commits>`, default `HEAD`), highlighting opportunities to simplify the code. |
+| `/design-doc challenge [<change>]`                          | Spawns parallel adversarial Design Lens subagents (with wide codebase search) to red-team the proposed solution without editing files.            |
 | `/design-doc audit [<change>]`                              | Spawns a zero-history narrow-view subagent returning a **Blind Comprehension Summary** and fact-checked findings without editing files.           |
 | `/design-doc revise [<change>] [<feedback>]`                | Updates `changes/<change>.md`, `<component>.md`, and `.h`/`.td` interfaces from inline `A:` comments or Gerrit review feedback.                   |
 | `/design-doc commit [<change>]`                             | Commits `changes/<change>.md` as CL 1 and `<component>.md` + `.h`/`.td` as `[WIP]` CL 2 (`CL 2a..2n`), or offers to fold `<component>.md` for `draft-from-commits`. |
