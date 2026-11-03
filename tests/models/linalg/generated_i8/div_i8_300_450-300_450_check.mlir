@@ -5,7 +5,7 @@ module {
     %0 = util.optimization_barrier %cst_0 : tensor<300x450xi8>
     %1 = util.optimization_barrier %cst_0 : tensor<300x450xi8>
     %2 = tensor.empty() : tensor<300x450xi8>
-    %3 = linalg.div ins(%0, %1 : tensor<300x450xi8>, tensor<300x450xi8>) outs(%2 : tensor<300x450xi8>) -> tensor<300x450xi8>
+    %3 = linalg.elementwise <div> ins(%0, %1 : tensor<300x450xi8>, tensor<300x450xi8>) outs(%2 : tensor<300x450xi8>) -> tensor<300x450xi8>
     %4 = util.optimization_barrier %cst : tensor<300x450xi8>
     "check.expect_eq"(%3, %4) : (tensor<300x450xi8>, tensor<300x450xi8>) -> ()
     return

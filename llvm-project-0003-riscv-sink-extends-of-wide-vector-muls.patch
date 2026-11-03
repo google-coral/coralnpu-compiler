@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From c4acf23e4584237f798541a9eb9b4e45f2acb768 Mon Sep 17 00:00:00 2001
 From: Lun Dong <lundong@google.com>
 Date: Thu, 15 Oct 2026 00:00:00 -0700
-Subject: [PATCH] [RISCV] Sink extends of vector muls wider than ELEN
+Subject: [PATCH] [RISCV] Sink extends of wide vector muls
 
 With Zve32x/Zve32f, a vector mul of sign- or zero-extended 32-bit
 elements, shifted right by 32, lowers to vmulh/vmulhu only when ISel
@@ -10,15 +10,16 @@ per-channel requantization multiplier), the illegal 64-bit multiply is
 scalarized instead. Let CodeGenPrepare sink such extends next to the
 mul.
 ---
- .../Target/RISCV/RISCVTargetTransformInfo.cpp | 11 ++++++++
+ .../Target/RISCV/RISCVTargetTransformInfo.cpp | 11 +++++++
  .../CodeGen/RISCV/rvv/sink-ext-mulh-zve32.ll  | 30 +++++++++++++++++++
  2 files changed, 41 insertions(+)
+ create mode 100644 llvm/test/CodeGen/RISCV/rvv/sink-ext-mulh-zve32.ll
 
 diff --git a/llvm/lib/Target/RISCV/RISCVTargetTransformInfo.cpp b/llvm/lib/Target/RISCV/RISCVTargetTransformInfo.cpp
-index 4b22da42f0a..0eb75e95a3d 100644
+index ac0745c804d..9dfd68577de 100644
 --- a/llvm/lib/Target/RISCV/RISCVTargetTransformInfo.cpp
 +++ b/llvm/lib/Target/RISCV/RISCVTargetTransformInfo.cpp
-@@ -3637,6 +3637,17 @@ bool RISCVTTIImpl::isProfitableToSinkOperands(
+@@ -3785,6 +3785,17 @@ bool RISCVTTIImpl::isProfitableToSinkOperands(
    if (!I->getType()->isVectorTy() || !ST->hasVInstructions())
      return false;
  
@@ -72,3 +73,6 @@ index 00000000000..4226dd273ab
 +exit:
 +  ret void
 +}
+-- 
+2.56.0.398.g882cbad275-goog
+

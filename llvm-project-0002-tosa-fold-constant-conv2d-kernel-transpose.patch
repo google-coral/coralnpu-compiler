@@ -1,7 +1,7 @@
-From fb2e29e4860ec085b7ebbd54a3fdb01bff208d5b Mon Sep 17 00:00:00 2001
+From 507eb2c94aa2527c3354663ef947cd07ae63146e Mon Sep 17 00:00:00 2001
 From: Lun Dong <lundong@google.com>
 Date: Tue, 13 Oct 2026 20:55:00 -0700
-Subject: [PATCH] [mlir][tosa] Fold the transpose of a constant conv2d kernel
+Subject: [PATCH] [mlir][tosa] Fold constant conv2d kernel transpose
 
 With preferConv2DKernelLayoutHWCF, the conversion of tosa.conv2d to
 linalg.conv_2d_nhwc_hwcf transposes the OHWI kernel to HWCF. The
@@ -18,7 +18,7 @@ by the convolution at compile time instead, resolving the TODO.
  2 files changed, 83 insertions(+), 5 deletions(-)
 
 diff --git a/mlir/lib/Conversion/TosaToLinalg/TosaToLinalgNamed.cpp b/mlir/lib/Conversion/TosaToLinalg/TosaToLinalgNamed.cpp
-index ee57a5a781c..09737a2359a 100644
+index 2308f22dc31..2d7a0edea8d 100644
 --- a/mlir/lib/Conversion/TosaToLinalg/TosaToLinalgNamed.cpp
 +++ b/mlir/lib/Conversion/TosaToLinalg/TosaToLinalgNamed.cpp
 @@ -18,10 +18,12 @@
@@ -34,7 +34,7 @@ index ee57a5a781c..09737a2359a 100644
  #include <type_traits>
  
  using namespace mlir;
-@@ -233,6 +235,49 @@ static void createDepthwiseConvCollapseMap(
+@@ -235,6 +237,49 @@ static void createDepthwiseConvCollapseMap(
        rewriter.getAffineDimExpr(outputRank));
  }
  
@@ -84,7 +84,7 @@ index ee57a5a781c..09737a2359a 100644
  namespace {
  
  template <typename TosaConvOp, typename LinalgConvOp, typename LinalgConvQOp>
-@@ -339,8 +384,6 @@ public:
+@@ -341,8 +386,6 @@ public:
        if (wantHwcf) {
          // Transpose the kernel to match dimension ordering of the linalg
          // convolution operation.
@@ -93,7 +93,7 @@ index ee57a5a781c..09737a2359a 100644
          SmallVector<int32_t> weightPerm;
          for (int i = 1; i < resultTy.getRank(); i++)
            weightPerm.push_back(i);
-@@ -350,10 +393,21 @@ public:
+@@ -352,10 +395,21 @@ public:
          for (auto dim : weightPerm)
            newWeightShape.push_back(weightShape[dim]);
          auto weightPermAttr = rewriter.getDenseI32ArrayAttr(weightPerm);
@@ -119,11 +119,11 @@ index ee57a5a781c..09737a2359a 100644
      }
  
 diff --git a/mlir/test/Conversion/TosaToLinalg/tosa-to-linalg-named.mlir b/mlir/test/Conversion/TosaToLinalg/tosa-to-linalg-named.mlir
-index 801144c0182..71e65dfcfcf 100644
+index 5b9b33d6476..79fe4f55ade 100644
 --- a/mlir/test/Conversion/TosaToLinalg/tosa-to-linalg-named.mlir
 +++ b/mlir/test/Conversion/TosaToLinalg/tosa-to-linalg-named.mlir
-@@ -1078,3 +1078,27 @@ func.func @max_pool2d_nan_ignore(%arg0: tensor<1x6x34x62xf32>) -> (tensor<1x4x32
-   %0 = tosa.max_pool2d %arg0 {pad = array<i64: 0, 0, 0, 0>, kernel = array<i64: 3, 3>, stride = array<i64: 1, 1>, nan_mode = IGNORE} : (tensor<1x6x34x62xf32>) -> tensor<1x4x32x62xf32>
+@@ -1195,3 +1195,27 @@ func.func @max_pool2d_nan_ignore(%arg0: tensor<1x6x34x62xf32>) -> (tensor<1x4x32
+   %0 = tosa.max_pool2d %arg0 kernel([3, 3]) stride([1, 1]) pad([0, 0, 0, 0]) nan_mode<IGNORE> : (tensor<1x6x34x62xf32>) -> tensor<1x4x32x62xf32>
    return %0: tensor<1x4x32x62xf32>
  }
 +
@@ -139,7 +139,7 @@ index 801144c0182..71e65dfcfcf 100644
 +  %weights = "tosa.const"() <{values = dense_resource<conv_weights> : tensor<2x1x1x2xf32>}> : () -> tensor<2x1x1x2xf32>
 +  %input_zp = "tosa.const"() <{values = dense<0.0> : tensor<1xf32>}> : () -> tensor<1xf32>
 +  %weight_zp = "tosa.const"() <{values = dense<0.0> : tensor<1xf32>}> : () -> tensor<1xf32>
-+  %0 = tosa.conv2d %input, %weights, %bias, %input_zp, %weight_zp {acc_type = f32, pad = array<i64: 0, 0, 0, 0>, stride = array<i64: 1, 1>, dilation = array<i64: 1, 1>} : (tensor<1x4x4x2xf32>, tensor<2x1x1x2xf32>, tensor<2xf32>, tensor<1xf32>, tensor<1xf32>) -> tensor<1x4x4x2xf32>
++  %0 = tosa.conv2d %input, %weights, %bias, %input_zp, %weight_zp pad([0, 0, 0, 0]) stride([1, 1]) dilation([1, 1]) acc_type(f32) : (tensor<1x4x4x2xf32>, tensor<2x1x1x2xf32>, tensor<2xf32>, tensor<1xf32>, tensor<1xf32>) -> tensor<1x4x4x2xf32>
 +  return %0 : tensor<1x4x4x2xf32>
 +}
 +
@@ -151,4 +151,5 @@ index 801144c0182..71e65dfcfcf 100644
 +  }
 +#-}
 -- 
-2.55.0
+2.56.0.398.g882cbad275-goog
+

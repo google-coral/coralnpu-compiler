@@ -3,7 +3,7 @@
 // A per-channel rescale: dynamic multiplier and shift, with the double round
 // selected when shift > 31.
 // CHECK-LABEL: func.func @dynamic_double_round
-// CHECK: %[[R:.*]] = tosa.apply_scale %arg0, %arg1, %arg2 {rounding_mode = DOUBLE_ROUND} : (i32, i32, i8) -> i32
+// CHECK: %[[R:.*]] = tosa.apply_scale %arg0, %arg1, %arg2 rounding_mode<DOUBLE_ROUND> : (i32, i32, i8) -> i32
 // CHECK: return %[[R]] : i32
 func.func @dynamic_double_round(%v: i32, %m: i32, %s: i8) -> i32 {
   %c0_i32 = arith.constant 0 : i32
@@ -38,9 +38,9 @@ func.func @dynamic_double_round(%v: i32, %m: i32, %s: i8) -> i32 {
 // CHECK-DAG: %[[S33:.*]] = arith.constant 33 : i8
 // CHECK-DAG: %[[S32:.*]] = arith.constant 32 : i8
 // CHECK: %[[V0:.*]] = arith.extsi %arg0 : i8 to i32
-// CHECK: %[[R0:.*]] = tosa.apply_scale %[[V0]], %[[M]], %[[S33]] {rounding_mode = DOUBLE_ROUND} : (i32, i32, i8) -> i32
+// CHECK: %[[R0:.*]] = tosa.apply_scale %[[V0]], %[[M]], %[[S33]] rounding_mode<DOUBLE_ROUND> : (i32, i32, i8) -> i32
 // CHECK: %[[V1:.*]] = arith.extsi %arg0 : i8 to i32
-// CHECK: %[[R1:.*]] = tosa.apply_scale %[[V1]], %[[M]], %[[S32]] {rounding_mode = DOUBLE_ROUND} : (i32, i32, i8) -> i32
+// CHECK: %[[R1:.*]] = tosa.apply_scale %[[V1]], %[[M]], %[[S32]] rounding_mode<DOUBLE_ROUND> : (i32, i32, i8) -> i32
 // CHECK: return %[[R0]], %[[R1]] : i32, i32
 func.func @constant_double_round(%v: i8) -> (i32, i32) {
   %c0_i32 = arith.constant 0 : i32
@@ -72,7 +72,7 @@ func.func @constant_double_round(%v: i8) -> (i32, i32) {
 // CHECK-LABEL: func.func @constant_single_round
 // CHECK-DAG: %[[S:.*]] = arith.constant 10 : i8
 // CHECK-DAG: %[[V:.*]] = arith.extsi %arg0 : i8 to i32
-// CHECK: tosa.apply_scale %[[V]], %{{.*}}, %[[S]] {rounding_mode = SINGLE_ROUND} : (i32, i32, i8) -> i32
+// CHECK: tosa.apply_scale %[[V]], %{{.*}}, %[[S]] rounding_mode<SINGLE_ROUND> : (i32, i32, i8) -> i32
 func.func @constant_single_round(%v: i8) -> i32 {
   %cm = arith.constant 1073741824 : i64
   %cr = arith.constant 512 : i64

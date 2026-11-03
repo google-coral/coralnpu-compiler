@@ -1,17 +1,17 @@
-From dfbf2fce7cac0d95515e27a6018216a581522b4c Mon Sep 17 00:00:00 2001
+From 5d930aa5060e31e9bb150ae5b04f79726565e9f9 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Thu, 15 Oct 2026 14:03:21 +0200
-Subject: [PATCH] [llvmcpu] add afterCacheTilingHook to LLVMCPUPipelineOptions
+Subject: [PATCH] [llvmcpu] add afterCacheTilingHook pipeline option
 
-Add a hook that addMultiTilingExpertPassPipeline calls after the cache-level
-tiling passes and before the vector-level tiling passes, with the root
-lowering config. A target can use it to add passes that work on the
-cache-level tiles, e.g. copies to local memory.
+Add a hook that addMultiTilingExpertPassPipeline calls after the
+cache-level tiling passes and before the vector-level tiling passes,
+with the root lowering config. A target can use it to add passes that
+work on the cache-level tiles, e.g. copies to local memory.
 
 buildLLVMCPUCodegenPassPipeline gives the hook to
-LLVMCPULowerExecutableTargetPass (a new create function overload), which
-copies it into the options of the pipelines that it builds. When the hook is
-empty, nothing changes.
+LLVMCPULowerExecutableTargetPass (a new create function overload),
+which copies it into the options of the pipelines that it builds. When
+the hook is empty, nothing changes.
 ---
  .../LLVMCPU/LLVMCPULowerExecutableTarget.cpp   | 18 ++++++++++++++++++
  .../iree/compiler/Codegen/LLVMCPU/Passes.cpp   | 18 +++++++++++++++++-
@@ -19,7 +19,7 @@ empty, nothing changes.
  3 files changed, 53 insertions(+), 1 deletion(-)
 
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPULowerExecutableTarget.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPULowerExecutableTarget.cpp
-index d445c8a..2c6f193 100644
+index d445c8adb..2c6f19373 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPULowerExecutableTarget.cpp
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPULowerExecutableTarget.cpp
 @@ -46,6 +46,11 @@ class LLVMCPULowerExecutableTargetPass
@@ -67,7 +67,7 @@ index d445c8a..2c6f193 100644
 +}
  } // namespace mlir::iree_compiler
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
-index f7238d9..9193442 100644
+index f7238d946..9193442f5 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
 @@ -172,11 +172,24 @@ void addMultiTilingExpertPassPipeline(
@@ -115,7 +115,7 @@ index f7238d9..9193442 100644
        .addPass(createVerifyWorkgroupDistributionPass);
    if (clPatchFuncOps) {
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h
-index ff3c022..3e1fe42 100644
+index ff3c0221c..3e1fe4257 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.h
 @@ -76,6 +76,11 @@ void populateVectorContractCustomKernelsPatterns(
@@ -158,5 +158,5 @@ index ff3c022..3e1fe42 100644
  
  } // namespace mlir::iree_compiler
 -- 
-2.56.0.385.gd3acb90ef8-goog
+2.56.0.398.g882cbad275-goog
 

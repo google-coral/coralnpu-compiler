@@ -1,17 +1,18 @@
-From 83eea62943ab437cbe2051dd0070166bd2a1a9fc Mon Sep 17 00:00:00 2001
+From b9d95639e590d55a61be89193b376c8b9a478731 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Thu, 15 Oct 2026 11:36:50 +0200
-Subject: [PATCH] [llvmcpu] limit vector tile sizes to the RISC-V register file
+Subject: [PATCH] [llvmcpu] limit RISC-V vector tile sizes to regs
 
 getRegisterSpaceBitsIfKnown returned 0 (unknown) for RISC-V, so
-limitVectorTileSizes did nothing on RISC-V. Return 32 x VLEN, where VLEN is
-the minimum VLEN that the CPU features guarantee (the largest +zvl<N>b, else
-the minimum VLEN of +v or +zve*).
+limitVectorTileSizes did nothing on RISC-V. Return 32 x VLEN, where
+VLEN is the minimum VLEN that the CPU features guarantee (the largest
++zvl<N>b, else the minimum VLEN of +v or +zve*).
 
-RISC-V matmuls use the peeling strategy (setMatmulPeelingRootConfig), which
-does not call limitVectorTileSizes. So limit the matmul vector sizes in
-getMatmulVectorSizes for RISC-V. For a small VLEN, the default {8, 32, 1} of
-integer and widening matmuls needs more than the 32 vector registers.
+RISC-V matmuls use the peeling strategy (setMatmulPeelingRootConfig),
+which does not call limitVectorTileSizes. So limit the matmul vector
+sizes in getMatmulVectorSizes for RISC-V. For a small VLEN, the default
+{8, 32, 1} of integer and widening matmuls needs more than the 32
+vector registers.
 
 The limit also changes the f32 sizes of getMatmulRISCVVectorSizes from
 7 x LMUL4 to 4 x LMUL4. 7 x LMUL4 uses all 32 vector registers for the
@@ -24,7 +25,7 @@ tests that check these sizes.
  3 files changed, 49 insertions(+), 12 deletions(-)
 
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
-index a1896ec..2931781 100644
+index a1896ecf0..293178157 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
 @@ -850,6 +850,35 @@ static void limitVectorTileSizes(Operation *inputOp,
@@ -90,7 +91,7 @@ index a1896ec..2931781 100644
    // greater than the static dim size for dims that are only unrolled, i.e., N
    // and batch dims.
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/pipeline_riscv_aggressive_distribution_tests.mlir b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/pipeline_riscv_aggressive_distribution_tests.mlir
-index 54a1a61..762ec1d 100644
+index 54a1a6187..762ec1dab 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/pipeline_riscv_aggressive_distribution_tests.mlir
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/pipeline_riscv_aggressive_distribution_tests.mlir
 @@ -24,16 +24,12 @@ builtin.module {
@@ -113,7 +114,7 @@ index 54a1a61..762ec1d 100644
  // CHECK-COUNT-4:     vector.fma
  // CHECK-COUNT-4:   vector.store
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/select_riscv_lowering_strategy.mlir b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/select_riscv_lowering_strategy.mlir
-index 1654c3b..8b96148 100644
+index 1654c3b93..8b961489b 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/select_riscv_lowering_strategy.mlir
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/select_riscv_lowering_strategy.mlir
 @@ -35,8 +35,8 @@ func.func @matmul_gemm_riscv_vl512(%lhs: tensor<384x512xf32>, %rhs: tensor<512x1
@@ -149,5 +150,5 @@ index 1654c3b..8b96148 100644
  //      CHECK-AGGRESSIVE: func.func @matmul_gemm_riscv_vl1024(
  // CHECK-AGGRESSIVE-SAME:     translation_info = #[[TRANSLATION]]
 -- 
-2.56.0.385.gd3acb90ef8-goog
+2.56.0.398.g882cbad275-goog
 

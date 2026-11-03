@@ -1,25 +1,25 @@
-From 0eaf7b54c4541ddc8c5f9fb916851feabf88b7d4 Mon Sep 17 00:00:00 2001
+From f13e0d364a5a5a8218871c00c27d478be7ac3077 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Thu, 15 Oct 2026 16:25:25 +0200
 Subject: [PATCH] [llvmcpu] peel the outer loops first
 
-LLVMCPUPeel gathers the loops around each op with a lowering config from
-inner to outer, and reverses the list to peel the outer loops first. But an
-op that comes first can gather an outer loop of a later op, for example a
-linalg.copy before a loop nest in the same loop body. Then the pass peeled
-the inner loop first, and the partial iteration of the outer loop got a copy
-of both the main loop and the remainder loop of the inner loop, which makes
-the code larger.
+LLVMCPUPeel gathers the loops around each op with a lowering config
+from inner to outer, and reverses the list to peel the outer loops
+first. But an op that comes first can gather an outer loop of a later
+op, for example a linalg.copy before a loop nest in the same loop body.
+Then the pass peeled the inner loop first, and the partial iteration of
+the outer loop got a copy of both the main loop and the remainder loop
+of the inner loop, which makes the code larger.
 
-Sort the loops by depth before peeling. For one loop nest, the order does
-not change.
+Sort the loops by depth before peeling. For one loop nest, the order
+does not change.
 ---
  .../compiler/Codegen/LLVMCPU/LLVMCPUPeel.cpp  | 19 +++++++-
  .../compiler/Codegen/LLVMCPU/test/peel.mlir   | 48 +++++++++++++++++++
  2 files changed, 66 insertions(+), 1 deletion(-)
 
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUPeel.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUPeel.cpp
-index 7a2c5eb..da2578e 100644
+index 7a2c5eb6d..da2578e7a 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUPeel.cpp
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUPeel.cpp
 @@ -6,6 +6,8 @@
@@ -58,7 +58,7 @@ index 7a2c5eb..da2578e 100644
    linalg::peelLoops(rewriter, outerToInnerLoopsToPeel);
  
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/peel.mlir b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/peel.mlir
-index b611e8a..391710a 100644
+index b611e8a54..391710aa2 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/peel.mlir
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/peel.mlir
 @@ -106,3 +106,51 @@ module {
@@ -114,5 +114,5 @@ index b611e8a..391710a 100644
 +// CHECK-NOT:       scf.for
 +// CHECK:         return
 -- 
-2.56.0.385.gd3acb90ef8-goog
+2.56.0.398.g882cbad275-goog
 

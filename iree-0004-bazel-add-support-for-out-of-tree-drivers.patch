@@ -1,19 +1,19 @@
-From 70ca43778dbd0764767d2b9e984ef7687210c4bf Mon Sep 17 00:00:00 2001
+From 2258a1918e478563dcc4b3231c9c95fc1d7b84a2 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Fri, 29 May 2026 16:11:43 +0200
-Subject: [PATCH 04/10] [Bazel] add support for out-of-tree drivers
+Subject: [PATCH] [Bazel] add support for out-of-tree drivers
 
 ---
  MODULE.bazel                             |  1 +
- build_tools/bazel/extensions.bzl         | 95 ++++++++++++++++++++++++
+ build_tools/bazel/extensions.bzl         | 92 ++++++++++++++++++++++++
  runtime/src/iree/hal/drivers/BUILD.bazel |  1 +
- 3 files changed, 97 insertions(+)
+ 3 files changed, 94 insertions(+)
 
 diff --git a/MODULE.bazel b/MODULE.bazel
-index f6be54e010..8a9e9af9d1 100644
+index cd95a0215..cd0a7e470 100644
 --- a/MODULE.bazel
 +++ b/MODULE.bazel
-@@ -102,6 +102,7 @@ use_repo(
+@@ -104,6 +104,7 @@ use_repo(
      "wasi_sdk",
      "webgpu_headers",
      "iree_external_plugins",
@@ -22,11 +22,11 @@ index f6be54e010..8a9e9af9d1 100644
  
  # The LLVM overlay imports @llvm-raw from its own llvm_repos_extension, which
 diff --git a/build_tools/bazel/extensions.bzl b/build_tools/bazel/extensions.bzl
-index 6c90cfabe8..032193db5a 100644
+index af77ee6bf..115832059 100644
 --- a/build_tools/bazel/extensions.bzl
 +++ b/build_tools/bazel/extensions.bzl
-@@ -43,6 +43,79 @@ iree_external_plugins = repository_rule(
-     attrs = { "plugins": attr.string_dict(mandatory=True) }
+@@ -43,6 +43,78 @@ iree_external_plugins = repository_rule(
+     attrs = {"plugins": attr.string_dict(mandatory = True)},
  )
  
 +def _iree_external_drivers_impl(repository_ctx):
@@ -97,15 +97,14 @@ index 6c90cfabe8..032193db5a 100644
 +iree_external_drivers = repository_rule(
 +    implementation = _iree_external_drivers_impl,
 +    attrs = {
-+        "drivers": attr.string_dict(mandatory=True), # driver_name -> JSON string
-+    }
++        "drivers": attr.string_dict(mandatory = True),  # driver_name -> JSON string
++    },
 +)
-+
 +
  def _iree_extension_impl(module_ctx):
      """Implementation of the IREE module extension."""
  
-@@ -225,15 +298,37 @@ def _iree_extension_impl(module_ctx):
+@@ -221,14 +293,34 @@ def _iree_extension_impl(module_ctx):
          plugins = external_plugins,
      )
  
@@ -122,29 +121,26 @@ index 6c90cfabe8..032193db5a 100644
 +        drivers = external_drivers,
 +    )
 +
- _location = tag_class(attrs = {"path": attr.string()})
-+
  _register_plugin = tag_class(attrs = {
-     "plugin_id": attr.string(mandatory=True),
-     "target": attr.label(mandatory=True),
+     "plugin_id": attr.string(mandatory = True),
+     "target": attr.label(mandatory = True),
  })
-+
+ 
 +_register_driver = tag_class(attrs = {
-+    "driver_name": attr.string(mandatory=True),
-+    "register_fn": attr.string(mandatory=True),
-+    "target": attr.label(mandatory=True),
++    "driver_name": attr.string(mandatory = True),
++    "register_fn": attr.string(mandatory = True),
++    "target": attr.label(mandatory = True),
 +})
 +
  iree_extension = module_extension(
      implementation = _iree_extension_impl,
      tag_classes = {
-         "location": _location,
-         "register_plugin" : _register_plugin,
-+        "register_driver" : _register_driver,
+         "register_plugin": _register_plugin,
++        "register_driver": _register_driver,
      },
  )
 diff --git a/runtime/src/iree/hal/drivers/BUILD.bazel b/runtime/src/iree/hal/drivers/BUILD.bazel
-index bd49dad3a2..ce512451e0 100644
+index bd49dad3a..ce512451e 100644
 --- a/runtime/src/iree/hal/drivers/BUILD.bazel
 +++ b/runtime/src/iree/hal/drivers/BUILD.bazel
 @@ -75,6 +75,7 @@ iree_runtime_cc_library(
@@ -156,5 +152,5 @@ index bd49dad3a2..ce512451e0 100644
                 ":amdgpu_enabled": ["//runtime/src/iree/hal/drivers/amdgpu/registration"],
                 "//conditions:default": [],
 -- 
-2.55.0
+2.56.0.398.g882cbad275-goog
 

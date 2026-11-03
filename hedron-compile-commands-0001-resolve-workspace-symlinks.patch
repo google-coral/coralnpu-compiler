@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Tue, 13 Oct 2026 00:00:00 +0200
-Subject: [PATCH] Resolve workspace symlinks in compile_commands.json
+Subject: [PATCH] [bazel] Resolve symlinks in compile_commands
 
 clangd's background index drops the symbols and references of a main
 file whose path contains a symlink: it records them under the real
@@ -16,28 +16,34 @@ other paths (Bazel caches, bazel-out/) and all include flags unchanged.
 diff --git a/refresh.template.py b/refresh.template.py
 --- a/refresh.template.py
 +++ b/refresh.template.py
-@@ -495,6 +495,20 @@
+@@ -495,6 +495,26 @@
       return True
  
  
 +def _resolve_workspace_symlinks(file_str: str):
-+    """Return the workspace-relative real path of file_str if the real file is in the workspace.
++    """Return the workspace-relative real path if inside the workspace.
 +
 +    Otherwise, return file_str unchanged.
-+    Example: external/iree_core+/a.cpp -> third_party/iree/a.cpp, if external/iree_core+ is a symlink to third_party/iree (local_path_override).
-+    Why: clangd's background index drops the symbols and references of a main file whose path contains a symlink (it records them under the real path, but saves the shard under the symlink path).
++    Example: external/iree_core+/a.cpp -> third_party/iree/a.cpp when
++    external/iree_core+ is a symlink to third_party/iree.
++    Why: clangd's background index drops symbols and references of a main
++    file whose path contains a symlink (it records them under the real
++    path, but saves the shard under the symlink path).
 +    """
-+    workspace_absolute = pathlib.Path(os.environ["BUILD_WORKSPACE_DIRECTORY"]).resolve()
-+    real_path = pathlib.Path(file_str).resolve() # Relative paths are relative to the workspace root, which is the current working directory.
++    workspace_absolute = pathlib.Path(
++        os.environ["BUILD_WORKSPACE_DIRECTORY"]).resolve()
++    # Relative paths are relative to the workspace root (cwd).
++    real_path = pathlib.Path(file_str).resolve()
 +    if not _is_relative_to(real_path, workspace_absolute):
-+        return file_str # For example, bazel-out/... or external repositories in Bazel's caches. Keep them as they are.
++        # Keep bazel-out/... and external repositories in Bazel's cache as-is.
++        return file_str
 +    return real_path.relative_to(workspace_absolute).as_posix()
 +
 +
  def _file_is_in_main_workspace_and_not_external(file_str: str):
      file_path = pathlib.PurePath(file_str)
      if file_path.is_absolute():
-@@ -1161,11 +1175,12 @@
+@@ -1161,11 +1181,14 @@
  
          for file in itertools.chain(source_files, header_files_not_already_written):
              if file == 'external/bazel_tools/src/tools/launcher/dummy.cc': continue # Suppress Bazel internal files leaking through. Hopefully will prevent issues like https://github.com/hedronvision/bazel-compile-commands-extractor/issues/77
@@ -48,7 +54,9 @@ diff --git a/refresh.template.py b/refresh.template.py
 +                'file': resolved_file,
                  # Using `arguments' instead of 'command' because it's now preferred by clangd. Heads also that  shlex.join doesn't work for windows cmd, so you'd need to use windows_list2cmdline if we ever switched back. For more, see https://github.com/hedronvision/bazel-compile-commands-extractor/issues/8#issuecomment-1090262263
 -                'arguments': compile_command_args,
-+                'arguments': compile_command_args if resolved_file == file else [resolved_file if arg == file else arg for arg in compile_command_args],
++                'arguments': (compile_command_args if resolved_file == file
++                              else [resolved_file if arg == file else arg
++                                    for arg in compile_command_args]),
                  # Bazel gotcha warning: If you were tempted to use `bazel info execution_root` as the build working directory for compile_commands...search ImplementationReadme.md to learn why that breaks.
                  'directory': os.environ["BUILD_WORKSPACE_DIRECTORY"],
              }

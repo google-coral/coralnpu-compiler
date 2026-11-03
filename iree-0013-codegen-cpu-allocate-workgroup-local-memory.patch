@@ -1,39 +1,39 @@
-From 987a9874c880ad68d1a6c562fecc86071af521e7 Mon Sep 17 00:00:00 2001
+From 6aaedd7b8a26c5b93395f8247eb7eca548ec8997 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Thu, 15 Oct 2026 14:03:20 +0200
-Subject: [PATCH] [codegen] allocate workgroup local memory with memref.alloc
- on CPU
+Subject: [PATCH] [codegen] use memref.alloc for CPU workgroup mem
 
 cpuAllocationFn always created a memref.alloca, also for a buffer in
-workgroup local memory. LLVMCPUAssignWorkgroupLocalMemoryPass rejects such
-an alloca: it needs a memref.alloc with a static size in the entry block of
-the function. So no path led from tensors (e.g. a
-bufferization.alloc_tensor in workgroup local memory) to workgroup local
-memory.
+workgroup local memory. LLVMCPUAssignWorkgroupLocalMemoryPass rejects
+such an alloca: it needs a memref.alloc with a static size in the entry
+block of the function. So no path led from tensors (e.g. a
+bufferization.alloc_tensor in workgroup local memory) to workgroup
+local memory.
 
-For workgroup local memory, hoist a memref.alloc with a static upper bound to
-the entry block (hoistOneStaticallyBoundAllocation), and emit an error if the
-size has no static upper bound. The other allocations do not change. This is
-the same idea as gpuRequireMemSpaceAllocationFn, which picks alloca or alloc
-from the memory space.
+For workgroup local memory, hoist a memref.alloc with a static upper
+bound to the entry block (hoistOneStaticallyBoundAllocation), and emit
+an error if the size has no static upper bound. The other allocations
+do not change. This is the same idea as gpuRequireMemSpaceAllocationFn,
+which picks alloca or alloc from the memory space.
 
-For a dynamic size, hoistOneStaticallyBoundAllocation<memref::AllocOp> moved
-the insertion point of the builder to the function terminator to create the
-dealloc, and did not restore it. Bufferization creates the copy of an
-out-of-place buffer at this insertion point, so the copy went to the end of
-the function and did not verify. The helper now keeps the insertion point of
-the caller, as it already does for a static size.
+For a dynamic size, hoistOneStaticallyBoundAllocation<memref::AllocOp>
+moved the insertion point of the builder to the function terminator to
+create the dealloc, and did not restore it. Bufferization creates the
+copy of an out-of-place buffer at this insertion point, so the copy
+went to the end of the function and did not verify. The helper now
+keeps the insertion point of the caller, as it already does for a
+static size.
 ---
  .../compiler/Codegen/Common/CPU/Passes.cpp    |  17 +++
  .../compiler/Codegen/LLVMCPU/test/BUILD.bazel |   1 +
  .../Codegen/LLVMCPU/test/CMakeLists.txt       |   1 +
  .../bufferize_workgroup_local_memory.mlir     | 141 ++++++++++++++++++
- .../Codegen/Transforms/Transforms.cpp         |   7 +-
- 5 files changed, 165 insertions(+), 2 deletions(-)
+ .../Codegen/Transforms/Transforms.cpp         |   9 +-
+ 5 files changed, 167 insertions(+), 2 deletions(-)
  create mode 100644 compiler/src/iree/compiler/Codegen/LLVMCPU/test/bufferize_workgroup_local_memory.mlir
 
 diff --git a/compiler/src/iree/compiler/Codegen/Common/CPU/Passes.cpp b/compiler/src/iree/compiler/Codegen/Common/CPU/Passes.cpp
-index 8bd7fa5..5e08888 100644
+index 8bd7fa528..5e088885f 100644
 --- a/compiler/src/iree/compiler/Codegen/Common/CPU/Passes.cpp
 +++ b/compiler/src/iree/compiler/Codegen/Common/CPU/Passes.cpp
 @@ -6,6 +6,7 @@
@@ -68,7 +68,7 @@ index 8bd7fa5..5e08888 100644
      std::optional<Value> hoistedAllocation =
          hoistOneStaticallyBoundAllocation<memref::AllocaOp>(
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/BUILD.bazel b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/BUILD.bazel
-index 837115d..cf3f360 100644
+index 837115daa..cf3f360ed 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/BUILD.bazel
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/BUILD.bazel
 @@ -26,6 +26,7 @@ iree_lit_test_suite(
@@ -80,7 +80,7 @@ index 837115d..cf3f360 100644
              "check_ir_before_llvm_conversion_not_fail_unbound.mlir",
              "convert_to_llvm.mlir",
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/CMakeLists.txt b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/CMakeLists.txt
-index 8d75ee9..efa62d3 100644
+index 8d75ee994..efa62d3ee 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/CMakeLists.txt
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/CMakeLists.txt
 @@ -21,6 +21,7 @@ iree_lit_test_suite(
@@ -93,7 +93,7 @@ index 8d75ee9..efa62d3 100644
      "convert_to_llvm.mlir"
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/test/bufferize_workgroup_local_memory.mlir b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/bufferize_workgroup_local_memory.mlir
 new file mode 100644
-index 0000000..39d4494
+index 000000000..39d449462
 --- /dev/null
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/test/bufferize_workgroup_local_memory.mlir
 @@ -0,0 +1,141 @@
@@ -239,7 +239,7 @@ index 0000000..39d4494
 +  return
 +}
 diff --git a/compiler/src/iree/compiler/Codegen/Transforms/Transforms.cpp b/compiler/src/iree/compiler/Codegen/Transforms/Transforms.cpp
-index cbec03f..ab0f0e0 100644
+index a1a57def9..24796be4b 100644
 --- a/compiler/src/iree/compiler/Codegen/Transforms/Transforms.cpp
 +++ b/compiler/src/iree/compiler/Codegen/Transforms/Transforms.cpp
 @@ -148,8 +148,10 @@ std::optional<Value> hoistOneStaticallyBoundAllocation(
@@ -253,7 +253,7 @@ index cbec03f..ab0f0e0 100644
 +      !isa_and_nonnull<IREE::Codegen::WorkgroupLocalMemoryAttr>(
 +          allocLikeType.getMemorySpace())) {
      auto targetAttr = IREE::HAL::ExecutableTargetAttr::lookup(funcOp);
-     vscaleRange = getDefaultVscaleRange(targetAttr);
+     vscaleRange = getVscaleRange(targetAttr);
    }
 @@ -244,6 +246,9 @@ std::optional<Value> hoistOneStaticallyBoundAllocation(
    }
@@ -266,5 +266,5 @@ index cbec03f..ab0f0e0 100644
      memref::DeallocOp::create(builder, loc, allocation);
    }
 -- 
-2.56.0.212.g129ede20d9-goog
+2.56.0.398.g882cbad275-goog
 

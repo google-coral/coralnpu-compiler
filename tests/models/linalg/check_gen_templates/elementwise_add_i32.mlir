@@ -5,6 +5,6 @@ func.func @main(%arg0: tensor<?x?xi32>, %arg1: tensor<?x?xi32>) -> tensor<?x?xi3
   %d1 = tensor.dim %arg0, %c1_idx : tensor<?x?xi32>
 
   %empty = tensor.empty(%d0, %d1) : tensor<?x?xi32>
-  %0 = linalg.elementwise kind=#linalg.elementwise_kind<add> ins(%arg0, %arg1 : tensor<?x?xi32>, tensor<?x?xi32>) outs(%empty : tensor<?x?xi32>) -> tensor<?x?xi32>
+  %0 = linalg.elementwise <add> ins(%arg0, %arg1 : tensor<?x?xi32>, tensor<?x?xi32>) outs(%empty : tensor<?x?xi32>) -> tensor<?x?xi32>
   return %0 : tensor<?x?xi32>
 }

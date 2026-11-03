@@ -1,19 +1,19 @@
-From 0c34a246694d003876d3444e74aa7ee8ea07d0b9 Mon Sep 17 00:00:00 2001
+From 7a07cc4453e011db8a77977cab6ef665ccd0e5bf Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Wed, 18 Mar 2026 09:41:30 +0100
-Subject: [PATCH 02/10] [Bazel] add support for out-of-tree plugins
+Subject: [PATCH] [Bazel] add support for out-of-tree plugins
 
 ---
- MODULE.bazel                                  | 11 +++--
- build_tools/bazel/extensions.bzl              | 63 +++++++++++++++++--
- .../compiler/PluginAPI/Config/BUILD.bazel     | 25 +++--------
- 3 files changed, 73 insertions(+), 27 deletions(-)
+ MODULE.bazel                                  |  5 +-
+ build_tools/bazel/extensions.bzl              | 49 +++++++++++++++++++
+ .../compiler/PluginAPI/Config/BUILD.bazel     | 22 +++++++--
+ 3 files changed, 71 insertions(+), 5 deletions(-)
 
 diff --git a/MODULE.bazel b/MODULE.bazel
-index b4166d4767..f6be54e010 100644
+index 029a7abe5..cd95a0215 100644
 --- a/MODULE.bazel
 +++ b/MODULE.bazel
-@@ -101,6 +101,7 @@ use_repo(
+@@ -103,6 +103,7 @@ use_repo(
      "vulkan_headers",
      "wasi_sdk",
      "webgpu_headers",
@@ -21,7 +21,7 @@ index b4166d4767..f6be54e010 100644
  )
  
  # The LLVM overlay imports @llvm-raw from its own llvm_repos_extension, which
-@@ -116,9 +117,9 @@ llvm_configure(
+@@ -118,9 +119,9 @@ llvm_configure(
      name = "llvm-project",
      targets = [
          "AArch64",
@@ -34,10 +34,10 @@ index b4166d4767..f6be54e010 100644
          "SPIRV",
          "WebAssembly",
 diff --git a/build_tools/bazel/extensions.bzl b/build_tools/bazel/extensions.bzl
-index f535b9d50e..6c90cfabe8 100644
+index 06e33403e..af77ee6bf 100644
 --- a/build_tools/bazel/extensions.bzl
 +++ b/build_tools/bazel/extensions.bzl
-@@ -12,14 +12,40 @@ load("//build_tools/bazel:amdgpu_device_toolchain_repo.bzl", "amdgpu_device_tool
+@@ -12,6 +12,37 @@ load("//build_tools/bazel:amdgpu_device_toolchain_repo.bzl", "amdgpu_device_tool
  load("//build_tools/bazel:workspace.bzl", "cuda_auto_configure")
  load("//build_tools/wasm:wasi_sdk_repo.bzl", "wasi_sdk_repo")
  
@@ -69,36 +69,13 @@ index f535b9d50e..6c90cfabe8 100644
 +# when they change.
 +iree_external_plugins = repository_rule(
 +    implementation = _iree_external_plugins_impl,
-+    attrs = { "plugins": attr.string_dict(mandatory=True) }
++    attrs = {"plugins": attr.string_dict(mandatory = True)},
 +)
 +
  def _iree_extension_impl(module_ctx):
      """Implementation of the IREE module extension."""
  
--    iree_root = "."
--    for mod in module_ctx.modules:
--        for location in mod.tags.location:
--            iree_root = location.path
--
-     iree_is_root = any([m.is_root and m.name == "iree_core" for m in module_ctx.modules])
- 
-     # Create MLIR-adjacent source repositories only when IREE is the root
-@@ -28,6 +54,14 @@ def _iree_extension_impl(module_ctx):
-             path = "third_party/llvm-project",
-         )
- 
-+    maybe_iree_root = module_ctx.path(Label("//:MODULE.bazel")).dirname
-+    iree_root = str(maybe_iree_root) if maybe_iree_root else "."
-+
-+    # iree_root = "."
-+    # for mod in module_ctx.modules:
-+    #     if mod.tags.location:
-+    #         iree_root = mod.tags.location[-1].path
-+
-     # Googletest
-     local_repository(
-         name = "com_google_googletest",
-@@ -185,8 +219,25 @@ def _iree_extension_impl(module_ctx):
+@@ -180,6 +211,24 @@ def _iree_extension_impl(module_ctx):
          name = "wasi_sdk",
      )
  
@@ -112,24 +89,22 @@ index f535b9d50e..6c90cfabe8 100644
 +        plugins = external_plugins,
 +    )
 +
- _location = tag_class(attrs = {"path": attr.string()})
 +_register_plugin = tag_class(attrs = {
-+    "plugin_id": attr.string(mandatory=True),
-+    "target": attr.label(mandatory=True),
++    "plugin_id": attr.string(mandatory = True),
++    "target": attr.label(mandatory = True),
 +})
++
  iree_extension = module_extension(
      implementation = _iree_extension_impl,
--    tag_classes = {"location": _location},
 +    tag_classes = {
-+        "location": _location,
-+        "register_plugin" : _register_plugin,
++        "register_plugin": _register_plugin,
 +    },
  )
 diff --git a/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel b/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel
-index 92f83de0ea..e158b42e9a 100644
+index d9bfae7a4..093a6c1d7 100644
 --- a/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel
 +++ b/compiler/src/iree/compiler/PluginAPI/Config/BUILD.bazel
-@@ -20,17 +20,33 @@ package(
+@@ -20,9 +20,19 @@ package(
  #   bazel build --iree_compiler_plugins=input_stablehlo,hal_target_llvm_cpu //tools:iree-compile
  genrule(
      name = "StaticLinkedPlugins_inc__generate",
@@ -151,21 +126,19 @@ index 92f83de0ea..e158b42e9a 100644
  )
  
  iree_compiler_cc_library(
-     name = "Defs",
- )
- 
+@@ -32,5 +42,11 @@ iree_compiler_cc_library(
  iree_compiler_cc_library(
      name = "StaticLinkedPlugins",
      hdrs = ["StaticLinkedPlugins.inc"],
 -    deps = ["//compiler/plugins:plugins_deps"],
 +    deps = [
-+        "//compiler/plugins/target/LLVMCPU",
-+        "//compiler/plugins/target/Local",
 +        "//compiler/plugins/input/StableHLO:registration",
 +        "//compiler/plugins/input/TOSA:registration",
++        "//compiler/plugins/target/LLVMCPU",
++        "//compiler/plugins/target/Local",
 +        "@iree_external_plugins//:ExternalPlugins",
 +    ],
  )
 -- 
-2.55.0
+2.56.0.398.g882cbad275-goog
 

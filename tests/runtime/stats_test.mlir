@@ -8,7 +8,7 @@ module {
     %0 = util.optimization_barrier %lhs : tensor<8xi32>
     %1 = util.optimization_barrier %rhs : tensor<8xi32>
     %2 = tensor.empty() : tensor<8xi32>
-    %3 = linalg.add ins(%0, %1 : tensor<8xi32>, tensor<8xi32>) outs(%2 : tensor<8xi32>) -> tensor<8xi32>
+    %3 = linalg.elementwise <add> ins(%0, %1 : tensor<8xi32>, tensor<8xi32>) outs(%2 : tensor<8xi32>) -> tensor<8xi32>
     %4 = util.optimization_barrier %expected : tensor<8xi32>
     "check.expect_eq"(%3, %4) : (tensor<8xi32>, tensor<8xi32>) -> ()
     return
@@ -21,7 +21,7 @@ module {
     %0 = util.optimization_barrier %lhs : tensor<8xi32>
     %1 = util.optimization_barrier %rhs : tensor<8xi32>
     %2 = tensor.empty() : tensor<8xi32>
-    %3 = linalg.mul ins(%0, %1 : tensor<8xi32>, tensor<8xi32>) outs(%2 : tensor<8xi32>) -> tensor<8xi32>
+    %3 = linalg.elementwise <mul> ins(%0, %1 : tensor<8xi32>, tensor<8xi32>) outs(%2 : tensor<8xi32>) -> tensor<8xi32>
     %4 = util.optimization_barrier %expected : tensor<8xi32>
     "check.expect_eq"(%3, %4) : (tensor<8xi32>, tensor<8xi32>) -> ()
     return

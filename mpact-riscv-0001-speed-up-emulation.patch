@@ -74,7 +74,7 @@ diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
  void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
    if (!m_result.ok()) {
-@@ -1135,7 +1165,79 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+@@ -1135,7 +1165,81 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
        fp_status.emplace(fp_state->host_fp_interface());
      }
  
@@ -145,7 +145,9 @@ diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
 +          } else {
 +            int32_t acc = 0;
 +            if (offset >= 0) std::memcpy(&acc, &tile[offset], sizeof(acc));
-+            for (int kk = 0; kk < tile_k; kk++) acc += a_i[kk][mm] * b_i[kk][nn];
++            for (int kk = 0; kk < tile_k; kk++) {
++              acc += a_i[kk][mm] * b_i[kk][nn];
++            }
 +            if (offset >= 0) std::memcpy(&tile[offset], &acc, sizeof(acc));
 +          }
 +        }
@@ -588,7 +590,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    // Get the vector mask.
    auto* mask_op = static_cast<RV32VectorSourceOperand*>(inst->Source(2));
    bool vm_unmasked_bit = false;
-@@ -130,6 +142,51 @@ void RiscVMaskBinaryVectorMaskOp(RiscVVectorState* rv_vector,
+@@ -130,6 +142,52 @@ void RiscVMaskBinaryVectorMaskOp(RiscVVectorState* rv_vector,
    }
    const bool mask_used = !vm_unmasked_bit;
    auto mask_span = mask_op->GetRegister(0)->data_buffer()->Get<uint8_t>();
@@ -596,7 +598,8 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
 +    if (vector_index == 0 && num_elements > 0 && dest_op->latency() == 0 &&
 +        (!mask_used || IsAllUnmasked(mask_span, num_elements))) {
 +      auto* vs2_op = static_cast<RV32VectorSourceOperand*>(inst->Source(0));
-+      int elems_per_vec = rv_vector->vector_register_byte_length() / sizeof(Vs2);
++      int elems_per_vec =
++          rv_vector->vector_register_byte_length() / sizeof(Vs2);
 +      int max_regs = (num_elements + elems_per_vec - 1) / elems_per_vec;
 +      Vs1 vs1_scalar{};
 +      RV32VectorSourceOperand* vs1_op = nullptr;

@@ -5,7 +5,7 @@ module {
     %0 = util.optimization_barrier %cst_0 : tensor<120x256xf32>
     %1 = util.optimization_barrier %cst_0 : tensor<120x256xf32>
     %2 = tensor.empty() : tensor<120x256xf32>
-    %3 = linalg.elementwise kind=#linalg.elementwise_kind<add> ins(%0, %1 : tensor<120x256xf32>, tensor<120x256xf32>) outs(%2 : tensor<120x256xf32>) -> tensor<120x256xf32>
+    %3 = linalg.elementwise <add> ins(%0, %1 : tensor<120x256xf32>, tensor<120x256xf32>) outs(%2 : tensor<120x256xf32>) -> tensor<120x256xf32>
     %4 = util.optimization_barrier %cst : tensor<120x256xf32>
     "check.expect_almost_eq"(%3, %4) {rtol = 9.99999997E-7 : f32} : (tensor<120x256xf32>, tensor<120x256xf32>) -> ()
     return

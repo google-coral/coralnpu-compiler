@@ -47,7 +47,8 @@ Value createF32Accumulator(OpBuilder &builder, Location loc, Value init,
     src = src.getDefiningOp()->getOperand(0);
   if (auto fillOp = src.getDefiningOp<linalg::FillOp>()) {
     Value widened =
-        arith::ExtFOp::create(builder, loc, f32Type, fillOp.getInputs()[0]);
+        arith::ExtFOp::create(builder, loc, f32Type, fillOp.getInputs()[0],
+                              arith::FastMathFlagsAttr{});
     Value empty = tensor::EmptyOp::create(builder, loc, sizes, f32Type);
     return linalg::FillOp::create(builder, loc, widened, empty).getResult(0);
   }
@@ -133,8 +134,9 @@ void promoteBF16Accumulator(linalg::LinalgOp linalgOp, IRRewriter &rewriter,
       for (auto [oldArg, newArg] :
            llvm::zip_equal(origBody->getArguments(), body->getArguments()))
         mapping.map(oldArg, newArg.getType().isBF16()
-                                ? Value(arith::ExtFOp::create(rewriter, loc,
-                                                              f32Type, newArg))
+                                ? Value(arith::ExtFOp::create(
+                                      rewriter, loc, f32Type, newArg,
+                                      arith::FastMathFlagsAttr{}))
                                 : newArg);
       for (Operation &op : *origBody)
         for (Value result : rewriter.clone(op, mapping)->getResults())

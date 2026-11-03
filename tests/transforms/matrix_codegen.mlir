@@ -1038,8 +1038,8 @@ module {
   }
 
   // Partial N tile (16x12) with an N x K RHS: B loads via vlse32.v, the drain
-  // writes 12 columns, and iree-v3.12.0-0006 leaves the contraction to this
-  // pass (GATE).
+  // writes 12 columns, and iree-0006 leaves the contraction to this pass
+  // (GATE).
   // CHECK-LABEL: hal.executable private @matmul_partial_n_transposed_rhs {
   hal.executable private @matmul_partial_n_transposed_rhs {
     hal.executable.variant public @coralnpu_elf target(#target) {

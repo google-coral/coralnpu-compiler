@@ -1,24 +1,26 @@
-From 499fbdf4195873734a138f2a4157cb11355d0569 Mon Sep 17 00:00:00 2001
+From 25323e7c756ac6bdc2817269f986d4fa82551070 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Thu, 15 Oct 2026 11:36:50 +0200
-Subject: [PATCH] [llvmcpu] give batch loops of matmuls the vector size 1
+Subject: [PATCH] [llvmcpu] give matmul batch loops vector size 1
 
-getMatmulVectorSizes put the {M, N, K} sizes on the loops by position. So an
-op with a batch loop and fewer than 3 other loops (e.g. linalg.batch_matvec
-and linalg.batch_vecmat) got the M size on its batch loop. Give the leading
-batch loops (from linalg::inferContractionDims) the size 1, and put the
-{M, N, K} sizes on the other loops by position. Thus batch_matvec gets the
-same sizes as matvec for each batch.
+getMatmulVectorSizes put the {M, N, K} sizes on the loops by position.
+So an op with a batch loop and fewer than 3 other loops (e.g.
+linalg.batch_matvec and linalg.batch_vecmat) got the M size on its
+batch loop. Give the leading batch loops (from
+linalg::inferContractionDims) the size 1, and put the {M, N, K} sizes
+on the other loops by position. Thus batch_matvec gets the same sizes
+as matvec for each batch.
 
-Similarly, use getNumLeadingBatchLoops in setContractionRootConfig instead of
-checking for linalg.batch_matmul so distribution tile sizes and vector size
-hints treat leading batch loops of all contractions uniformly.
+Similarly, use getNumLeadingBatchLoops in setContractionRootConfig
+instead of checking for linalg.batch_matmul so distribution tile sizes
+and vector size hints treat leading batch loops of all contractions
+uniformly.
 ---
- .../Codegen/LLVMCPU/KernelDispatch.cpp        | 59 +++++++++++++------
+ .../Codegen/LLVMCPU/KernelDispatch.cpp        | 59 ++++++++++++-------
  1 file changed, 38 insertions(+), 21 deletions(-)
 
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
-index 2931781..8b0b94e 100644
+index 293178157..8b0b94e36 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp
 @@ -1517,7 +1517,26 @@ getMatmulAArch64SMEVectorSizes(linalg::LinalgOp op,
@@ -110,4 +112,5 @@ index 2931781..8b0b94e 100644
          if (distConfig.maxTileSizes[loopNum] <=
              distConfig.minTileSizes[loopNum]) {
 -- 
-2.56.0.385.gd3acb90ef8-goog
+2.56.0.398.g882cbad275-goog
+

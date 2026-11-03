@@ -19,7 +19,7 @@ cc_binary(
     ],
     deps = [
         "@iree_core//compiler/bindings/c:headers",
-        "@iree_core//compiler/src/iree/compiler/API:Impl",
+        "@iree_core//compiler/src/iree/compiler/API:StaticImpl",
         "@iree_core//compiler/src/iree/compiler/ConstEval:Runtime",
         "@iree_core//compiler/src/iree/compiler/Tools:init_passes_and_dialects",
         "@llvm-project//llvm:Support",

@@ -1,4 +1,4 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 0d98686eb1fe61dd480555634eff89f415fa4257 Mon Sep 17 00:00:00 2001
 From: Lun Dong <lundong@google.com>
 Date: Thu, 17 Sep 2026 14:30:00 -0700
 Subject: [PATCH] [RISCV] Add Zvt matrix extension support
@@ -21,22 +21,24 @@ Add:
 - Knowledge of the Zvt pseudos in the VSETVLI insertion and analysis
   passes, so the SEW/LMUL they require is taken into account.
 ---
- llvm/include/llvm/IR/IntrinsicsRISCV.td            |   1 +
- llvm/include/llvm/IR/IntrinsicsRISCVZvt.td         |  87 +++++
- llvm/lib/Target/RISCV/RISCVFeatures.td             |  68 ++++
- llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp        |  55 +++
- llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp       |  49 ++-
- llvm/lib/Target/RISCV/RISCVInstrInfo.td            |   4 +
- llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td    |   2 +
- llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td         | 419 +++++++++++++++++++++
- llvm/lib/Target/RISCV/RISCVVSETVLIInfoAnalysis.cpp | 165 +++++++++
+ llvm/include/llvm/IR/IntrinsicsRISCV.td       |   1 +
+ llvm/include/llvm/IR/IntrinsicsRISCVZvt.td    |  87 ++++
+ llvm/lib/Target/RISCV/RISCVFeatures.td        |  68 +++
+ llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp   |  55 +++
+ llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp  |  49 +-
+ llvm/lib/Target/RISCV/RISCVInstrInfo.td       |   4 +
+ .../Target/RISCV/RISCVInstrInfoVPseudos.td    |   2 +
+ llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td    | 419 ++++++++++++++++++
+ .../Target/RISCV/RISCVVSETVLIInfoAnalysis.cpp | 165 +++++++
  9 files changed, 848 insertions(+), 2 deletions(-)
+ create mode 100644 llvm/include/llvm/IR/IntrinsicsRISCVZvt.td
+ create mode 100644 llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td
 
 diff --git a/llvm/include/llvm/IR/IntrinsicsRISCV.td b/llvm/include/llvm/IR/IntrinsicsRISCV.td
-index e4ec9e9beb5..3bf9cf47aa1 100644
+index 284c28f9354..3a242507973 100644
 --- a/llvm/include/llvm/IR/IntrinsicsRISCV.td
 +++ b/llvm/include/llvm/IR/IntrinsicsRISCV.td
-@@ -2258,3 +2258,4 @@ include "llvm/IR/IntrinsicsRISCVXsf.td"
+@@ -2407,3 +2407,4 @@ include "llvm/IR/IntrinsicsRISCVXsf.td"
  include "llvm/IR/IntrinsicsRISCVXCV.td"
  include "llvm/IR/IntrinsicsRISCVXAndes.td"
  include "llvm/IR/IntrinsicsRISCVXMIPS.td"
@@ -135,10 +137,10 @@ index 00000000000..c0a58794e96
 +
 +} // TargetPrefix = "riscv"
 diff --git a/llvm/lib/Target/RISCV/RISCVFeatures.td b/llvm/lib/Target/RISCV/RISCVFeatures.td
-index 1f396b61962..0b107068143 100644
+index 786d77e0fe6..813de37b3d6 100644
 --- a/llvm/lib/Target/RISCV/RISCVFeatures.td
 +++ b/llvm/lib/Target/RISCV/RISCVFeatures.td
-@@ -785,6 +785,74 @@ def HasStdExtZvfbfminOrZvfofp8min
+@@ -786,6 +786,74 @@ def HasStdExtZvfbfminOrZvfofp8min
                           "'Zvfbfmin' (Vector BF16 Converts) or "
                           "'Zvfofp8min' (Vector OFP8 Converts)">;
  
@@ -214,10 +216,10 @@ index 1f396b61962..0b107068143 100644
  
  def FeatureStdExtZvkb
 diff --git a/llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp b/llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp
-index d263d032083..89cee578325 100644
+index 5f695d6b74c..993a69c40f0 100644
 --- a/llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp
 +++ b/llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp
-@@ -2959,6 +2959,61 @@ void RISCVDAGToDAGISel::Select(SDNode *Node) {
+@@ -3048,6 +3048,61 @@ void RISCVDAGToDAGISel::Select(SDNode *Node) {
        ReplaceNode(Node, NewNode);
        return;
      }
@@ -280,10 +282,10 @@ index d263d032083..89cee578325 100644
      break;
    }
 diff --git a/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp b/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
-index 2333ede15f5..e4a28bd23c9 100644
+index 19c6465c2ac..3164768953b 100644
 --- a/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
 +++ b/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
-@@ -298,6 +298,51 @@ static VSETVLIInfo adjustIncoming(const VSETVLIInfo &PrevInfo,
+@@ -292,6 +292,51 @@ static VSETVLIInfo adjustIncoming(const VSETVLIInfo &PrevInfo,
    return Info;
  }
  
@@ -335,7 +337,7 @@ index 2333ede15f5..e4a28bd23c9 100644
  // Given an incoming state reaching MI, minimally modifies that state so that it
  // is compatible with MI. The resulting state is guaranteed to be semantically
  // legal for MI, but may not be the state requested by MI.
-@@ -316,7 +361,7 @@ void RISCVInsertVSETVLI::transferBefore(VSETVLIInfo &Info,
+@@ -310,7 +355,7 @@ void RISCVInsertVSETVLI::transferBefore(VSETVLIInfo &Info,
      return;
    }
  
@@ -344,7 +346,7 @@ index 2333ede15f5..e4a28bd23c9 100644
      return;
  
    DemandedFields Demanded = getDemanded(MI, ST);
-@@ -559,7 +604,7 @@ void RISCVInsertVSETVLI::emitVSETVLIs(MachineBasicBlock &MBB) {
+@@ -563,7 +608,7 @@ void RISCVInsertVSETVLI::emitVSETVLIs(MachineBasicBlock &MBB) {
      }
  
      uint64_t TSFlags = MI.getDesc().TSFlags;
@@ -354,10 +356,10 @@ index 2333ede15f5..e4a28bd23c9 100644
          // If this is the first implicit state change, and the state change
          // requested can be proven to produce the same register contents, we
 diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfo.td b/llvm/lib/Target/RISCV/RISCVInstrInfo.td
-index a9dafff2486..98581f970ae 100644
+index 56a5dc223d6..42bcf347477 100644
 --- a/llvm/lib/Target/RISCV/RISCVInstrInfo.td
 +++ b/llvm/lib/Target/RISCV/RISCVInstrInfo.td
-@@ -2455,6 +2455,10 @@ include "RISCVInstrInfoZvzip.td"
+@@ -2507,6 +2507,10 @@ include "RISCVInstrInfoZvzip.td"
  include "RISCVInstrInfoZvvm.td"
  include "RISCVInstrInfoZvbdota.td"
  
@@ -369,7 +371,7 @@ index a9dafff2486..98581f970ae 100644
  include "RISCVInstrInfoP.td"
  
 diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td b/llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td
-index 86ea79581e7..bb737c618d0 100644
+index c6241f582de..eacd9078792 100644
 --- a/llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td
 +++ b/llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td
 @@ -144,6 +144,8 @@ class PseudoToVInst<string PseudoInst> {
@@ -1003,5 +1005,5 @@ index d86ac529679..f9424d8dba4 100644
  
    bool TailAgnostic = true;
 -- 
-2.55.0.1082.g2b9226bbc0-goog
+2.56.0.398.g882cbad275-goog
 

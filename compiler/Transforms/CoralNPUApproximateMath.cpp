@@ -92,7 +92,8 @@ struct F32ApproximationBuilder {
   /// Returns `x` extended to f32 (unchanged for an f32 result).
   Value widen(Value x) {
     if (resultType == f32Type) return x;
-    return arith::ExtFOp::create(rewriter, loc, f32Type, x);
+    return arith::ExtFOp::create(rewriter, loc, f32Type, x,
+                                 arith::FastMathFlagsAttr{});
   }
   /// Returns the f32 `x` truncated to the result type (unchanged for an f32
   /// result).

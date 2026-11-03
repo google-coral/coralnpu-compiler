@@ -1,4 +1,4 @@
-From b1cf9c926ef569689db887d2c0e5b78db932b8c6 Mon Sep 17 00:00:00 2001
+From 06ae58906248c783d55385ef475360dee99defa4 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Thu, 13 Aug 2026 16:07:26 +0200
 Subject: [PATCH] CMake: allow custom bundled llvm-project path
@@ -9,7 +9,7 @@ Subject: [PATCH] CMake: allow custom bundled llvm-project path
  2 files changed, 29 insertions(+), 8 deletions(-)
 
 diff --git a/build_tools/cmake/iree_llvm.cmake b/build_tools/cmake/iree_llvm.cmake
-index 4d9377ad5f..17b123f75e 100644
+index 7a86a5d4e..08079b092 100644
 --- a/build_tools/cmake/iree_llvm.cmake
 +++ b/build_tools/cmake/iree_llvm.cmake
 @@ -34,9 +34,13 @@ macro(iree_llvm_configure_bundled)
@@ -54,7 +54,7 @@ index 4d9377ad5f..17b123f75e 100644
  
    set(IREE_LLVM_LINK_BINARY "$<TARGET_FILE:${IREE_LLVM_LINK_TARGET}>")
    set(IREE_LLD_BINARY "$<TARGET_FILE:${IREE_LLD_TARGET}>")
-@@ -115,7 +119,10 @@ macro(iree_llvm_configure_installed)
+@@ -116,7 +120,10 @@ macro(iree_llvm_configure_installed)
    # Note that LLVM style lit test helpers use LLVM_EXTERNAL_LIT, if provided,
    # so this is consistent between the projects.
    if(NOT LLVM_EXTERNAL_LIT)
@@ -66,7 +66,7 @@ index 4d9377ad5f..17b123f75e 100644
    endif()
  
    set(IREE_LLVM_LINK_BINARY "$<TARGET_FILE:llvm-link>")
-@@ -266,6 +273,16 @@ macro(iree_llvm_set_bundled_cmake_options)
+@@ -268,6 +275,16 @@ macro(iree_llvm_set_bundled_cmake_options)
    list(REMOVE_DUPLICATES LLVM_ENABLE_PROJECTS)
    list(REMOVE_DUPLICATES LLVM_TARGETS_TO_BUILD)
  
@@ -84,7 +84,7 @@ index 4d9377ad5f..17b123f75e 100644
    message(VERBOSE "Building LLVM Projects: ${LLVM_ENABLE_PROJECTS}")
  endmacro()
 diff --git a/compiler/bindings/python/CMakeLists.txt b/compiler/bindings/python/CMakeLists.txt
-index 0b69f1967e..eb23e366b1 100644
+index 5129153f3..7b70d4a61 100644
 --- a/compiler/bindings/python/CMakeLists.txt
 +++ b/compiler/bindings/python/CMakeLists.txt
 @@ -29,10 +29,14 @@ set(_PYTHON_INSTALL_PREFIX "python_packages/iree_compiler")
@@ -104,5 +104,5 @@ index 0b69f1967e..eb23e366b1 100644
    "${IREE_SOURCE_DIR}/third_party/stablehlo"
  )
 -- 
-2.55.0.691.gc56d675ccc-goog
+2.56.0.398.g882cbad275-goog
 

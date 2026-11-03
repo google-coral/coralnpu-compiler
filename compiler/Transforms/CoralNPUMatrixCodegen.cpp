@@ -1053,7 +1053,8 @@ struct CoralNPUMatrixCodegenPass
       if (lhsElTy != rhsElTy) {
         auto wideTy = VectorType::get({m, 1}, rhsElTy);
         lhs = isa<FloatType>(rhsElTy)
-                  ? Value(arith::ExtFOp::create(builder, loc, wideTy, lhs))
+                  ? Value(arith::ExtFOp::create(builder, loc, wideTy, lhs,
+                                                arith::FastMathFlagsAttr{}))
                   : Value(arith::ExtSIOp::create(builder, loc, wideTy, lhs));
       }
       Value rhs2D = vector::ShapeCastOp::create(

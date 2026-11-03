@@ -4,7 +4,7 @@ module {
     %0 = util.optimization_barrier %cst : tensor<120x256xi32>
     %1 = util.optimization_barrier %cst : tensor<120x256xi32>
     %2 = tensor.empty() : tensor<120x256xi32>
-    %3 = linalg.max ins(%0, %1 : tensor<120x256xi32>, tensor<120x256xi32>) outs(%2 : tensor<120x256xi32>) -> tensor<120x256xi32>
+    %3 = linalg.elementwise <max_signed> ins(%0, %1 : tensor<120x256xi32>, tensor<120x256xi32>) outs(%2 : tensor<120x256xi32>) -> tensor<120x256xi32>
     %4 = util.optimization_barrier %cst : tensor<120x256xi32>
     "check.expect_eq"(%3, %4) : (tensor<120x256xi32>, tensor<120x256xi32>) -> ()
     return

@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 92a3f7187db311fbcd4be26fbe6144c2887b426e Mon Sep 17 00:00:00 2001
 From: Lun Dong <lundong@google.com>
 Date: Wed, 21 Oct 2026 09:55:00 -0700
-Subject: [PATCH] [mlir][tosa] Clamp out-of-range shifts in tosa.arithmetic_right_shift
+Subject: [PATCH] [mlir][tosa] Clamp tosa.arithmetic_right_shift
 
 tosa.arithmetic_right_shift lowers to arith.shrsi (plus arith.shrsi by
 shift - 1 when round = true), which produces poison when the shift is at
@@ -10,19 +10,18 @@ emits 35 - clz(sum_of_exps), which reaches 32 when the sum of exps in
 Q12.19 is >= 512). Clamp both shift amounts to bitwidth - 1 with
 arith.minui so out-of-range shifts sign-fill and round to 0.
 ---
- mlir/lib/Conversion/TosaToLinalg/TosaToLinalg.cpp     | 14 ++++++++++++--
- mlir/test/Conversion/TosaToLinalg/tosa-to-linalg.mlir |  6 ++++++
- 2 files changed, 18 insertions(+), 2 deletions(-)
+ mlir/lib/Conversion/TosaToLinalg/TosaToLinalg.cpp   | 13 +++++++++++--
+ .../Conversion/TosaToLinalg/tosa-to-linalg.mlir     |  6 ++++++
+ 2 files changed, 17 insertions(+), 2 deletions(-)
 
 diff --git a/mlir/lib/Conversion/TosaToLinalg/TosaToLinalg.cpp b/mlir/lib/Conversion/TosaToLinalg/TosaToLinalg.cpp
-index b7eb0a3aed5..92aebddf8f2 100644
+index 215b1da1a27..006735a3f30 100644
 --- a/mlir/lib/Conversion/TosaToLinalg/TosaToLinalg.cpp
 +++ b/mlir/lib/Conversion/TosaToLinalg/TosaToLinalg.cpp
-@@ -290,7 +290,15 @@ static Value createLinalgBodyCalculationForElementwiseOp(
+@@ -310,8 +310,15 @@ static Value createLinalgBodyCalculationForElementwiseOp(
  
    // tosa::ArithmeticRightShiftOp
    if (isa<tosa::ArithmeticRightShiftOp>(op) && isa<IntegerType>(elementTy)) {
--    auto result = arith::ShRSIOp::create(rewriter, loc, resultTypes, args);
 +    // arith.shrsi is poison for shifts of the bit width or more. Clamp them,
 +    // so that they fill with the sign bit and, with rounding, give 0, as the
 +    // rounded division by 2^shift does.
@@ -30,12 +29,13 @@ index b7eb0a3aed5..92aebddf8f2 100644
 +        rewriter, loc,
 +        IntegerAttr::get(elementTy, elementTy.getIntOrFloatBitWidth() - 1));
 +    auto amount = arith::MinUIOp::create(rewriter, loc, args[1], maxShift);
-+    auto result =
-+        arith::ShRSIOp::create(rewriter, loc, resultTypes, args[0], amount);
+     auto result = createWithDefaultProperties<arith::ShRSIOp>(
+-        rewriter, loc, resultTypes, args);
++        rewriter, loc, resultTypes, ValueRange{args[0], amount});
      bool round = cast<tosa::ArithmeticRightShiftOp>(op).getRound();
      if (!round) {
        return result;
-@@ -313,8 +321,10 @@ static Value createLinalgBodyCalculationForElementwiseOp(
+@@ -334,8 +341,10 @@ static Value createLinalgBodyCalculationForElementwiseOp(
      // Checking for the last bit of input1 to be 1
      auto subtract =
          arith::SubIOp::create(rewriter, loc, resultTypes, args[1], one);
@@ -45,20 +45,20 @@ index b7eb0a3aed5..92aebddf8f2 100644
 -        arith::ShRSIOp::create(rewriter, loc, resultTypes, args[0], subtract)
 +        arith::ShRSIOp::create(rewriter, loc, resultTypes, args[0], roundAmount)
              ->getResults();
-     auto truncated = arith::TruncIOp::create(rewriter, loc, i1Ty, shifted,
-                                              ArrayRef<NamedAttribute>());
+     auto truncated = createWithDefaultProperties<arith::TruncIOp>(
+         rewriter, loc, TypeRange{i1Ty}, shifted);
 diff --git a/mlir/test/Conversion/TosaToLinalg/tosa-to-linalg.mlir b/mlir/test/Conversion/TosaToLinalg/tosa-to-linalg.mlir
-index a803ee7d991..2f42214219d 100644
+index 7031aa11720..f9ac5e817fd 100644
 --- a/mlir/test/Conversion/TosaToLinalg/tosa-to-linalg.mlir
 +++ b/mlir/test/Conversion/TosaToLinalg/tosa-to-linalg.mlir
-@@ -698,16 +698,22 @@ func.func @test_simple_i32(%arg0: tensor<1xi32>, %unsigned: tensor<1xui32>, %uns
+@@ -699,16 +699,22 @@ func.func @test_simple_i32(%arg0: tensor<1xi32>, %unsigned: tensor<1xui32>, %uns
    %10 = tosa.logical_right_shift %arg0, %arg0 : (tensor<1xi32>, tensor<1xi32>) -> tensor<1xi32>
  
    // CHECK: linalg.generic
 +  // CHECK: arith.constant 31
 +  // CHECK: arith.minui
    // CHECK: arith.shrsi
-   %11 = tosa.arithmetic_right_shift %arg0, %arg0 {round = 0 : i1} : (tensor<1xi32>, tensor<1xi32>) -> tensor<1xi32>
+   %11 = tosa.arithmetic_right_shift %arg0, %arg0 round(false) : (tensor<1xi32>, tensor<1xi32>) -> tensor<1xi32>
  
    // CHECK: linalg.generic
 +  // CHECK: arith.constant 31
@@ -74,3 +74,6 @@ index a803ee7d991..2f42214219d 100644
    // CHECK: arith.shrsi
    // CHECK: arith.trunci
    // CHECK: and
+-- 
+2.56.0.398.g882cbad275-goog
+

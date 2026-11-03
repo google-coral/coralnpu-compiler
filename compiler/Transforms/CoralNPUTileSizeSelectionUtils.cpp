@@ -227,7 +227,7 @@ bool isZvtReadableInputs(Operation *op) {
              getElementTypeOrSelf(linalgOp.getDpsInitOperand(0)->get()));
 }
 
-// Keep in sync with isZvtMatrixContraction in iree-v3.12.0-0006-*.patch
+// Keep in sync with isZvtMatrixContraction in iree-0006-*.patch
 // (looser; only suppresses generic contract lowering),
 // isSupportedMatrixContraction in CoralNPUMatrixCodegen.cpp (emits the asm) and
 // setZvtVectorSizes in CoralNPUTileSizeSelectionDTCM.cpp (picks the tiles).

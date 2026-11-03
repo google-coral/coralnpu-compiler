@@ -17,13 +17,13 @@ function(download_rv32_toolchain toolchain_root)
     message(STATUS "CoralNPU RV32 Toolchain not found at ${toolchain_root}. Downloading...")
 
     # Keep in sync with extensions.bzl.
-    set(TOOLCHAIN_URL "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.08.27/riscv32-elf-ubuntu-22.04-llvm.tar.xz")
+    set(TOOLCHAIN_URL "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.10.29/riscv32-elf-ubuntu-22.04-llvm.tar.xz")
     set(TOOLCHAIN_TARBALL "${CMAKE_BINARY_DIR}/riscv32-elf-ubuntu-22.04-llvm.tar.xz")
 
     # Download the tarball
     file(DOWNLOAD "${TOOLCHAIN_URL}" "${TOOLCHAIN_TARBALL}"
          SHOW_PROGRESS
-         EXPECTED_HASH SHA256=e6f8a535563223ab2fe5ccc919145fa5f54d08d66eed18556c3179603b808f7e)
+         EXPECTED_HASH SHA256=5e93c260c75e3ca5c5a0dab13308415cb48e698a098d2cb2262d1778324f1e16)
 
     message(STATUS "Extracting toolchain...")
     # Extract to a temporary directory to avoid cluttering CMAKE_BINARY_DIR

@@ -16,8 +16,8 @@ def _coralnpuc_extension_impl(module_ctx):
         # Keep in sync with ManageRV32Toolchain.cmake.
         http_archive(
             name = "rv32_toolchain",
-            url = "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.08.27/riscv32-elf-ubuntu-22.04-llvm.tar.xz",
-            sha256 = "e6f8a535563223ab2fe5ccc919145fa5f54d08d66eed18556c3179603b808f7e",
+            url = "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.10.29/riscv32-elf-ubuntu-22.04-llvm.tar.xz",
+            sha256 = "5e93c260c75e3ca5c5a0dab13308415cb48e698a098d2cb2262d1778324f1e16",
             strip_prefix = "riscv",
             build_file = "//build_tools/bazel:rv32_toolchain.BUILD",
         )
@@ -75,9 +75,9 @@ def _coralnpuc_extension_impl(module_ctx):
         http_archive(
             name = "libusb",
             build_file = "//build_tools/bazel:libusb.BUILD",
-            sha256 = "5977fc950f8d1395ccea9bd48c06b3f808fd3c2c961b44b0c2e6e29fc3a70a85",
-            strip_prefix = "libusb-1.0.29",
-            urls = ["https://github.com/libusb/libusb/releases/download/v1.0.29/libusb-1.0.29.tar.bz2"],
+            sha256 = "fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf",
+            strip_prefix = "libusb-1.0.30",
+            urls = ["https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.tar.bz2"],
         )
         http_archive(
             name = "libftdi1",

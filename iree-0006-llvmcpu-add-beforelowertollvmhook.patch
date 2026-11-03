@@ -1,7 +1,7 @@
-From fdf7f87a3b959b89118a7ff25c4860ded51ade70 Mon Sep 17 00:00:00 2001
+From 995ef0a6dbed408a409da8a8023e7a93a2092231 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Sun, 12 Jul 2026 20:04:49 +0200
-Subject: [PATCH 10/10] [llvmcpu] add beforeLowerToLLVMHook
+Subject: [PATCH] [llvmcpu] add beforeLowerToLLVMHook
 
 Also skip contract lowering in functions with a Zvt-shaped
 vector.contract when the target has +zvtbase (the CoralNPU plugin
@@ -9,11 +9,11 @@ then lowers every contraction there), and add a
 createConvolutionToIGEMMPass(configFn, controlFn) factory that
 forwards both callbacks.
 ---
- .../Codegen/Common/ConvolutionToIGEMM.cpp     |  8 +++-
+ .../Codegen/Common/ConvolutionToIGEMM.cpp     |  8 ++-
  .../iree/compiler/Codegen/Common/Transforms.h |  4 ++
- .../LLVMCPU/LLVMCPUVirtualVectorLowering.cpp  | 57 ++++++++++++++++---
- .../iree/compiler/Codegen/LLVMCPU/Passes.cpp  | 11 +++--
- .../iree/compiler/Codegen/LLVMCPU/Passes.h    |  8 ++--
+ .../LLVMCPU/LLVMCPUVirtualVectorLowering.cpp  | 57 +++++++++++++++++--
+ .../iree/compiler/Codegen/LLVMCPU/Passes.cpp  | 11 +++-
+ .../iree/compiler/Codegen/LLVMCPU/Passes.h    |  8 ++-
  5 files changed, 77 insertions(+), 11 deletions(-)
 
 diff --git a/compiler/src/iree/compiler/Codegen/Common/ConvolutionToIGEMM.cpp b/compiler/src/iree/compiler/Codegen/Common/ConvolutionToIGEMM.cpp
@@ -53,10 +53,10 @@ index 91b0aede3..863517fee 100644
  LogicalResult eliminateEmptyTensors(
      RewriterBase &rewriter, Operation *op,
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp
-index 84fc70244..fd6d7db66 100644
+index 05140f19c..bd85211cc 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp
-@@ -143,6 +143,45 @@ struct ContiguousMemrefGather1DToConditionalLoads
+@@ -144,6 +144,45 @@ struct ContiguousMemrefGather1DToConditionalLoads
    }
  };
  
@@ -102,7 +102,7 @@ index 84fc70244..fd6d7db66 100644
  class LLVMCPUVirtualVectorLoweringPass
      : public impl::LLVMCPUVirtualVectorLoweringPassBase<
            LLVMCPUVirtualVectorLoweringPass> {
-@@ -223,10 +262,20 @@ void LLVMCPUVirtualVectorLoweringPass::runOnOperation() {
+@@ -224,10 +263,20 @@ void LLVMCPUVirtualVectorLoweringPass::runOnOperation() {
                                                                 /*benefit=*/100);
      }
      vector::populateVectorGatherLoweringPatterns(patterns);
@@ -183,5 +183,5 @@ index e08c1a9d1..ff3c0221c 100644
  //----------------------------------------------------------------------------//
  // LLVMCPU Linking Passes and Pipelines
 -- 
-2.55.0
+2.56.0.398.g882cbad275-goog
 

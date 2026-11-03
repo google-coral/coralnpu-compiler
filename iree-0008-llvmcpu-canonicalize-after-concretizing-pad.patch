@@ -1,17 +1,17 @@
-From 27e268eebe3e48eed748b6e445a85ba7bf672fc1 Mon Sep 17 00:00:00 2001
+From 3ef80677c1d0dd50a51d6c0d0e8be8c9ef445822 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Sun, 12 Jul 2026 20:04:49 +0200
-Subject: [PATCH] [llvmcpu] canonicalize after concretizing pad result shape
+Subject: [PATCH] [llvmcpu] canonicalize after concretizing pad
 
 ---
  compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp | 1 +
  1 file changed, 1 insertion(+)
 
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
-index 1574077541..00fb23654f 100644
+index 0e8a7e894..f7238d946 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/Passes.cpp
-@@ -213,6 +213,7 @@ void addMultiTilingExpertPassPipeline(
+@@ -208,6 +208,7 @@ void addMultiTilingExpertPassPipeline(
      };
      funcPassManager.addPass(createFuseTensorPadWithConsumerPass());
      funcPassManager.addPass(createConcretizePadResultShapePass());
@@ -20,4 +20,5 @@ index 1574077541..00fb23654f 100644
  
    // `VectorInnerParallelTiles` level models the tiling and fusion for the
 -- 
-2.55.0
+2.56.0.398.g882cbad275-goog
+

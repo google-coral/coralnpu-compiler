@@ -1,4 +1,4 @@
-From 2ddcf828b796d3fe57cf42cd16d642d42757eb6d Mon Sep 17 00:00:00 2001
+From 9c2459d946906f92df856aac84e2e7d79548d452 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Sun, 27 Sep 2026 13:35:31 +0200
 Subject: [PATCH] [PluginAPI] add pipeline extension hooks
@@ -10,10 +10,10 @@ Subject: [PATCH] [PluginAPI] add pipeline extension hooks
  3 files changed, 25 insertions(+)
 
 diff --git a/compiler/src/iree/compiler/Pipelines/Pipelines.cpp b/compiler/src/iree/compiler/Pipelines/Pipelines.cpp
-index 8278678843..8ffa3eec39 100644
+index b3c61697f..7203931a6 100644
 --- a/compiler/src/iree/compiler/Pipelines/Pipelines.cpp
 +++ b/compiler/src/iree/compiler/Pipelines/Pipelines.cpp
-@@ -376,6 +376,10 @@ void buildIREEVMTransformPassPipeline(
+@@ -378,6 +378,10 @@ void buildIREEVMTransformPassPipeline(
        }
        DispatchCreation::buildDispatchCreationPassPipeline(
            passManager, dispatchTransformOptions);
@@ -24,7 +24,7 @@ index 8278678843..8ffa3eec39 100644
        if (hooks.afterPhase) {
          hooks.afterPhase(IREEVMPipelinePhase::DispatchCreation, passManager);
        }
-@@ -408,6 +412,9 @@ void buildIREEVMTransformPassPipeline(
+@@ -410,6 +414,9 @@ void buildIREEVMTransformPassPipeline(
        }
        IREE::Stream::buildStreamTransformPassPipeline(passManager,
                                                       streamOptions);
@@ -35,7 +35,7 @@ index 8278678843..8ffa3eec39 100644
          hooks.afterPhase(IREEVMPipelinePhase::Stream, passManager);
        }
 diff --git a/compiler/src/iree/compiler/PluginAPI/Client.h b/compiler/src/iree/compiler/PluginAPI/Client.h
-index 3c7ade9665..5a5ad9a5d5 100644
+index 3c7ade966..5a5ad9a5d 100644
 --- a/compiler/src/iree/compiler/PluginAPI/Client.h
 +++ b/compiler/src/iree/compiler/PluginAPI/Client.h
 @@ -81,6 +81,12 @@ public:
@@ -52,10 +52,10 @@ index 3c7ade9665..5a5ad9a5d5 100644
  
  // Policy for how to activate the plugin.
 diff --git a/compiler/src/iree/compiler/PluginAPI/PluginManager.h b/compiler/src/iree/compiler/PluginAPI/PluginManager.h
-index ef194993d2..6c63502696 100644
+index c249b3d73..2054cd68b 100644
 --- a/compiler/src/iree/compiler/PluginAPI/PluginManager.h
 +++ b/compiler/src/iree/compiler/PluginAPI/PluginManager.h
-@@ -134,6 +134,18 @@ public:
+@@ -190,6 +190,18 @@ public:
      }
    }
  
@@ -75,5 +75,5 @@ index ef194993d2..6c63502696 100644
    // plugins.
    void populateHALTargetDevices(IREE::HAL::TargetDeviceList &list);
 -- 
-2.56.0.rc1.315.gc6ed9934b7-goog
+2.56.0.398.g882cbad275-goog
 

@@ -33,7 +33,7 @@ refresh_compile_commands(
         "//tools/list-mlir-ops": "--config=dev --features=-parse_headers --host_features=-parse_headers",
         "@iree_core//tools:iree-compile": "--config=dev --features=-parse_headers --host_features=-parse_headers",
         "@iree_core//tools:iree-run-module": "--config=dev --features=-parse_headers --host_features=-parse_headers",
-        # "@iree_core//lib:libIREECompiler.so": "--config=dev",
+        # "@iree_core//lib:IREECompiler": "--config=dev",
     },
     # No need to add flags already in .bazelrc. They're automatically picked up.
     # If you don't need flags, a list of targets is also okay, as is a single target string.

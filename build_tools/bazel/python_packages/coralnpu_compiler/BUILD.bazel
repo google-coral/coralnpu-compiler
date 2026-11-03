@@ -24,9 +24,9 @@ genrule(
         "@iree_core//compiler/bindings/python:_mlir.so",
         "@iree_core//compiler/bindings/python:_site_initialize_0.so",
         "@iree_core//compiler/bindings/python:_ireeCompilerDialects.so",
-        "@iree_core//tools:iree-compile",
-        "@iree_core//tools:iree-opt",
-        "@iree_core//lib:libIREECompiler.so",
+        "@iree_core//compiler/bindings/python:iree-compile",
+        "@iree_core//compiler/bindings/python:iree-opt",
+        "@iree_core//lib:IREECompiler",
     ],
     outs = [
         "coralnpu_compiler_package/coralnpu/__init__.py",
@@ -87,12 +87,12 @@ genrule(
         echo 'from coralnpu.compiler.tools.binaries import CompilerToolError' >> $$STAGE_DIR/coralnpu/compiler/__init__.py
 
         # 2. Shared objects & binaries
-        cp $(execpath @iree_core//lib:libIREECompiler.so) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/libIREECompiler.so
+        cp $(execpath @iree_core//lib:IREECompiler) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/libIREECompiler.so
         cp $(execpath @iree_core//compiler/bindings/python:_mlir.so) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/_mlir.so
         cp $(execpath @iree_core//compiler/bindings/python:_site_initialize_0.so) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/_site_initialize_0.so
         cp $(execpath @iree_core//compiler/bindings/python:_ireeCompilerDialects.so) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/_ireeCompilerDialects.so
-        cp $(execpath @iree_core//tools:iree-compile) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/iree-compile
-        cp $(execpath @iree_core//tools:iree-opt) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/iree-opt
+        cp $(execpath @iree_core//compiler/bindings/python:iree-compile) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/iree-compile
+        cp $(execpath @iree_core//compiler/bindings/python:iree-opt) $$STAGE_DIR/coralnpu/compiler/_mlir_libs/iree-opt
         cp $(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-ld) $$STAGE_DIR/coralnpu/toolchain_rv32/bin/riscv32-unknown-elf-ld
         chmod +x $$STAGE_DIR/coralnpu/compiler/_mlir_libs/iree-compile
         chmod +x $$STAGE_DIR/coralnpu/compiler/_mlir_libs/iree-opt

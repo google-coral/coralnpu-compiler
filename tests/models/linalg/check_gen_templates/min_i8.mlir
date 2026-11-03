@@ -4,6 +4,6 @@ func.func @main(%arg0: tensor<?x?xi8>, %arg1: tensor<?x?xi8>) -> tensor<?x?xi8> 
   %d0 = tensor.dim %arg0, %c0_idx : tensor<?x?xi8>
   %d1 = tensor.dim %arg0, %c1_idx : tensor<?x?xi8>
   %empty = tensor.empty(%d0, %d1) : tensor<?x?xi8>
-  %0 = linalg.min ins(%arg0, %arg1 : tensor<?x?xi8>, tensor<?x?xi8>) outs(%empty : tensor<?x?xi8>) -> tensor<?x?xi8>
+  %0 = linalg.elementwise <min_signed> ins(%arg0, %arg1 : tensor<?x?xi8>, tensor<?x?xi8>) outs(%empty : tensor<?x?xi8>) -> tensor<?x?xi8>
   return %0 : tensor<?x?xi8>
 }

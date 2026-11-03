@@ -558,6 +558,14 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
                                     "dialect to the native llvm::Module";
   }
 
+  // RISCVAsmPrinter reads the ELF float-ABI flags from the "target-abi" module
+  // metadata and otherwise defaults to the hard-float ABI when +f is enabled.
+  StringRef targetABI = target.llvmTargetOptions.MCOptions.getABIName();
+  if (!targetABI.empty() && !llvmModule->getModuleFlag("target-abi")) {
+    llvmModule->addModuleFlag(llvm::Module::Error, "target-abi",
+                              llvm::MDString::get(context, targetABI));
+  }
+
   // The RTL's VLEN (rvvVlen) is fixed at +zvl<N>b, so pin vscale (VLEN / 64)
   // and let LLVM fold vlenb, e.g. in vector spill offsets.
   FailureOr<int64_t> vlen =

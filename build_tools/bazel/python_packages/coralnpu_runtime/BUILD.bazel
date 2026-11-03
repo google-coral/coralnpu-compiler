@@ -30,6 +30,7 @@ genrule(
         "coralnpu_runtime_package/coralnpu/runtime/_binding.py",
         "coralnpu_runtime_package/coralnpu/runtime/array_interop.py",
         "coralnpu_runtime_package/coralnpu/runtime/benchmark.py",
+        "coralnpu_runtime_package/coralnpu/runtime/dtypes.py",
         "coralnpu_runtime_package/coralnpu/runtime/flags.py",
         "coralnpu_runtime_package/coralnpu/runtime/function.py",
         "coralnpu_runtime_package/coralnpu/runtime/io.py",

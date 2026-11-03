@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lun Dong <lundong@google.com>
 Date: Tue, 1 Sep 2026 00:00:00 -0700
-Subject: [PATCH] [sim] Use M4 state/decoder, Zvt state, and Zfbfmin/Zvfbfmin/Zvfbfwma in hw_sim
+Subject: [PATCH] [sim] Use M4/Zvt state and BF16 in hw_sim
 
 Wire CoralNPUM4State, the Zvt matrix state and CoralNPUM4UserDecoder
 into the hw_sim MPACT simulator (libcoralnpu_simulator_mpact.so) so it
@@ -144,7 +144,7 @@ diff --git a/sim/coralnpu_m3_instructions.cc b/sim/coralnpu_m3_instructions.cc
  }  // namespace
  
  void CoralNPUFcvtBf16S(Instruction* inst) {
-@@ -190,4 +211,248 @@ void CoralNPUFcvtBf16S(Instruction* inst) {
+@@ -190,4 +211,251 @@ void CoralNPUFcvtBf16S(Instruction* inst) {
    fflags_db->Submit();
  }
  
@@ -309,13 +309,15 @@ diff --git a/sim/coralnpu_m3_instructions.cc b/sim/coralnpu_m3_instructions.cc
 +    return;
 +  }
 +  auto* vs2_op =
-+      static_cast<::mpact::sim::riscv::RV32VectorSourceOperand*>(inst->Source(0));
++      static_cast<::mpact::sim::riscv::RV32VectorSourceOperand*>(
++          inst->Source(0));
 +  auto* vs1_op =
 +      kIsScalar ? nullptr
 +                : static_cast<::mpact::sim::riscv::RV32VectorSourceOperand*>(
 +                      inst->Source(1));
 +  auto* mask_op =
-+      static_cast<::mpact::sim::riscv::RV32VectorSourceOperand*>(inst->Source(3));
++      static_cast<::mpact::sim::riscv::RV32VectorSourceOperand*>(
++          inst->Source(3));
 +  auto mask_span = mask_op->GetRegister(0)->data_buffer()->Get<uint8_t>();
 +  std::optional<ScopedFPStatus> set_fpstatus;
 +  if (*rv_fp->GetRoundingMode() != *FPRoundingMode::kRoundToNearest)
@@ -346,7 +348,8 @@ diff --git a/sim/coralnpu_m3_instructions.cc b/sim/coralnpu_m3_instructions.cc
 +        float a = kIsScalar ? scalar_f32
 +                            : absl::bit_cast<float>(
 +                                  static_cast<uint32_t>(vs1_ptr[i]) << 16);
-+        float b = absl::bit_cast<float>(static_cast<uint32_t>(vs2_ptr[i]) << 16);
++        float b =
++            absl::bit_cast<float>(static_cast<uint32_t>(vs2_ptr[i]) << 16);
 +        float r = a * b + dst[i];
 +        dst[i] = std::isnan(r) ? kNan : r;
 +      }

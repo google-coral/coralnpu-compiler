@@ -29,9 +29,9 @@
 // 4 KB, K = 32: A 4x32 + B 32x16 + C 4x16 f32 = 2816 B. The result is stored
 // directly, so C is the accumulator and the output staging buffer.
 // CHECK-LABEL: hal.executable.export public @matmul_f32_dispatch_0
-//       CHECK:   attributes {workgroup_local_memory = 20736 : index
+//       CHECK:   <workgroup_size = [1 : index, 1 : index, 1 : index], workgroup_local_memory = 20736>
 // SMALL-LABEL: hal.executable.export public @matmul_f32_dispatch_0
-//       SMALL:   attributes {workgroup_local_memory = 2816 : index
+//       SMALL:   <workgroup_size = [1 : index, 1 : index, 1 : index], workgroup_local_memory = 2816>
 // The copies of A and B to DTCM, and of the staged C from DTCM: a loop over the
 // rows, and vectors of the native vector size (32 B: 8 x f32) along a row.
 // COPIES-LABEL: func.func @matmul_f32_dispatch_0
@@ -61,9 +61,9 @@ func.func @matmul_f32(%a: tensor<256x256xf32>, %b: tensor<256x256xf32>) -> tenso
 // split-K accumulator (2x32 i32, 256 B), but the vector loops keep it in
 // registers, so its buffer goes away.
 // CHECK-LABEL: hal.executable.export public @matmul_bias_trunc_dispatch_0
-//       CHECK:   attributes {workgroup_local_memory = 23808 : index
+//       CHECK:   <workgroup_size = [1 : index, 1 : index, 1 : index], workgroup_local_memory = 23808>
 // SMALL-LABEL: hal.executable.export public @matmul_bias_trunc_dispatch_0
-//       SMALL:   attributes {workgroup_local_memory = 2096 : index
+//       SMALL:   <workgroup_size = [1 : index, 1 : index, 1 : index], workgroup_local_memory = 2096>
 func.func @matmul_bias_trunc(%a: tensor<64x224xi8>, %b: tensor<224x64xi8>, %bias: tensor<64xi32>) -> tensor<64x64xi8> {
   %c0 = arith.constant 0 : i32
   %e = tensor.empty() : tensor<64x64xi32>
@@ -86,9 +86,9 @@ func.func @matmul_bias_trunc(%a: tensor<64x224xi8>, %b: tensor<224x64xi8>, %bias
 // 14336 B. With 4 KB, a 4x8 tile with K = 64: A 4x64 i8 + B 64x8 f32 + C 4x8
 // f32 = 2432 B.
 // CHECK-LABEL: hal.executable.export public @matmul_narrow_lhs_dispatch_0
-//       CHECK:   attributes {workgroup_local_memory = 14336 : index
+//       CHECK:   <workgroup_size = [1 : index, 1 : index, 1 : index], workgroup_local_memory = 14336>
 // SMALL-LABEL: hal.executable.export public @matmul_narrow_lhs_dispatch_0
-//       SMALL:   attributes {workgroup_local_memory = 2432 : index
+//       SMALL:   <workgroup_size = [1 : index, 1 : index, 1 : index], workgroup_local_memory = 2432>
 func.func @matmul_narrow_lhs(%a: tensor<64x128xi8>, %b: tensor<128x8xf32>) -> tensor<64x8xf32> {
   %cst = arith.constant 0.0 : f32
   %ea = tensor.empty() : tensor<64x128xf32>
@@ -109,7 +109,7 @@ func.func @matmul_narrow_lhs(%a: tensor<64x128xi8>, %b: tensor<128x8xf32>) -> te
 // CoralNPUPromoteBF16Accumulator): A 2x224 bf16 + B 224x32 bf16 + output 2x32
 // bf16 = 15360 B. The f32 accumulator stays in registers.
 // CHECK-LABEL: hal.executable.export public @matmul_bf16_trunc_dispatch_0
-//       CHECK:   attributes {workgroup_local_memory = 15360 : index
+//       CHECK:   <workgroup_size = [1 : index, 1 : index, 1 : index], workgroup_local_memory = 15360>
 func.func @matmul_bf16_trunc(%a: tensor<64x224xbf16>, %b: tensor<224x64xbf16>) -> tensor<64x64xbf16> {
   %cst = arith.constant 0.0 : f32
   %e = tensor.empty() : tensor<64x64xf32>
@@ -129,7 +129,7 @@ func.func @matmul_bf16_trunc(%a: tensor<64x224xbf16>, %b: tensor<224x64xbf16>) -
 // The same with a 4x32 vector tile (a user config): A 4x224 bf16 + B 224x32
 // bf16 + output 4x32 bf16 = 16384 B.
 // CHECK-LABEL: hal.executable.export public @matmul_bf16_trunc4_dispatch_0
-//       CHECK:   attributes {workgroup_local_memory = 16384 : index
+//       CHECK:   <workgroup_size = [1 : index, 1 : index, 1 : index], workgroup_local_memory = 16384>
 #config = #iree_cpu.lowering_config<distribution = [32, 64, 0],
     vector_common_parallel = [4, 32, 0], vector_reduction = [0, 0, 1]>
 #translation = #iree_codegen.translation_info<pipeline = #iree_cpu.pipeline<DoubleTilingExpert>>
