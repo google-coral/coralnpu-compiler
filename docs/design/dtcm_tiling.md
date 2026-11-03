@@ -163,6 +163,8 @@ The patches are at the repo root, and
 - Lit tests in [tests/transforms](../../tests/transforms):
   - `tile_size_selection_dtcm.mlir`: the tile sizes, the budget, the footprint
     (also with and without the Zvt scratch tiles), and `promote_operands`;
+  - `tile_size_selection_vector.mlir`: Zvt and RVV vector tile size selection,
+    pipeline selection, and shape/divisor rules under the default DTCM budget;
   - `promote_operands.mlir`: the IR of the promotion;
   - `promote_operands_pipeline.mlir`: the `workgroup_local_memory` size after the
     whole pipeline (also with the Zvt scratch tiles), and the vector loops of
