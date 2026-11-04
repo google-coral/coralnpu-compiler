@@ -14,8 +14,8 @@
 
 // Tests the `coralnpu.metrics` attribute channel: the entries that the metrics
 // passes attach to a dispatch function are copied into the entry of the
-// dispatch in the bundle, next to those of the metrics passes (tile_grid).
-// Reserved keys and unsupported values are skipped.
+// dispatch in the bundle, next to those of the metrics passes (tile_grid,
+// zvt). Reserved keys and unsupported values are skipped.
 
 // RUN: iree-compile --compile-mode=hal-executable --iree-hal-target-device=coralnpu --coralnpu-dump-metrics-format=json --coralnpu-dump-metrics-dir=- %s -o /dev/null | FileCheck %s
 // RUN: iree-compile --compile-mode=hal-executable --iree-hal-target-device=coralnpu --coralnpu-dump-metrics-format=pretty --coralnpu-dump-metrics-dir=- %s -o /dev/null | FileCheck %s --check-prefix=CHECK-PRETTY
@@ -43,7 +43,8 @@
 // CHECK-NOT:      "nan_val"
 // CHECK-NOT:      "unsupported"
 // CHECK-NOT:      "wide_int"
-// CHECK:          "unsigned_int": 7
+// CHECK:          "unsigned_int": 7,
+// CHECK-NEXT:     "zvt": {
 // CHECK:        "elf": {
 
 // CHECK-PRETTY:      Dispatch: mul
@@ -56,6 +57,7 @@
 // CHECK-PRETTY-NEXT:   tag: "test"
 // CHECK-PRETTY-NEXT:   tile_grid: {"dtcm":[4],"loops":[4],"op":"linalg.generic","vector":[4],"workgroup":[4]}
 // CHECK-PRETTY-NEXT:   unsigned_int: 7
+// CHECK-PRETTY-NEXT:   zvt: {"candidate":false,"lowered":false}
 // CHECK-PRETTY-NEXT: ELF:
 
 #pipeline_layout = #hal.pipeline.layout<constants = 2, bindings = [

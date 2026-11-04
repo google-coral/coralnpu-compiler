@@ -3,7 +3,7 @@
 - **Author(s)**: Shaked Flur
 - **Component Doc(s)**: [metrics.md](../metrics.md),
   [tiling_levels_explained.md](../tiling_levels_explained.md),
-  [matrix_codegen.md](../matrix_codegen.md) *(to be updated in chained CL 2)*
+  [matrix_codegen.md](../matrix_codegen.md) *(updated in chained CL 2)*
 - **Bug(s)**: None (searched component 2161972; no open issues found)
 
 ---
@@ -149,7 +149,7 @@ per-dispatch facts from configuration and codegen passes to serialization.
 
 ### CL 2c: Add Static Zvt Lowering Status and Missed-Optimization Remarks
 
-- [ ] **Step 3 (`compiler/Transforms/*`, `compiler/Target/*`,
+- [x] **Step 3 (`compiler/Transforms/*`, `compiler/Target/*`,
   `metrics/compiler/*`)**: Add `remarkZvtMissed` and `getZvtMNLoops` in
   `CoralNPUTileSizeSelectionUtils.{h,cpp}` and `getZvtMatmulMnemonic` /
   `containsZvtMatmulMnemonic` in `compiler/Target/Utils.{h,cpp}`, emit
@@ -158,7 +158,7 @@ per-dispatch facts from configuration and codegen passes to serialization.
   `addPostMatrixCodegenPasses`, extend `RecordTileGridPass` with `zvt.candidate`
   and `tile_grid.zvt_grid`, and implement `RecordZvtLoweringPass` (`zvt.lowered`
   and pruning `tile_grid.zvt_grid` when `lowered` is `false`).
-- [ ] **Tests & Archive Sync (`metrics/tests/compiler/*`, `README.md`,
+- [x] **Tests & Archive Sync (`metrics/tests/compiler/*`, `README.md`,
   `metrics/README.md`, `docs/design/*`)**: *Positive*: Verify
   `zvt {candidate, lowered}`, `tile_grid.zvt_grid` on lowered candidates, and
   `--remarks-filter=coralnpu-zvt` YAML remarks (`metrics_zvt.mlir`). *Negative*:
@@ -173,23 +173,27 @@ per-dispatch facts from configuration and codegen passes to serialization.
   `dtcm.used` from `PT_LOAD` segments (`p_memsz > 0`), subtracting overlaps with
   `.heap` and `.stack` sections in DTCM so `dtcm.used` matches runtime
   `firmware_memory.c` to the byte.
+- **CL 2c (`compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`)**: Emit
+  `dtcm-tiling` missed remarks both when `!isZvtReadableInputs(root.op)` (fused
+  non-widening input producer) and when `!setZvtVectorSizes(...)` (no Zvt tile
+  fits the DTCM tile budget).
 
 ---
 
 ## 4. Follow-Up Items (For Reviewer Approval -> Buganizer `2161972`)
 
-- [ ] **Record DTCM tile footprint estimate in `RecordTileGridPass`** (`P2` |
+- [x] **Record DTCM tile footprint estimate in `RecordTileGridPass`** (`P2` |
       `metrics/compiler/RecordTileGridPass.cpp`,
       `compiler/Transforms/CoralNPUTileSizeSelectionFootprint.h`): Use
       `DTCMFootprintModel` to record estimated DTCM tile bytes in `tile_grid`.
-- [ ] **Unify standalone $M = 2$ Zvt contraction candidacy and tiling**
+- [x] **Unify standalone $M = 2$ Zvt contraction candidacy and tiling**
       (`P3` | `compiler/Transforms/CoralNPUTileSizeSelectionUtils.cpp`,
       `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`): Evaluate
       recognizing and tiling standalone $M = 2$ contractions as Zvt candidates
       without regressing DTCM operand promotion or `subTileM` divisor snapping
       ($M = 1$ contractions are folded to 1D `vector.fma` by
       `DropVectorUnitDimsPass`).
-- [ ] **Track BF16 `vecmat` K-loop lowering and missed remarks (`+zvfbfwma`)**
+- [x] **Track BF16 `vecmat` K-loop lowering and missed remarks (`+zvfbfwma`)**
       (`P3` | `metrics/compiler/*`,
       `compiler/Transforms/CoralNPUMatrixCodegen.cpp`): Record BF16 `vecmat`
       candidate and `vfwmaccbf16.vf` lowering status in `coralnpu.metrics` and

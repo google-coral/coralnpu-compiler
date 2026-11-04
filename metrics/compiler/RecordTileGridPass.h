@@ -29,12 +29,15 @@ namespace mlir::coralnpu_compiler {
 
 // Returns a pass that records, in the `coralnpu.metrics` attribute of each
 // dispatch function (MetricsAttr.h), the tile grid of the root op as
-// `tile_grid {op, loops, workgroup, dtcm, vector}`: the loop ranges of the
-// root op and its workgroup, DTCM and vector tile sizes, one per loop. At each
-// level, positive tile sizes are clamped to the tile size of the enclosing
-// level, and a loop left untiled (`0`) inherits the tile size of the enclosing
-// level. Runs at the end of the configuration pipeline, on dispatches whose
-// root op is a static `TilingInterface` op with a CPU lowering configuration.
+// `tile_grid {op, loops, workgroup, dtcm, vector, zvt_grid}`: the loop ranges
+// of the root op and its workgroup, DTCM and vector tile sizes, one per loop.
+// At each level, positive tile sizes are clamped to the tile size of the
+// enclosing level, and a loop left untiled (`0`) inherits the tile size of the
+// enclosing level. On Zvt targets, it also records `zvt {candidate}`: whether
+// the root op is a Zvt contraction or convolution. For a candidate, `zvt_grid`
+// is the number of 16x16 Zvt tiles of a vector tile along M and N. Runs at the
+// end of the configuration pipeline, on dispatches whose root op is a static
+// `TilingInterface` op with a CPU lowering configuration.
 std::unique_ptr<InterfacePass<FunctionOpInterface>> createRecordTileGridPass();
 
 // Registers `RecordTileGridPass` with the MLIR pass registry.

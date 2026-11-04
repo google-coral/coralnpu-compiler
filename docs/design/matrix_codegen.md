@@ -451,11 +451,25 @@ builds), trapping when disabled.
 ### Fallback Behavior
 
 An operation compiles through IREE's standard RVV pipeline unless the target has
-`+zvtbase`, `isZvtMatrixContraction` accepts the op (§2.1), and
-`setZvtVectorSizes` finds a register tile that fits in DTCM (§2.1). Any
-Zvt-shaped `vector.contract` that `CoralNPUMatrixCodegen` still leaves unlowered
-(§2.3 item 5) falls back to MLIR's generic contract lowering at the end of that
-pass.
+`+zvtbase`, `isZvtMatrixContraction` and `isZvtReadableInputs` accept the op
+(§2.1), and `setZvtVectorSizes` finds a register tile that fits in DTCM (§2.1).
+Any Zvt-shaped `vector.contract` that `CoralNPUMatrixCodegen` still leaves
+unlowered (§2.3 item 5) falls back to MLIR's generic contract lowering at the
+end of that pass.
+
+When a Zvt candidate stays on RVV in `CoralNPUTileSizeSelectionDTCM` or (at most
+once per function, when no contraction in the function lowers to Zvt) the first
+`vector.contract` or strided 1D conv outer-product loop with Zvt element types
+(`hasZvtElementTypes`) is rejected by shape, accumulator/use-chain, or address
+checks in `CoralNPUMatrixCodegen` (non-Zvt element types stay silent), both
+passes emit opt-in missed-optimization remarks via `remarkZvtMissed`
+(`compiler/Transforms/CoralNPUTileSizeSelectionUtils.h`, surfaced with
+`--remarks-filter=coralnpu-zvt` under subcategories `dtcm-tiling` and
+`matrix-codegen`). When compiler metrics are enabled, `RecordZvtLoweringPass`
+(`metrics/compiler/RecordZvtLoweringPass.cpp`) runs immediately after
+`CoralNPUMatrixCodegen` to record `zvt = {candidate, lowered}` (and prune
+`tile_grid.zvt_grid` when `lowered` is `false`) in the per-executable metrics
+bundle (see [metrics.md](metrics.md)).
 
 ---
 

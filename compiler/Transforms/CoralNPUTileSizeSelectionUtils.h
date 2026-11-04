@@ -122,18 +122,25 @@ Value getZvtLoadSource(Value input, bool strictLayoutAndSingleUse = true);
 bool isZvtReadableInputs(Operation *op, bool strictLayoutAndSingleUse = true);
 
 // Returns true if hasZvtTargetFeature(op) and op is a Zvt-eligible contraction
-// or convolution: readable inputs (`isZvtReadableInputs`), supported shapes and
-// layouts, a zero or loaded init, and no reduction consumer.
+// or convolution: signed/FP MAC body, supported types, shapes and layouts, a
+// zero or loaded init, and no reduction consumer.
 bool isZvtMatrixContraction(Operation *op);
 
-// isZvtMatrixContraction without the target feature check; forwards
-// `strictLayoutAndSingleUse` to `isZvtReadableInputs`.
-bool isZvtMatrixContractionShape(Operation *op,
-                                 bool strictLayoutAndSingleUse = true);
+// isZvtMatrixContraction without the target feature check.
+bool isZvtMatrixContractionShape(Operation *op);
+
+// Returns the loops of the rows (M) and columns (N) of the accumulator of
+// `op`, which must satisfy `isZvtMatrixContractionShape(op)`.
+std::pair<unsigned, unsigned> getZvtMNLoops(linalg::LinalgOp op);
 
 // Returns true if `op` is a contraction with extent > 1 (or dynamic) along
 // both M and N, excluding zero-reuse matvec, vecmat, and dot products.
 bool hasContractionReuse(Operation *op);
+
+// Reports that `op` is not lowered to the Zvt matrix unit because of `reason`,
+// as a missed optimization remark of category "coralnpu-zvt" and subcategory
+// `stage` (e.g. iree-compile --remarks-filter=coralnpu-zvt).
+void remarkZvtMissed(Operation *op, StringRef stage, StringRef reason);
 
 }  // namespace mlir::coralnpu_compiler
 

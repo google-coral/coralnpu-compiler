@@ -697,10 +697,8 @@ int64_t estimateZvtScratchBytes(
   int64_t numLoops = loopRanges.size();
   // The asm needs +zvtbase, and a contraction or a convolution that the conv
   // vectorizer lowers to contractions with the Zvt layout.
-  bool isZvtConvolution =
-      linalg::isaConvolutionOpInterface(rootOp) &&
-      isZvtMatrixContractionShape(rootOp.getOperation(),
-                                  /*strictLayoutAndSingleUse=*/false);
+  bool isZvtConvolution = linalg::isaConvolutionOpInterface(rootOp) &&
+                          isZvtMatrixContractionShape(rootOp.getOperation());
   if (!hasZvtTargetFeature(rootOp) || splitsReduction ||
       vectorParallelSizes.size() != numLoops ||
       vectorReductionSizes.size() != numLoops ||

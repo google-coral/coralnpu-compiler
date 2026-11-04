@@ -19,6 +19,7 @@
 #include "metrics/compiler/MetricsBundle.h"
 #include "metrics/compiler/MetricsElf.h"
 #include "metrics/compiler/RecordTileGridPass.h"
+#include "metrics/compiler/RecordZvtLoweringPass.h"
 
 // IREE:
 #include "compiler/plugins/target/LLVMCPU/LLVMTargetOptions.h"
@@ -183,6 +184,11 @@ class MetricsTargetHooks final : public CoralNPUTargetHooks {
     funcPassManager.addPass(createRecordTileGridPass());
   }
 
+  // Adds the pass that records whether the matrix codegen used Zvt.
+  void addPostMatrixCodegenPasses(OpPassManager &funcPassManager) override {
+    funcPassManager.addPass(createRecordZvtLoweringPass());
+  }
+
   // Builds and writes the metrics bundle of |variantOp| once it is serialized.
   void onExecutableSerialized(HAL::ExecutableVariantOp variantOp,
                               const HAL::LLVMTarget &target,
@@ -225,7 +231,10 @@ class MetricsTargetHooks final : public CoralNPUTargetHooks {
 
 }  // namespace
 
-void registerMetricsPasses() { registerRecordTileGridPass(); }
+void registerMetricsPasses() {
+  registerRecordTileGridPass();
+  registerRecordZvtLoweringPass();
+}
 
 std::shared_ptr<CoralNPUTargetHooks> createMetricsTargetHooks(
     const MetricsOptions &options, const MetricsTargetConfig &config) {

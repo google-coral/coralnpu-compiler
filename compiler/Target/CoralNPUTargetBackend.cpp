@@ -483,6 +483,7 @@ void CoralNPUTargetBackend::buildTranslationPassPipeline(
         funcPassManager.addPass(
             createCoralNPULimitLoopUnrollingPass(options_.maxLoopUnrolling));
         funcPassManager.addPass(createCoralNPUMatrixCodegenPass());
+        if (hooks_) hooks_->addPostMatrixCodegenPasses(funcPassManager);
       });
   buildCodegenTranslationPostProcessingPassPipeline(passManager);
 }

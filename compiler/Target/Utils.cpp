@@ -22,6 +22,7 @@
 #include "mlir/IR/Builders.h"
 
 // LLVM:
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/FileSystem.h"
@@ -29,6 +30,7 @@
 
 // Standard library:
 #include <algorithm>
+#include <cassert>
 #include <system_error>
 
 namespace mlir::coralnpu_compiler {
@@ -167,6 +169,22 @@ bool hasCoralNPUTargetFeature(Operation *op, StringRef feature) {
 
 bool hasZvtTargetFeature(Operation *op) {
   return hasCoralNPUTargetFeature(op, "+zvtbase");
+}
+
+constexpr StringLiteral kZvtMatmulMnemonics[] = {"vtmms.tvv", "vtfmm.alt.tvv",
+                                                 "vtfmm.tvv"};
+
+StringRef getZvtMatmulMnemonic(Type elTy) {
+  if (elTy.isInteger(8) || elTy.isInteger(16)) return kZvtMatmulMnemonics[0];
+  if (elTy.isBF16()) return kZvtMatmulMnemonics[1];
+  assert(elTy.isF32() && "expected i8, i16, bf16, or f32 Zvt input type");
+  return kZvtMatmulMnemonics[2];
+}
+
+bool containsZvtMatmulMnemonic(StringRef asmStr) {
+  return llvm::any_of(kZvtMatmulMnemonics, [&](StringRef mnemonic) {
+    return asmStr.contains(mnemonic);
+  });
 }
 
 }  // namespace mlir::coralnpu_compiler

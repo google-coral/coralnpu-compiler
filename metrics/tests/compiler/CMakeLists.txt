@@ -21,6 +21,7 @@ iree_lit_test_suite(
     "metrics_bundle_attr.mlir"
     "metrics_elf.mlir"
     "metrics_tile_grid.mlir"
+    "metrics_zvt.mlir"
   TOOLS
     FileCheck
     iree-compile

@@ -344,8 +344,10 @@ When compiler metrics are enabled (`--coralnpu-dump-metrics-format`),
 `RecordTileGridPass` (`metrics/compiler/RecordTileGridPass.cpp`) runs at the end
 of `buildConfigurationPassPipeline` via
 `CoralNPUTargetHooks::addConfigurationPasses` to record
-`tile_grid = {op, loops, workgroup, dtcm, vector}` in the dispatch function's
-`coralnpu.metrics` attribute (see [metrics.md](metrics.md)).
+`tile_grid = {op, loops, workgroup, dtcm, vector, zvt_grid}` and
+`zvt = {candidate}` in the dispatch function's `coralnpu.metrics` attribute
+(`zvt_grid` is later pruned by `RecordZvtLoweringPass` if Zvt lowering does not
+occur; see [metrics.md](metrics.md)).
 
 ### Summary of Lowering Pipeline Flow (CPUDoubleTilingExpert)
 

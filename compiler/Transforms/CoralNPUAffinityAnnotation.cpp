@@ -174,7 +174,8 @@ bool preferCoralNPU(IREE::Flow::DispatchWorkgroupsOp workgroupsOp,
 
   FailureOr<uint64_t> bytes = estimateIOBytes(workgroupsOp);
   if (failed(bytes)) return false;
-  const bool isZvt = hasZvt && isZvtMatrixContractionShape(rootOp);
+  const bool isZvt = hasZvt && isZvtMatrixContractionShape(rootOp) &&
+                     isZvtReadableInputs(rootOp);
   // Above 64 MiB (Zvt) or 16 MiB of I/O, the m_axi peak overstates CoralNPU;
   // keep such dispatches on the host (limits tuned on Gemma 4).
   if (speedupThreshold > 0.0 && *bytes > (isZvt ? 64 : 16) * 1024 * 1024)

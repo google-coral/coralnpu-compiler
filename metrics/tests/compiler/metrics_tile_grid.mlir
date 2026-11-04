@@ -21,12 +21,12 @@
 // The whole matmul fits DTCM, and its vector tile is the 32x32 Zvt tile, a
 // 2x2 grid of 16x16 Zvt tiles.
 // CHECK-LABEL: CoralNPU Metrics: matmul_dispatch_0
-// CHECK:         tile_grid: {"dtcm":[64,64,128],"loops":[64,64,128],"op":"linalg.matmul","vector":[32,32,1],"workgroup":[64,64,128]}
+// CHECK:         tile_grid: {"dtcm":[64,64,128],"loops":[64,64,128],"op":"linalg.matmul","vector":[32,32,1],"workgroup":[64,64,128],"zvt_grid":[2,2]}
 
 // The large matmul is split into 32x128 DTCM tiles, which are also the
 // workgroup tiles; K is streamed one step at a time.
 // CHECK-LABEL: CoralNPU Metrics: matmul_large_dispatch_0
-// CHECK:         tile_grid: {"dtcm":[32,128,512],"loops":[256,256,512],"op":"linalg.matmul","vector":[32,32,1],"workgroup":[32,128,512]}
+// CHECK:         tile_grid: {"dtcm":[32,128,512],"loops":[256,256,512],"op":"linalg.matmul","vector":[32,32,1],"workgroup":[32,128,512],"zvt_grid":[2,2]}
 
 // The elementwise add is collapsed to one loop.
 // CHECK-LABEL: CoralNPU Metrics: add_dispatch_0

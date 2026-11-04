@@ -24,6 +24,7 @@
 #include "iree/compiler/Codegen/Utils/Utils.h"
 
 // MLIR:
+#include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Interfaces/TilingInterface.h"
@@ -32,6 +33,7 @@
 // LLVM:
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/MathExtras.h"
 
 // Standard library:
 #include <algorithm>
@@ -117,6 +119,20 @@ class RecordTileGridPass final
     grid.set("dtcm", builder.getI64ArrayAttr(dtcm));
     grid.set("vector", builder.getI64ArrayAttr(vector));
 
+    // Whether the root op can use the Zvt matrix unit, which the matrix codegen
+    // completes with whether it does (RecordZvtLoweringPass.h).
+    if (hasZvtTargetFeature(funcOp)) {
+      const bool candidate = isZvtMatrixContraction(rootOp);
+      NamedAttrList zvt;
+      zvt.set("candidate", builder.getBoolAttr(candidate));
+      setMetricsEntry(funcOp, "zvt", zvt.getDictionary(funcOp.getContext()));
+      if (candidate) {
+        auto [m, n] = getZvtMNLoops(cast<linalg::LinalgOp>(rootOp));
+        grid.set("zvt_grid", builder.getI64ArrayAttr(
+                                 {llvm::divideCeilSigned(vector[m], 16),
+                                  llvm::divideCeilSigned(vector[n], 16)}));
+      }
+    }
     setMetricsEntry(funcOp, "tile_grid",
                     grid.getDictionary(funcOp.getContext()));
   }

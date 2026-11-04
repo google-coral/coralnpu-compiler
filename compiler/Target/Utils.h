@@ -22,6 +22,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/Types.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
@@ -66,6 +67,14 @@ bool hasCoralNPUTargetFeature(Operation *op, StringRef feature);
 
 // Returns true if the enclosing HAL executable targets CoralNPU with +zvtbase.
 bool hasZvtTargetFeature(Operation *op);
+
+// Returns the Zvt matrix-multiply mnemonic for the input element type |elTy|
+// ("vtmms.tvv" for i8/i16, "vtfmm.alt.tvv" for bf16, "vtfmm.tvv" for f32).
+StringRef getZvtMatmulMnemonic(Type elTy);
+
+// Returns true if the inline assembly string |asmStr| contains a Zvt
+// matrix-multiply mnemonic emitted by `getZvtMatmulMnemonic`.
+bool containsZvtMatmulMnemonic(StringRef asmStr);
 
 }  // namespace mlir::coralnpu_compiler
 

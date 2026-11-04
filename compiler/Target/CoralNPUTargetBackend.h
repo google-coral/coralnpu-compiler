@@ -228,6 +228,8 @@ class CoralNPUTargetBackend final
       iree_compiler::IREE::HAL::ExecutableTargetAttr targetAttr,
       OpPassManager &passManager) override;
 
+  // Populates |passManager| with the translation pipeline for |targetAttr|,
+  // including post-matrix-codegen passes from `hooks_` if configured.
   void buildTranslationPassPipeline(
       iree_compiler::IREE::HAL::ExecutableTargetAttr targetAttr,
       OpPassManager &passManager) override;

@@ -156,7 +156,7 @@ and simulator backends (`runtime/sim/`) across two narrow C boundaries:
 
 ---
 
-## 2. Compiler Metrics Bundle & Tile Grid (`metrics/compiler/`)
+## 2. Compiler Metrics Bundle, Tile Grid & Static Zvt Status (`metrics/compiler/`)
 
 ### 2.1 Overview & Backend Hook Architecture
 
@@ -174,7 +174,11 @@ pipelines, or generated code:
    after `createLLVMCPUSelectLoweringStrategyPass()` and
    `createCoralNPUTileSizeSelectionDTCMPass(dtcmOptions)`. Schedules
    `RecordTileGridPass` on `FunctionOpInterface`.
-2. **`onExecutableSerialized(variantOp, target, linkedElf)`**:
+2. **`addPostMatrixCodegenPasses(OpPassManager &funcPassManager)`**:
+   Called in `CoralNPUTargetBackend::buildTranslationPassPipeline` inside
+   `beforeLowerToLLVMHook` right after `createCoralNPUMatrixCodegenPass()`.
+   Schedules `RecordZvtLoweringPass`.
+3. **`onExecutableSerialized(variantOp, target, linkedElf)`**:
    Called at the end of `CoralNPUTargetBackend::serializeExecutable` after
    translating the inner module to LLVM IR and linking the executable.
    `MetricsTargetHooks::onExecutableSerialized` (`MetricsTargetHooks.cpp`)
@@ -190,7 +194,23 @@ pipelines, or generated code:
    (`-`), or `stderr` via `writeReport` (`compiler/Target/Utils.h`). Any file
    I/O error emits a warning on `variantOp` without failing compilation.
 
-### 2.2 Per-Dispatch `coralnpu.metrics` Channel, Tile Grid & ELF Accounting
+```mermaid
+flowchart LR
+    subgraph Config["buildConfigurationPassPipeline"]
+      Strat["MaterializeUserConfigs +<br/>LLVMCPUSelectLoweringStrategy"] --> DTCM["CoralNPUTileSizeSelectionDTCM<br/>(+ remarkZvtMissed)"]
+      DTCM --> TilePass["RecordTileGridPass<br/>(coralnpu.metrics: tile_grid, zvt.candidate)"]
+    end
+    subgraph Trans["buildTranslationPassPipeline (beforeLowerToLLVMHook)"]
+      MatCodegen["CoralNPUMatrixCodegen<br/>(+ remarkZvtMissed)"] --> ZvtPass["RecordZvtLoweringPass<br/>(coralnpu.metrics: zvt.lowered, update zvt_grid)"]
+    end
+    subgraph Serial["serializeExecutable"]
+      Hook["onExecutableSerialized"] --> Elf["parseMetricsElf(linkedElf)"]
+      Elf --> Bundle["MetricsBundle::dumpJson / dumpPretty<br/>(writeReport)"]
+    end
+    Config --> Trans --> Serial
+```
+
+### 2.2 Per-Dispatch `coralnpu.metrics` Channel, Tile Grid, ELF & Zvt Tracking
 
 - **Linked Firmware ELF & Target Metadata (`MetricsElf.{h,cpp}`,
   `MetricsBundle.{h,cpp}`, `MetricsTargetHooks.cpp`)**:
@@ -227,7 +247,32 @@ pipelines, or generated code:
   an `IREE::CPU::LoweringConfigAttr`, it records
   `tile_grid = {op, loops, workgroup, dtcm, vector}` (clamping each level's
   positive tile sizes to the enclosing level's tile size, and inheriting the
-  enclosing level's tile size when a loop is left untiled with `0`).
+  enclosing level's tile size when a loop is left untiled with `0`). On Zvt
+  targets (`hasZvtTargetFeature` in `compiler/Target/Utils.h`), it also records
+  `zvt = {candidate: true/false}` via `isZvtMatrixContraction` and, for any
+  candidate, `tile_grid.zvt_grid = [ceil(M_vec / 16), ceil(N_vec / 16)]` via
+  `getZvtMNLoops` (including `[1, 1]` for partial $< 16 \times 16$ tiles).
+- **Post-Matrix-Codegen Zvt Lowering Check (`RecordZvtLoweringPass.{h,cpp}`)**:
+  Walks `LLVM::InlineAsmOp` operations in the function after
+  `CoralNPUMatrixCodegenPass`, checks `containsZvtMatmulMnemonic`
+  (`compiler/Target/Utils.h`: `"vtmms.tvv"`, `"vtfmm.alt.tvv"`, `"vtfmm.tvv"`),
+  and updates `zvt` in `coralnpu.metrics` to `{candidate, lowered}`
+  (synthesizing `{candidate: false, lowered: true}` if a function without a
+  prior `zvt` entry contains a Zvt matmul). When `lowered` is `false`, it
+  removes `tile_grid.zvt_grid`. Workload-level static Zvt lowering rate
+  aggregation across bundles is performed by `metrics/tools/report.py` (§3).
+- **Missed-Optimization Remarks (`remarkZvtMissed` in
+  `CoralNPUTileSizeSelectionUtils.{h,cpp}`)**:
+  Emits opt-in `mlir::remark::missed` diagnostics (category `"coralnpu-zvt"`,
+  remark name `"ZvtLowering"`), surfaced via `--remarks-filter=coralnpu-zvt`
+  while keeping normal compilation silent on `stdout` and `stderr`. Subcategory
+  `"dtcm-tiling"` (`CoralNPUTileSizeSelectionDTCM.cpp`) reports when a fused
+  input producer or the DTCM tile budget prevents Zvt tiling of a candidate, and
+  `"matrix-codegen"` (`CoralNPUMatrixCodegen.cpp`) reports at most once per
+  function (when no contraction in the function lowered to Zvt) why the first
+  contraction or strided 1D conv outer-product loop with Zvt element types
+  (`hasZvtElementTypes`) was rejected by shape, accumulator/use-chain, or
+  address checks (non-Zvt element types such as `i32` stay silent).
 
 ### 2.3 Why Not Alternative Compiler Metrics Designs
 
@@ -236,3 +281,23 @@ pipelines, or generated code:
   erased during translation, whereas the enclosing dispatch `func.func` persists
   through `serializeExecutable` and survives `-compile-to` / `-start-from`
   round-trips without thread-unsafe side tables.
+- **Why detect Zvt lowering by scanning `LLVM::InlineAsmOp` in a separate
+  pass?**
+  Keeping `RecordZvtLoweringPass` in `metrics/compiler/` avoids coupling
+  `compiler/Transforms/CoralNPUMatrixCodegen.cpp` to `metrics/compiler/` and
+  directly verifies that Zvt inline assembly was emitted into the IR.
+
+---
+
+## TODOs
+
+- [ ] Record DTCM tile footprint estimate in `RecordTileGridPass` using
+  `DTCMFootprintModel` (`metrics/compiler/RecordTileGridPass.cpp`,
+  `compiler/Transforms/CoralNPUTileSizeSelectionFootprint.h`).
+- [ ] Evaluate unifying standalone $M = 2$ Zvt contraction candidacy and tiling
+  without regressing DTCM operand promotion or `subTileM` divisor snapping
+  (`compiler/Transforms/CoralNPUTileSizeSelectionUtils.cpp`,
+  `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`).
+- [ ] Record BF16 `vecmat` K-loop candidate and `vfwmaccbf16.vf` lowering status
+  in `coralnpu.metrics` and emit missed remarks when falling back to generic RVV
+  (`metrics/compiler/*`, `compiler/Transforms/CoralNPUMatrixCodegen.cpp`).

@@ -335,13 +335,6 @@ bool snapParallelVectorSizesToStaticTiles(
   return changed;
 }
 
-// Returns the loops of the Zvt accumulator's rows (M) and columns (N).
-std::pair<unsigned, unsigned> getZvtMNLoops(linalg::LinalgOp op) {
-  auto c = op.getIndexingMapsArray()[2].getResults().take_back(2);
-  return {cast<AffineDimExpr>(c[0]).getPosition(),
-          cast<AffineDimExpr>(c[1]).getPosition()};
-}
-
 // Sets the largest Zvt tile (up to 4 16x16 tiles as 2x2, 1x4 or 4x1) whose
 // DTCM tile fits within `budgetBytes` (Zvt codegen cannot lower a split K, so
 // reduction vector sizes are set to 1). Returns false, keeping the RVV sizes,
@@ -497,14 +490,24 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
   // both inputs with Zvt element types: a root whose input a fused op computes
   // (e.g. a dequantization) stays on RVV, with promotion.
   std::optional<unsigned> zvtMLoop, zvtNLoop;
-  if (isZvtMatrixContraction(root.op) &&
-      setZvtVectorSizes(root, footprintModel, budgetBytes,
-                        selected.vectorParallelSizes,
-                        selected.vectorReductionSizes)) {
-    selected.useZvt = true;
-    streamReduction = true;
-    std::tie(zvtMLoop, zvtNLoop) = getZvtMNLoops(linalgOp);
-  } else {
+  if (isZvtMatrixContraction(root.op)) {
+    if (!isZvtReadableInputs(root.op)) {
+      remarkZvtMissed(root.op, "dtcm-tiling",
+                      "the Zvt unit cannot load the fused inputs, so the "
+                      "vector tile keeps the RVV sizes");
+    } else if (setZvtVectorSizes(root, footprintModel, budgetBytes,
+                                 selected.vectorParallelSizes,
+                                 selected.vectorReductionSizes)) {
+      selected.useZvt = true;
+      streamReduction = true;
+      std::tie(zvtMLoop, zvtNLoop) = getZvtMNLoops(linalgOp);
+    } else {
+      remarkZvtMissed(root.op, "dtcm-tiling",
+                      "no Zvt tile fits the DTCM, so the vector tile keeps "
+                      "the RVV sizes");
+    }
+  }
+  if (!selected.useZvt) {
     selected.rvvPipeline =
         refineRVVTileSizes(funcOp, root, selected.vectorParallelSizes,
                            selected.vectorReductionSizes);

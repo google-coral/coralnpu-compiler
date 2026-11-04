@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <functional>
-
+#include "compiler/Target/Utils.h"
 #include "compiler/Transforms/CoralNPUTileSizeSelectionUtils.h"
 #include "compiler/Transforms/Passes.h"
+
+// IREE:
 #include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenAttrs.h"
-#include "llvm/Support/FormatVariadic.h"
+
+// MLIR:
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -33,6 +35,12 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/RegionUtils.h"
+
+// LLVM:
+#include "llvm/Support/FormatVariadic.h"
+
+// Standard library:
+#include <functional>
 
 //===----------------------------------------------------------------------===//
 // CoralNPU Matrix Codegen Pass
@@ -132,9 +140,18 @@ Value stripExt(Value v) {
   return v;
 }
 
-// The accumulator shapes are those of isZvtAccumulatorShape, which the DTCM
-// footprint model uses too. Keep the element type check in sync with
+// Returns true if the inputs and the accumulator of `op` have Zvt element
+// types, looking through widening extensions. Keep in sync with
 // isZvtReadableInputs in CoralNPUTileSizeSelectionUtils.cpp.
+bool hasZvtElementTypes(vector::ContractionOp op) {
+  return isZvtElementTypes(
+      getElementTypeOrSelf(traceToSourceValue(op.getLhs())),
+      getElementTypeOrSelf(traceToSourceValue(op.getRhs())),
+      getElementTypeOrSelf(op.getAccType()));
+}
+
+// The accumulator shapes are those of isZvtAccumulatorShape, which the DTCM
+// footprint model uses too. Caller must check hasZvtElementTypes(op).
 bool isSupportedMatrixContraction(vector::ContractionOp op, bool& swap) {
   auto accTy = dyn_cast<VectorType>(op.getAccType());
   if (!accTy || (accTy.getRank() != 1 && accTy.getRank() != 2) ||
@@ -151,10 +168,7 @@ bool isSupportedMatrixContraction(vector::ContractionOp op, bool& swap) {
   int64_t m = rank1 ? 1 : accTy.getDimSize(0), n = accTy.getShape().back();
   if (!isZvtAccumulatorShape(m, n, rank1, swap) ||
       cast<VectorType>(lhs.getType()).getNumElements() != m ||
-      cast<VectorType>(rhs.getType()).getNumElements() != n ||
-      !isZvtElementTypes(getElementTypeOrSelf(traceToSourceValue(lhs)),
-                         getElementTypeOrSelf(traceToSourceValue(rhs)),
-                         accTy.getElementType()))
+      cast<VectorType>(rhs.getType()).getNumElements() != n)
     return false;
   auto iters = op.getIteratorTypes().getValue();
   return op.getKind() == vector::CombiningKind::ADD &&
@@ -223,12 +237,6 @@ std::string emitTileConfigAsm(Type elTy = {}, int64_t tk = 1, int64_t tn = 16) {
       "li t5, {0}\n\tli t6, {1}\n\tmsetmtype t5, t6\n\tli t6, {2}\n\t"
       "msettn zero, t6\n\t",
       16384 | (tk << 5) | w, w == 3 ? 256 : (w == 2 ? 265 : 18), tn);
-}
-
-// Returns the Zvt matrix-multiply mnemonic for the narrow input type `elTy`.
-StringRef getMatmulOp(Type elTy) {
-  if (isa<IntegerType>(elTy)) return "vtmms.tvv";
-  return elTy.isBF16() ? "vtfmm.alt.tvv" : "vtfmm.tvv";
 }
 
 // Drains accumulator tiles mt0..mt12 to memory via vtmv.v.t + vse32.v (for a
@@ -399,7 +407,7 @@ void emitInlineFusedGEMM(OpBuilder& b, Location loc, const TileAddr& lhs,
     if (kk + 1 == tk)
       for (int64_t m = 0; m < numTilesM; ++m)
         for (int64_t n = 0; n < numTilesN; ++n)
-          fmt("{0} mt{1}, v{2}, v{3}\n\t", getMatmulOp(inputElTy),
+          fmt("{0} mt{1}, v{2}, v{3}\n\t", getZvtMatmulMnemonic(inputElTy),
               (m * numTilesN + n) * 4, vReg(ab[0].slots[m], 0),
               vReg(ab[1].slots[n], 0));
     if (s + 1 < numKSteps)
@@ -418,6 +426,9 @@ void emitInlineFusedGEMM(OpBuilder& b, Location loc, const TileAddr& lhs,
   createInlineAsm(b, loc, asmStr, constraints, operands);
 }
 
+// Emits the unfused per-iteration Zvt inline-asm multiply block for |op| (with
+// operands pinned to Zvt vector register slot bases) and replaces |op| with a
+// zero vector placeholder for the post-loop accumulator drain.
 void lowerContractionToAsm(OpBuilder& b, vector::ContractionOp op,
                            int64_t numTilesM, int64_t numTilesN, Type inputElTy,
                            bool zeroTiles) {
@@ -455,9 +466,9 @@ void lowerContractionToAsm(OpBuilder& b, vector::ContractionOp op,
   if (!zeroTiles || !inputElTy.isF32()) asmStr += emitTileConfigAsm(inputElTy);
   for (int64_t m = 0; m < numTilesM; ++m)
     for (int64_t n = 0; n < numTilesN; ++n)
-      asmStr +=
-          llvm::formatv("{0} mt{1}, ${2}, ${3}\n\t", getMatmulOp(inputElTy),
-                        (m * numTilesN + n) * 4, m, numTilesM + n);
+      asmStr += llvm::formatv("{0} mt{1}, ${2}, ${3}\n\t",
+                              getZvtMatmulMnemonic(inputElTy),
+                              (m * numTilesN + n) * 4, m, numTilesM + n);
   createInlineAsm(b, loc, asmStr, constraints, operands);
   // The drain asm writes the result from the tiles; zero is a placeholder.
   op.replaceAllUsesWith(
@@ -990,6 +1001,16 @@ struct CoralNPUMatrixCodegenPass
               }));
     };
 
+    bool anyZvtLowered = false;
+    Operation* firstMissedOp = nullptr;
+    StringRef firstMissedReason;
+    auto recordMissed = [&](Operation* op, StringRef reason) {
+      if (!firstMissedOp) {
+        firstMissedOp = op;
+        firstMissedReason = reason;
+      }
+    };
+
     // Reassemble per-row outer products emitted by strided 1D convolution
     // vectorization (M scalar-broadcast FMAs/muls inserted into a 2D
     // accumulator) into a single 2D vector.contract.
@@ -1057,6 +1078,13 @@ struct CoralNPUMatrixCodegenPass
           builder, loc, VectorType::get({m, 1}, lhsElTy), lhsScalars);
       if (!getLoadAddr(lhs)) {
         lhs.getDefiningOp()->erase();
+        if (isZvtElementTypes(lhsElTy,
+                              getElementTypeOrSelf(traceToSourceValue(rhs)),
+                              accTy.getElementType())) {
+          recordMissed(
+              forOp,
+              "the strided 1D convolution input is not a row-major tile load");
+        }
         return;
       }
       if (lhsElTy != rhsElTy) {
@@ -1083,10 +1111,17 @@ struct CoralNPUMatrixCodegenPass
     SmallVector<vector::ContractionOp> contracts;
     funcOp.walk([&](vector::ContractionOp op) { contracts.push_back(op); });
     for (vector::ContractionOp contractOp : contracts) {
+      // Contractions of non-Zvt element types are never lowered to Zvt.
+      if (!hasZvtElementTypes(contractOp)) continue;
       bool swap = false;
-      if (!isSupportedMatrixContraction(contractOp, swap) ||
-          !contractOp->hasOneUse())
+      if (!isSupportedMatrixContraction(contractOp, swap)) {
+        recordMissed(contractOp, "unsupported contraction shape or layout");
         continue;
+      }
+      if (!contractOp->hasOneUse()) {
+        recordMissed(contractOp, "the contraction result has several uses");
+        continue;
+      }
       SmallVector<scf::ForOp> loopChain;
       Operation* root = contractOp;
       Value acc = contractOp.getAcc();
@@ -1114,8 +1149,12 @@ struct CoralNPUMatrixCodegenPass
       if (root->use_empty() ||
           (root->hasOneUse() && isa<scf::YieldOp>(*root->user_begin())) ||
           !(init || matchPattern(acc, m_Zero()) ||
-            matchPattern(acc, m_AnyZeroFloat())))
+            matchPattern(acc, m_AnyZeroFloat()))) {
+        recordMissed(contractOp,
+                     "the accumulator is neither zero nor a row-major tile "
+                     "load of a supported loop");
         continue;
+      }
       if (swap) {
         SmallVector<AffineMap> maps = contractOp.getIndexingMapsArray();
         Value lhs = contractOp.getLhs();
@@ -1143,7 +1182,11 @@ struct CoralNPUMatrixCodegenPass
       bool fuse = false;
       if (forOp) {
         // C is hoisted even when unfused: the drain goes right after the loop.
-        if (!hoistAddr(c, root)) continue;
+        if (!hoistAddr(c, root)) {
+          recordMissed(contractOp,
+                       "the result tile address depends on the K loop");
+          continue;
+        }
         Value iv = forOp.getInductionVar();
         splitKIndex(lhs, iv);
         splitKIndex(rhs, iv);
@@ -1169,8 +1212,11 @@ struct CoralNPUMatrixCodegenPass
       if (!fuse &&
           (!lhs || !rhs || rowsM % 16 != 0 || colsN % 16 != 0 ||
            getElementTypeOrSelf(stripExt(contractOp.getLhs())) != inputElTy ||
-           getElementTypeOrSelf(stripExt(contractOp.getRhs())) != inputElTy))
+           getElementTypeOrSelf(stripExt(contractOp.getRhs())) != inputElTy)) {
+        recordMissed(contractOp,
+                     "partial or converted tiles need a fused K loop");
         continue;
+      }
 
       TileAddr dst = c ? c : getScratchTile(accTy);
       Operation* firstAfterRoot = root->getNextNode();
@@ -1245,8 +1291,12 @@ struct CoralNPUMatrixCodegenPass
         forOp.erase();
       } else {
         lowerContractionToAsm(builder, contractOp, numTilesM, numTilesN,
-                              inputElTy, !forOp && !init);
+                              inputElTy, /*zeroTiles=*/!forOp && !init);
       }
+      anyZvtLowered = true;
+    }
+    if (!anyZvtLowered && firstMissedOp) {
+      remarkZvtMissed(firstMissedOp, "matrix-codegen", firstMissedReason);
     }
     (void)runRegionDCE(builder, funcOp->getRegions());
 

@@ -52,6 +52,11 @@ class CoralNPUTargetHooks {
   // dispatch function.
   virtual void addConfigurationPasses(OpPassManager &funcPassManager) {}
 
+  // Adds passes to the translation pipeline right after the matrix codegen,
+  // which lowers the contractions to Zvt. |funcPassManager| runs on each
+  // dispatch function.
+  virtual void addPostMatrixCodegenPasses(OpPassManager &funcPassManager) {}
+
   // Called after |variantOp| has been serialized for |target|. |linkedElf| is
   // the embedded firmware ELF (`target.getLinkEmbedded()`) that the backend
   // linked for a dynamic library executable, or empty for static libraries and

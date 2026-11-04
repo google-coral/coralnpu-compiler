@@ -105,8 +105,30 @@ iree_cc_library(
     LLVMSupport
     MLIRFunctionInterfaces
     MLIRIR
+    MLIRLinalgDialect
     MLIRPass
     MLIRTilingInterface
+  PUBLIC
+)
+
+# Records whether the matrix codegen lowered each dispatch to Zvt.
+iree_cc_library(
+  NAME
+    RecordZvtLoweringPass
+  HDRS
+    "RecordZvtLoweringPass.h"
+  SRCS
+    "RecordZvtLoweringPass.cpp"
+  INCLUDES
+    "${CMAKE_SOURCE_DIR}"
+  DEPS
+    ::MetricsAttr
+    coralnpu_compiler::Target::Utils
+    LLVMSupport
+    MLIRFunctionInterfaces
+    MLIRIR
+    MLIRLLVMDialect
+    MLIRPass
   PUBLIC
 )
 
@@ -127,6 +149,7 @@ iree_cc_library(
     ::MetricsElf
     ::MetricsOptions
     ::RecordTileGridPass
+    ::RecordZvtLoweringPass
     coralnpu_compiler::Target::TargetHooks
     coralnpu_compiler::Target::Utils
     iree::compiler::plugins::target::LLVMCPU::LLVMTargetOptions

@@ -27,11 +27,13 @@
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/IR/Remarks.h"
 #include "mlir/IR/TypeUtilities.h"
 
 // LLVM:
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MathExtras.h"
 
 // Standard library:
@@ -244,21 +246,34 @@ bool isZvtMatrixContraction(Operation *op) {
   return hasZvtTargetFeature(op) && isZvtMatrixContractionShape(op);
 }
 
-bool isZvtMatrixContractionShape(Operation *op, bool strictLayoutAndSingleUse) {
+bool isZvtMatrixContractionShape(Operation *op) {
   auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
   if (!linalgOp ||
       (!linalg::isaContractionOpInterface(linalgOp) &&
        !linalg::isaConvolutionOpInterface(linalgOp)) ||
-      !isZvtReadableInputs(op, strictLayoutAndSingleUse))
+      linalgOp.getNumDpsInputs() != 2 || linalgOp.getNumDpsInits() != 1 ||
+      !hasZvtMacBody(linalgOp))
     return false;
   for (Operation *user : linalgOp->getUsers())
     if (auto c = dyn_cast<linalg::LinalgOp>(user);
         c && c.getNumReductionLoops() != 0)
       return false;
 
+  Value in0 = linalgOp.getDpsInputOperand(0)->get();
+  Value in1 = linalgOp.getDpsInputOperand(1)->get();
   Value init = linalgOp.getDpsInitOperand(0)->get();
+  auto in0Shaped = dyn_cast<ShapedType>(in0.getType());
+  auto in1Shaped = dyn_cast<ShapedType>(in1.getType());
   auto initShaped = cast<ShapedType>(init.getType());
-  if (!initShaped.hasStaticShape()) return false;
+  if (!in0Shaped || !in1Shaped || !initShaped.hasStaticShape()) return false;
+
+  auto getInputType = [](Value v) {
+    Value src = getZvtLoadSource(v, /*strictLayoutAndSingleUse=*/false);
+    return getElementTypeOrSelf(src ? src : v);
+  };
+  if (!isZvtElementTypes(getInputType(in0), getInputType(in1),
+                         initShaped.getElementType()))
+    return false;
 
   // The asm zeroes the tiles or seeds them from memory, so any other init
   // (e.g. a broadcast bias) stays on RVV.
@@ -271,8 +286,6 @@ bool isZvtMatrixContractionShape(Operation *op, bool strictLayoutAndSingleUse) {
     return false;
 
   if (isa<linalg::Mmt4DOp>(linalgOp)) {
-    auto in0Shaped =
-        cast<ShapedType>(linalgOp.getDpsInputOperand(0)->get().getType());
     return in0Shaped.hasStaticShape() && initShaped.getDimSize(2) == 16 &&
            initShaped.getDimSize(3) == 16 && in0Shaped.getDimSize(3) == 1;
   }
@@ -349,6 +362,15 @@ bool isZvtMatrixContractionShape(Operation *op, bool strictLayoutAndSingleUse) {
            (is(a, mDim, kDim) || convWindow) && subTileM));
 }
 
+std::pair<unsigned, unsigned> getZvtMNLoops(linalg::LinalgOp op) {
+  ArrayRef<AffineExpr> results =
+      op.getMatchingIndexingMap(op.getDpsInitOperand(0))
+          .getResults()
+          .take_back(2);
+  return {cast<AffineDimExpr>(results[0]).getPosition(),
+          cast<AffineDimExpr>(results[1]).getPosition()};
+}
+
 bool hasContractionReuse(Operation *op) {
   auto linalgOp = dyn_cast_if_present<linalg::LinalgOp>(op);
   if (!linalgOp || !linalg::isaContractionOpInterface(linalgOp)) return false;
@@ -366,6 +388,18 @@ bool hasContractionReuse(Operation *op) {
            });
   };
   return hasExtentReuse(dims->m) && hasExtentReuse(dims->n);
+}
+
+void remarkZvtMissed(Operation *op, StringRef stage, StringRef reason) {
+  auto opts = remark::RemarkOpts::name("ZvtLowering")
+                  .category("coralnpu-zvt")
+                  .subCategory(stage);
+  // The function names the dispatch in the remark.
+  if (auto funcOp = op->getParentOfType<FunctionOpInterface>()) {
+    opts = opts.function(funcOp.getName());
+  }
+  // The remark builds its text lazily, so it owns a copy of `reason`.
+  remark::missed(op->getLoc(), opts) << remark::reason("{0}", reason.str());
 }
 
 }  // namespace mlir::coralnpu_compiler

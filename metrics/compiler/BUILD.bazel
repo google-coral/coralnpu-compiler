@@ -83,8 +83,25 @@ cc_library(
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FunctionInterfaces",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:LinalgInterfaces",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:TilingInterface",
+    ],
+)
+
+# Records whether the matrix codegen lowered each dispatch to Zvt.
+cc_library(
+    name = "RecordZvtLoweringPass",
+    srcs = ["RecordZvtLoweringPass.cpp"],
+    hdrs = ["RecordZvtLoweringPass.h"],
+    deps = [
+        ":MetricsAttr",
+        "//compiler/Target:Utils",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:FunctionInterfaces",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:LLVMDialect",
+        "@llvm-project//mlir:Pass",
     ],
 )
 
@@ -100,6 +117,7 @@ cc_library(
         ":MetricsElf",
         ":MetricsOptions",
         ":RecordTileGridPass",
+        ":RecordZvtLoweringPass",
         "//compiler/Target:TargetHooks",
         "//compiler/Target:Utils",
         "@iree_core//compiler/plugins/target/LLVMCPU:LLVMTargetOptions",

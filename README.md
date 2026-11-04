@@ -296,11 +296,20 @@ overview of the DTCM tiling and promotion is in
 `--coralnpu-dump-metrics-dir=<directory>`
 
 Dumps a `coralnpu.metrics.v1` bundle per executable: the target, the dispatches
-(workgroup size, binding and push constant counts, and the tile grid of the root
-op: its workgroup, DTCM and vector tile sizes) and the ITCM and DTCM use of the
-linked firmware ELF. The files are named `<executable>.metrics.{json,txt}`; if
-the directory is `-`, the bundle is written to stdout; if empty or omitted, it
-is written to stderr. The code is in [`metrics/`](metrics/README.md).
+(workgroup size, binding and push constant counts, the tile grid of the root op:
+its workgroup, DTCM, vector and Zvt tile sizes, and whether a Zvt candidate was
+lowered to Zvt) and the ITCM and DTCM use of the linked firmware ELF. The files
+are named `<executable>.metrics.{json,txt}`; if the directory is `-`, the bundle
+is written to stdout; if empty or omitted, it is written to stderr. The code is
+in [`metrics/`](metrics/README.md).
+
+**Zvt lowering remarks:**
+
+`--remarks-filter=coralnpu-zvt --remarks-output-file=<file>` writes, as YAML,
+the missed optimization remarks of the Zvt lowering: why a Zvt contraction or
+convolution stays on RVV (e.g. no Zvt tile fits the DTCM), and (at most once
+per function when no contraction in the function lowers to Zvt) why the matrix
+codegen does not lower the first Zvt-typed contraction to Zvt.
 
 **Executable linking:**
 

@@ -26,10 +26,12 @@ as it compiles each executable. The metrics hooks
 (`metrics/compiler/MetricsTargetHooks.h`) fill a bundle
 (`metrics/compiler/MetricsBundle.h`) and write it:
 
-- at the end of the configuration pipeline, metrics passes record facts about
-  each dispatch in the `coralnpu.metrics` attribute of its function
-  (`metrics/compiler/MetricsAttr.h`), for example the tile grid of the root op
-  (`metrics/compiler/RecordTileGridPass.h`);
+- at the end of the configuration pipeline and right after the matrix codegen,
+  metrics passes record facts about each dispatch in the `coralnpu.metrics`
+  attribute of its function (`metrics/compiler/MetricsAttr.h`): the tile grid of
+  the root op and whether it is a Zvt candidate
+  (`metrics/compiler/RecordTileGridPass.h`), and whether the matrix codegen
+  lowered it to Zvt (`metrics/compiler/RecordZvtLoweringPass.h`);
 - when the backend serializes the executable, the bundle gets the target, the
   dispatches with their `coralnpu.metrics` entries, and the ITCM and DTCM use of
   the linked firmware ELF (`metrics/compiler/MetricsElf.h`).
