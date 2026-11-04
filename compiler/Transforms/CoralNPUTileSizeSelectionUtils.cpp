@@ -18,8 +18,6 @@
 #include "iree/compiler/Codegen/Dialect/CPU/IR/IREECPUTypes.h"
 #include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenAttrs.h"
 #include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenOps.h"
-#include "iree/compiler/Codegen/Utils/Utils.h"
-#include "iree/compiler/Dialect/HAL/IR/HALOps.h"
 #include "iree/compiler/Dialect/TensorExt/IR/TensorExtOps.h"
 
 // MLIR:
@@ -32,8 +30,10 @@
 // LLVM:
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MathExtras.h"
+
+// Standard library:
+#include <algorithm>
 
 using namespace mlir;
 using namespace mlir::iree_compiler;
@@ -84,34 +84,6 @@ FailureOr<linalg::ConvolutionDimensions> inferConvDims(Operation *op) {
       ArrayRef<AffineMap>{maps[0], maps[1], maps.back()});
 }
 
-FailureOr<int64_t> getVlenFromTargetFeatures(FunctionOpInterface funcOp) {
-  auto targetAttr = IREE::HAL::ExecutableTargetAttr::lookup(funcOp);
-  if (!targetAttr) return failure();
-
-  return getVlenFromTargetFeatures(targetAttr.getConfiguration());
-}
-
-FailureOr<int64_t> getVlenFromTargetFeatures(DictionaryAttr config) {
-  if (!config) return failure();
-
-  auto attr = config.getAs<StringAttr>("cpu_features");
-  if (!attr) return failure();
-
-  // +zvl<N>b implies every smaller +zvl<M>b, so VLEN is the largest N.
-  int64_t vlen = 0;
-  SmallVector<llvm::StringRef> features;
-  attr.getValue().split(features, ',');
-  for (llvm::StringRef feature : features) {
-    feature = feature.trim();
-    int64_t n = 0;
-    if (feature.consume_front("+zvl") && feature.consume_back("b") &&
-        !feature.getAsInteger(10, n))
-      vlen = std::max(vlen, n);
-  }
-  if (vlen == 0) return failure();
-  return vlen;
-}
-
 Attribute getTilingLevelAttr(MLIRContext *context, ArrayRef<int64_t> sizes) {
   SmallVector<bool> scalableFlags(sizes.size(), false);
   return IREE::Codegen::LoweringConfigTilingLevelAttr::get(
@@ -139,26 +111,6 @@ bool hasPromoteOperands(Attribute loweringConfig) {
   if (!cpuConfig) return false;
   auto operands = cpuConfig.getConfig().getAs<ArrayAttr>(kPromoteOperandsName);
   return operands && !operands.empty();
-}
-
-int64_t getNativeVectorBytes(Operation *op) {
-  // One 128-bit register, if the target does not give the size.
-  constexpr int64_t kDefaultNativeVectorBytes = 16;
-  auto target = IREE::HAL::ExecutableTargetAttr::lookup(op);
-  if (!target || !target.getConfiguration()) return kDefaultNativeVectorBytes;
-  auto size =
-      target.getConfiguration().getAs<IntegerAttr>("native_vector_size");
-  return size ? size.getInt() : kDefaultNativeVectorBytes;
-}
-
-bool hasCoralNPUTargetFeature(Operation *op, StringRef feature) {
-  auto targetAttr = IREE::HAL::ExecutableTargetAttr::lookup(op);
-  return targetAttr && targetAttr.getBackend().getValue() == "coralnpu" &&
-         hasFeature(targetAttr.getConfiguration(), feature);
-}
-
-bool hasZvtTargetFeature(Operation *op) {
-  return hasCoralNPUTargetFeature(op, "+zvtbase");
 }
 
 bool isZvtElementTypes(Type lhs, Type rhs, Type acc) {

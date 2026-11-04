@@ -14,7 +14,22 @@
 
 #include "compiler/Target/Utils.h"
 
+// IREE:
+#include "iree/compiler/Codegen/Utils/Utils.h"
+#include "iree/compiler/Dialect/HAL/IR/HALTypes.h"
+
+// MLIR:
 #include "mlir/IR/Builders.h"
+
+// LLVM:
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
+
+// Standard library:
+#include <algorithm>
+#include <system_error>
 
 namespace mlir::coralnpu_compiler {
 
@@ -66,6 +81,92 @@ getCoralNPUSupportedTypes(MLIRContext *context) {
   // s.addElementType(b.getI64Type());
 
   return s;
+}
+
+std::mutex &getReportMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+void writeReport(Operation *op, StringRef dir, StringRef fileName,
+                 llvm::function_ref<void(llvm::raw_ostream &)> writeFn) {
+  if (dir.empty() || dir == "-") {
+    std::lock_guard<std::mutex> lock(getReportMutex());
+    llvm::raw_ostream &os = (dir == "-") ? llvm::outs() : llvm::errs();
+    writeFn(os);
+    os.flush();
+    return;
+  }
+
+  if (std::error_code ec = llvm::sys::fs::create_directories(dir)) {
+    op->emitWarning() << "failed to create report directory '" << dir
+                      << "': " << ec.message();
+    return;
+  }
+  llvm::SmallString<128> filePath(dir);
+  llvm::sys::path::append(filePath, fileName);
+  std::error_code ec;
+  llvm::raw_fd_ostream os(filePath, ec, llvm::sys::fs::OF_Text);
+  if (ec) {
+    op->emitWarning() << "failed to open report file '" << filePath
+                      << "': " << ec.message();
+    return;
+  }
+  writeFn(os);
+  os.close();
+  if (os.has_error()) {
+    op->emitWarning() << "failed to write report file '" << filePath
+                      << "': " << os.error().message();
+    os.clear_error();
+  }
+}
+
+FailureOr<int64_t> getVlenFromTargetFeatures(FunctionOpInterface funcOp) {
+  auto targetAttr =
+      iree_compiler::IREE::HAL::ExecutableTargetAttr::lookup(funcOp);
+  if (!targetAttr) return failure();
+  return getVlenFromTargetFeatures(targetAttr.getConfiguration());
+}
+
+FailureOr<int64_t> getVlenFromTargetFeatures(DictionaryAttr config) {
+  if (!config) return failure();
+  auto attr = config.getAs<StringAttr>("cpu_features");
+  if (!attr) return failure();
+
+  // +zvl<N>b implies every smaller +zvl<M>b, so VLEN is the largest N.
+  int64_t vlen = 0;
+  SmallVector<StringRef> features;
+  attr.getValue().split(features, ',');
+  for (StringRef feature : features) {
+    feature = feature.trim();
+    int64_t n = 0;
+    if (feature.consume_front("+zvl") && feature.consume_back("b") &&
+        !feature.getAsInteger(/*Radix=*/10, n)) {
+      vlen = std::max(vlen, n);
+    }
+  }
+  if (vlen == 0) return failure();
+  return vlen;
+}
+
+int64_t getNativeVectorBytes(Operation *op) {
+  // One 128-bit register, if the target does not give the size.
+  constexpr int64_t kDefaultNativeVectorBytes = 16;
+  auto target = iree_compiler::IREE::HAL::ExecutableTargetAttr::lookup(op);
+  if (!target || !target.getConfiguration()) return kDefaultNativeVectorBytes;
+  auto size =
+      target.getConfiguration().getAs<IntegerAttr>("native_vector_size");
+  return size ? size.getInt() : kDefaultNativeVectorBytes;
+}
+
+bool hasCoralNPUTargetFeature(Operation *op, StringRef feature) {
+  auto targetAttr = iree_compiler::IREE::HAL::ExecutableTargetAttr::lookup(op);
+  return targetAttr && targetAttr.getBackend().getValue() == "coralnpu" &&
+         iree_compiler::hasFeature(targetAttr.getConfiguration(), feature);
+}
+
+bool hasZvtTargetFeature(Operation *op) {
+  return hasCoralNPUTargetFeature(op, "+zvtbase");
 }
 
 }  // namespace mlir::coralnpu_compiler

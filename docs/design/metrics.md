@@ -153,3 +153,51 @@ and simulator backends (`runtime/sim/`) across two narrow C boundaries:
   `max(stack.peak)` (with `"!"` appended on overflow). Behavior is verified by
   `//metrics/tests/runtime:stats_test`, `//metrics/tests/runtime:memory_test`,
   and `//metrics/tests/runtime:stack_peak_test`.
+
+---
+
+## 2. Compiler Metrics Bundle (`metrics/compiler/`)
+
+### 2.1 Overview & Backend Hook Architecture
+
+The compiler metrics library (`metrics/compiler/`) is decoupled from
+`compiler/Target/` through `CoralNPUTargetHooks`
+(`compiler/Target/CoralNPUTargetHooks.h`). Enabling
+`--coralnpu-dump-metrics-format` obeys a **zero-codegen-impact invariant**: the
+hooks only observe the executable and serialize the sideband report, never
+altering tile selection, pass pipelines, or generated code:
+
+- **`onExecutableSerialized(variantOp, target, linkedElf)`**:
+  Called at the end of `CoralNPUTargetBackend::serializeExecutable` after
+  translating the inner module to LLVM IR and linking the executable.
+  `MetricsTargetHooks::onExecutableSerialized` (`MetricsTargetHooks.cpp`)
+  collects target metadata (`MetricsTargetInfo`) and export metadata
+  (`MetricsDispatchInfo`). When `serializeDynamicLibraryExecutable` links an
+  embedded firmware ELF (`target.getLinkEmbedded()`, so `linkedElf` is
+  non-empty), it parses the ELF via `parseMetricsElf` (`MetricsElf.{h,cpp}`);
+  any ELF parse failure logs via `LDBG()` and omits the `"elf"` section without
+  failing compilation. Finally, it writes the `coralnpu.metrics.v1` JSON or
+  `pretty` bundle (`MetricsBundle.{h,cpp}`) to
+  `<executable>.metrics.{json,txt}`, `stdout` (`-`), or `stderr` via
+  `writeReport` (`compiler/Target/Utils.h`). Any file I/O error emits a warning
+  on `variantOp` without failing compilation.
+
+### 2.2 Linked Firmware ELF & Target Metadata
+
+- **Linked Firmware ELF & Target Metadata (`MetricsElf.{h,cpp}`,
+  `MetricsBundle.{h,cpp}`, `MetricsTargetHooks.cpp`)**:
+  `makeTargetInfo` extracts `vlen` (largest `+zvl<N>b`), `hasFloat` (`+f`), and
+  `hasZvt` (`+zvtbase`) from `variantOp` using the shared
+  `getVlenFromTargetFeatures`, `hasCoralNPUTargetFeature`, and
+  `hasZvtTargetFeature` helpers in `compiler/Target/Utils.h`, and reads `abi`
+  from `target.llvmTargetOptions.MCOptions.ABIName`. For embedded dynamic
+  libraries (`target.getLinkEmbedded()`), `parseMetricsElf` inspects the 32-bit
+  little-endian ELF via `llvm::object::ObjectFile::createELFObjectFile`
+  (`ELF32LEObjectFile`), resolves defined `__itcm_{start,size}` and
+  `__dtcm_{start,size}` symbols, and classifies non-empty `SHF_ALLOC` sections
+  whose full `[address, address + size)` range lies within ITCM or DTCM into
+  `itcm`, `dtcm`, or `other` (accumulating `.stack` bytes into `dtcm->stack`).
+  It then iterates over `PT_LOAD` program headers (`p_memsz > 0`) to compute
+  `itcm.used` and `dtcm.used`, subtracting the byte overlap of `.heap` and
+  `.stack` sections from `dtcm.used` so `itcm.used`, `dtcm.used`, and
+  `dtcm.free()` match `metrics/runtime/firmware_memory.c` to the byte.

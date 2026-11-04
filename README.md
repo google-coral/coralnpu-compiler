@@ -290,6 +290,17 @@ overview of the DTCM tiling and promotion is in
 - `--coralnpu-dtcm-buffers-per-operand=<N>` (default: `1`): the number of DTCM
   buffers for each input slice (e.g. `2` for double buffering).
 
+**Compiler metrics bundle:**
+
+`--coralnpu-dump-metrics-format={none|pretty|json}`
+`--coralnpu-dump-metrics-dir=<directory>`
+
+Dumps a `coralnpu.metrics.v1` bundle per executable: the target, the dispatches
+(workgroup size, binding and push constant counts) and the ITCM and DTCM use of
+the linked firmware ELF. The files are named `<executable>.metrics.{json,txt}`;
+if the directory is `-`, the bundle is written to stdout; if empty or omitted,
+it is written to stderr. The code is in [`metrics/`](metrics/README.md).
+
 **Executable linking:**
 
 `--coralnpu-link-executables={true|false}` controls whether all executable

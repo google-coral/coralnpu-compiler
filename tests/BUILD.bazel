@@ -28,6 +28,7 @@ test_suite(
     name = "ci",
     tags = ["ci"],
     tests = [
+        "//metrics/tests/compiler:ci",
         "//metrics/tests/runtime:ci",
         "//tests/dma:ci",
         "//tests/examples:ci",

@@ -1,0 +1,77 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Compiler metrics of the CoralNPU target backend: a metrics bundle per
+# executable, which the hooks of the backend (//compiler/Target:TargetHooks)
+# fill as it serializes the executable. Depends on these hooks, not on the
+# backend.
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+# The --coralnpu-dump-metrics-* options.
+cc_library(
+    name = "MetricsOptions",
+    hdrs = ["MetricsOptions.h"],
+    deps = [
+        "@iree_core//compiler/src/iree/compiler/Utils",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# Size report of the linked firmware ELF.
+cc_library(
+    name = "MetricsElf",
+    srcs = ["MetricsElf.cpp"],
+    hdrs = ["MetricsElf.h"],
+    deps = [
+        "@llvm-project//llvm:BinaryFormat",
+        "@llvm-project//llvm:Object",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The metrics bundle of one executable and its JSON and text writers.
+cc_library(
+    name = "MetricsBundle",
+    srcs = ["MetricsBundle.cpp"],
+    hdrs = ["MetricsBundle.h"],
+    deps = [
+        ":MetricsElf",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The hooks that fill and write the metrics bundles.
+cc_library(
+    name = "MetricsTargetHooks",
+    srcs = ["MetricsTargetHooks.cpp"],
+    hdrs = ["MetricsTargetHooks.h"],
+    deps = [
+        ":MetricsBundle",
+        ":MetricsElf",
+        ":MetricsOptions",
+        "//compiler/Target:TargetHooks",
+        "//compiler/Target:Utils",
+        "@iree_core//compiler/plugins/target/LLVMCPU:LLVMTargetOptions",
+        "@iree_core//compiler/src/iree/compiler/Dialect/HAL/IR",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)

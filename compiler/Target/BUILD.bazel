@@ -16,8 +16,25 @@ cc_library(
         "Utils.h",
     ],
     deps = [
+        "@iree_core//compiler/src/iree/compiler/Codegen/Utils",
+        "@iree_core//compiler/src/iree/compiler/Dialect/HAL/IR",
         "@iree_core//compiler/src/iree/compiler/Dialect/HAL/Target",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:FunctionInterfaces",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+# The hooks of the target backend, through which code outside it (e.g.
+# //metrics/compiler) observes how it compiles the executables.
+cc_library(
+    name = "TargetHooks",
+    hdrs = ["CoralNPUTargetHooks.h"],
+    deps = [
+        "@iree_core//compiler/src/iree/compiler/Dialect/HAL/IR",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -43,8 +60,11 @@ cc_library(
         "//crt:libcoralnpu_iree",
     ],
     deps = [
+        ":TargetHooks",
         ":Utils",
         "//compiler/Transforms",
+        "//metrics/compiler:MetricsOptions",
+        "//metrics/compiler:MetricsTargetHooks",
         "@iree_core//compiler/plugins/target/LLVMCPU",
         "@iree_core//compiler/plugins/target/LLVMCPU:LLVMIRPasses",
         "@iree_core//compiler/plugins/target/LLVMCPU:LLVMTargetOptions",

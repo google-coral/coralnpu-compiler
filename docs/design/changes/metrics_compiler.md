@@ -115,7 +115,7 @@ per-dispatch facts from configuration and codegen passes to serialization.
 
 ### CL 2a: Add Per-Executable Compiler Metrics Bundle and ELF Size Report
 
-- [ ] **Step 1 (`compiler/Target/*`, `compiler/Transforms/*`,
+- [x] **Step 1 (`compiler/Target/*`, `compiler/Transforms/*`,
   `metrics/compiler/*`, `CMakeLists.txt`,
   `build_tools/cmake/iree_compiler_plugin.cmake`, `README.md`,
   `metrics/README.md`, `docs/design/*`)**: Add `CoralNPUTargetHooks`
@@ -123,7 +123,7 @@ per-dispatch facts from configuration and codegen passes to serialization.
   helpers in `compiler/Target/Utils.{h,cpp}`, implement `MetricsOptions`,
   `MetricsElf`, `MetricsBundle`, and `MetricsTargetHooks`, and wire
   `CoralNPUTarget.cpp` and CMake/Bazel targets.
-- [ ] **Tests (`metrics/tests/compiler/*`, `tests/BUILD.bazel`)**: *Positive*:
+- [x] **Tests (`metrics/tests/compiler/*`, `tests/BUILD.bazel`)**: *Positive*:
   Verify `json` and `pretty` bundles, `--coralnpu-dump-metrics-dir` (`-`, dir,
   empty), and ELF `itcm`/`dtcm` region and section summaries
   (`metrics_bundle.mlir`, `metrics_elf.mlir`; `bazel test --config=dev
@@ -169,7 +169,10 @@ per-dispatch facts from configuration and codegen passes to serialization.
 
 ### Implementation Notes & Adaptations
 
-- *(None yet)*
+- **CL 2a (`metrics/compiler/MetricsElf.cpp`)**: Compute `itcm.used` and
+  `dtcm.used` from `PT_LOAD` segments (`p_memsz > 0`), subtracting overlaps with
+  `.heap` and `.stack` sections in DTCM so `dtcm.used` matches runtime
+  `firmware_memory.c` to the byte.
 
 ---
 

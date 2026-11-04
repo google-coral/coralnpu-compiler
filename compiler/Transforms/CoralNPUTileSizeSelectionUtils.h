@@ -15,6 +15,8 @@
 #ifndef COMPILER_TRANSFORMS_CORALNPUTILESIZESELECTIONUTILS_H_
 #define COMPILER_TRANSFORMS_CORALNPUTILESIZESELECTIONUTILS_H_
 
+#include "compiler/Target/Utils.h"
+
 // IREE:
 #include "iree/compiler/Codegen/Dialect/CPU/IR/IREECPUTypes.h"
 
@@ -22,7 +24,6 @@
 #include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Interfaces/TilingInterface.h"
 #include "mlir/Support/LogicalResult.h"
 
@@ -57,10 +58,6 @@ bool hasWideningInput(linalg::LinalgOp op);
 // convolution or pooling (including 3/4-input quantized ops).
 FailureOr<linalg::ConvolutionDimensions> inferConvDims(Operation *op);
 
-// Parses VLEN from target CPU features: the largest N among +zvl<N>b.
-FailureOr<int64_t> getVlenFromTargetFeatures(FunctionOpInterface funcOp);
-FailureOr<int64_t> getVlenFromTargetFeatures(DictionaryAttr config);
-
 // Helper to create a tiling level attribute with default (false) scalable
 // flags.
 Attribute getTilingLevelAttr(MLIRContext *context, ArrayRef<int64_t> sizes);
@@ -83,17 +80,6 @@ inline constexpr llvm::StringLiteral kPromoteOperandsName = "promote_operands";
 // Returns true if `loweringConfig` is a CPU lowering config with a
 // kPromoteOperandsName entry that is a list with at least one operand.
 bool hasPromoteOperands(Attribute loweringConfig);
-
-// Returns the native vector size in bytes of the HAL executable target of `op`
-// (the "native_vector_size" entry of the target config), or 16 bytes if the
-// target does not give it.
-int64_t getNativeVectorBytes(Operation *op);
-
-// Returns true if the enclosing HAL executable targets CoralNPU with +zvtbase.
-bool hasZvtTargetFeature(Operation *op);
-
-// Returns true if `op` targets CoralNPU with `feature` (e.g. "+zvfbfmin").
-bool hasCoralNPUTargetFeature(Operation *op, StringRef feature);
 
 // Returns true for the Zvt element types: f32 x f32 or bf16 x bf16 -> f32, and
 // i8 x i8 or i16 x i16 -> i32.

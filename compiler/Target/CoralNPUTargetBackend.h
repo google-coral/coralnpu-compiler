@@ -15,27 +15,31 @@
 #ifndef COMPILER_TARGET_CORALNPUTARGETBACKEND_H_
 #define COMPILER_TARGET_CORALNPUTARGETBACKEND_H_
 
+#include "compiler/Target/CoralNPUTargetHooks.h"
 #include "compiler/Transforms/Passes.h"
 
-// IREE headers
+// IREE:
 #include "compiler/plugins/target/LLVMCPU/LLVMTargetOptions.h"
 #include "compiler/plugins/target/LLVMCPU/LinkerTool.h"
 #include "iree/compiler/Codegen/Utils/CodegenOptions.h"
 #include "iree/compiler/Dialect/HAL/Target/TargetBackend.h"
 #include "iree/compiler/Utils/OptionUtils.h"
 
-// MLIR headers
+// MLIR:
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
-// LLVM headers
+// LLVM:
 #include "llvm/Support/CommandLine.h"
 #include "llvm/TargetParser/Triple.h"
 
-// Standard C/C++ headers
+// Standard library:
+#include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
 namespace mlir {
 class OpPassManager;
 }  // namespace mlir
@@ -197,7 +201,11 @@ struct CoralNPUOptions {
 class CoralNPUTargetBackend final
     : public iree_compiler::IREE::HAL::TargetBackend {
  public:
-  explicit CoralNPUTargetBackend(const CoralNPUOptions &options);
+  // Creates the backend for |options|. |hooks|, if not null, observe how the
+  // backend compiles the executables (CoralNPUTargetHooks.h).
+  explicit CoralNPUTargetBackend(
+      const CoralNPUOptions &options,
+      std::shared_ptr<CoralNPUTargetHooks> hooks = nullptr);
 
   std::string getLegacyDefaultDeviceID() const override;
 
@@ -224,6 +232,8 @@ class CoralNPUTargetBackend final
 
   void buildLinkingPassPipeline(OpPassManager &passManager) override;
 
+  // Compiles and links |variantOp| into a CoralNPU executable binary or static
+  // library, notifying `hooks_` if configured.
   LogicalResult serializeExecutable(
       const SerializationOptions &options,
       iree_compiler::IREE::HAL::ExecutableVariantOp variantOp,
@@ -242,6 +252,8 @@ class CoralNPUTargetBackend final
       const std::string &queryFunctionName,
       const SmallVector<iree_compiler::IREE::HAL::Artifact> &objectFiles);
 
+  // Links the executable and adds its binary. Writes the linked firmware ELF
+  // into |linkedElf|, if not null.
   LogicalResult serializeDynamicLibraryExecutable(
       const SerializationOptions &options,
       const iree_compiler::IREE::HAL::LLVMTarget &target,
@@ -249,14 +261,17 @@ class CoralNPUTargetBackend final
       OpBuilder &executableBuilder, const std::string &libraryName,
       const llvm::Triple &targetTriple,
       const SmallVector<iree_compiler::IREE::HAL::Artifact> &objectFiles,
-      iree_compiler::IREE::HAL::LinkerTool *linkerTool);
+      iree_compiler::IREE::HAL::LinkerTool *linkerTool,
+      std::vector<int8_t> *linkedElf);
 
+  // Writes the register allocation report of |variantOp| when requested.
   void dumpRegisterAllocationReport(
       const RegisterAllocationReportCollector &collector,
       iree_compiler::IREE::HAL::ExecutableVariantOp variantOp);
 
   iree_compiler::IREE::HAL::LLVMTargetOptions defaultOptions_;
   CoralNPUOptions options_;
+  std::shared_ptr<CoralNPUTargetHooks> hooks_;
 };
 
 }  // namespace mlir::coralnpu_compiler

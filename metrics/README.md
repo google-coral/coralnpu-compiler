@@ -4,16 +4,30 @@ This directory holds the code that measures how CoralNPU runs a workload. The
 compiler (`compiler/`), the runtime (`runtime/`) and the firmware (`crt/`) keep
 only generic hooks, and the code here implements them.
 
-| Directory  | Content                                                        |
-| ---------- | -------------------------------------------------------------- |
-| `runtime/` | Per-dispatch execution statistics (`--coralnpu_stats_format`). |
-| `tests/`   | Tests of the metrics.                                          |
+| Directory   | Content                                                           |
+| ----------- | ----------------------------------------------------------------- |
+| `compiler/` | Per-executable metrics bundle (`--coralnpu-dump-metrics-format`). |
+| `runtime/`  | Per-dispatch execution statistics (`--coralnpu_stats_format`).    |
+| `tests/`    | Tests of the metrics.                                             |
 
 The dependencies go one way: the metrics code depends on the hook interfaces
 of the core code, for example `//runtime/driver:run_hooks`, and the core code
-does not depend on the metrics code. The one exception is the driver
-registration (`//runtime/driver/registration`), which installs the statistics
-writer as the dispatch observer of the devices.
+does not depend on the metrics code. The exceptions are the two registrations,
+which install the metrics: the driver registration
+(`//runtime/driver/registration`) installs the statistics writer as the
+dispatch observer of the devices, and the compiler plugin
+(`compiler/Target/CoralNPUTarget.cpp`) passes the metrics hooks to the target
+backend.
+
+## Compiler metrics
+
+The target backend calls its hooks (`compiler/Target/CoralNPUTargetHooks.h`)
+as it serializes each executable. The metrics hooks
+(`metrics/compiler/MetricsTargetHooks.h`) fill a bundle
+(`metrics/compiler/MetricsBundle.h`) with the target, the dispatches and the
+ITCM and DTCM use of the linked firmware ELF (`metrics/compiler/MetricsElf.h`),
+and write it. The `--coralnpu-dump-metrics-*` flags in the top-level
+`README.md` select the format and the directory.
 
 ## Runtime statistics
 

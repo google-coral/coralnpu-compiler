@@ -13,3 +13,5 @@
 # the License.
 
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../compiler coralnpu_compiler)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../metrics/compiler
+                 coralnpu_metrics_compiler)

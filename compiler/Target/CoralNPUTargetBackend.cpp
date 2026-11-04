@@ -20,7 +20,7 @@
 #include "compiler/Target/Utils.h"
 #include "compiler/Transforms/CoralNPUTileSizeSelectionUtils.h"
 
-// IREE headers
+// IREE:
 #include "compiler/plugins/target/LLVMCPU/LLVMIRPasses.h"
 #include "compiler/plugins/target/LLVMCPU/LibraryBuilder.h"
 #include "compiler/plugins/target/LLVMCPU/StaticLibraryGenerator.h"
@@ -42,7 +42,7 @@
 #include "iree/compiler/Dialect/Util/IR/UtilTypes.h"
 #include "iree/compiler/Utils/ModuleUtils.h"
 
-// MLIR headers
+// MLIR:
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/PDL/IR/PDL.h"
@@ -57,8 +57,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
-// LLVM headers
-#include "llvm/ADT/SmallString.h"
+// LLVM:
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -69,14 +68,12 @@
 #include "llvm/Linker/Linker.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Target/TargetMachine.h"
 
-// Standard headers
+// Standard library:
 #include <cmath>
-#include <mutex>
 #include <set>
 #include <vector>
 
@@ -177,8 +174,6 @@ static LogicalResult appendDebugDatabase(
 
 static constexpr char kQueryFunctionName[] =
     "iree_hal_executable_library_query";
-
-std::mutex gReportMutex;
 
 class InterceptingPassManager : public llvm::legacy::PassManager {
  public:
@@ -289,8 +284,9 @@ LogicalResult CoralNPUOptions::validate(MLIRContext *context) const {
   return success();
 }
 
-CoralNPUTargetBackend::CoralNPUTargetBackend(const CoralNPUOptions &options)
-    : options_(options) {
+CoralNPUTargetBackend::CoralNPUTargetBackend(
+    const CoralNPUOptions &options, std::shared_ptr<CoralNPUTargetHooks> hooks)
+    : options_(options), hooks_(std::move(hooks)) {
   IREE::HAL::LLVMCPUTargetCLOptions clOptions;
 
   clOptions.targetTriple = "riscv32";
@@ -906,6 +902,7 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
   }
 
   LogicalResult result = failure();
+  std::vector<int8_t> linkedElf;
   if (target.linkStatic) {
     result = serializeStaticLibraryExecutable(options, target, variantOp,
                                               executableBuilder, libraryName,
@@ -913,10 +910,17 @@ LogicalResult CoralNPUTargetBackend::serializeExecutable(
   } else {
     result = serializeDynamicLibraryExecutable(
         options, target, variantOp, executableBuilder, libraryName,
-        targetTriple, objectFiles, linkerTool.get());
+        targetTriple, objectFiles, linkerTool.get(),
+        hooks_ ? &linkedElf : nullptr);
   }
 
   dumpRegisterAllocationReport(collector, variantOp);
+  if (hooks_ && succeeded(result)) {
+    hooks_->onExecutableSerialized(
+        variantOp, target,
+        ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(linkedElf.data()),
+                          linkedElf.size()));
+  }
 
   return result;
 }
@@ -926,41 +930,18 @@ void CoralNPUTargetBackend::dumpRegisterAllocationReport(
     IREE::HAL::ExecutableVariantOp variantOp) {
   if (collector.isEmpty()) return;
 
-  std::string format = options_.registerAllocationReportFormat;
-  std::string dir = options_.registerAllocationReportDir;
-  std::string filter = options_.registerAllocationReportFilter;
-
-  if (dir == "-" || dir.empty()) {
-    std::lock_guard<std::mutex> lock(gReportMutex);
-    llvm::raw_ostream &os = (dir == "-") ? llvm::outs() : llvm::errs();
-    if (format == "json") {
-      collector.dumpJson(os, filter);
-    } else {
-      collector.dumpPretty(os, filter);
-    }
-    os.flush();
-    return;
-  }
-
-  // Write to file in directory
-  SmallString<128> filePath(dir);
-  std::string variantName = variantOp.getName().str();
-  llvm::sys::path::append(filePath, variantName + "_regalloc." +
-                                        (format == "json" ? "json" : "txt"));
-
-  std::error_code ec;
-  llvm::raw_fd_ostream os(filePath, ec, llvm::sys::fs::OF_Text);
-  if (ec) {
-    variantOp.emitWarning()
-        << "failed to open register allocation report file: " << ec.message();
-    return;
-  }
-
-  if (format == "json") {
-    collector.dumpJson(os, filter);
-  } else {
-    collector.dumpPretty(os, filter);
-  }
+  const bool json = options_.registerAllocationReportFormat == "json";
+  std::string fileName =
+      variantOp.getName().str() + "_regalloc." + (json ? "json" : "txt");
+  writeReport(
+      variantOp, options_.registerAllocationReportDir, fileName,
+      [&](llvm::raw_ostream &os) {
+        if (json) {
+          collector.dumpJson(os, options_.registerAllocationReportFilter);
+        } else {
+          collector.dumpPretty(os, options_.registerAllocationReportFilter);
+        }
+      });
 }
 
 LogicalResult CoralNPUTargetBackend::serializeStaticLibraryExecutable(
@@ -994,7 +975,7 @@ LogicalResult CoralNPUTargetBackend::serializeDynamicLibraryExecutable(
     IREE::HAL::ExecutableVariantOp variantOp, OpBuilder &executableBuilder,
     const std::string &libraryName, const llvm::Triple &targetTriple,
     const SmallVector<IREE::HAL::Artifact> &objectFiles,
-    IREE::HAL::LinkerTool *linkerTool) {
+    IREE::HAL::LinkerTool *linkerTool, std::vector<int8_t> *linkedElf) {
   auto linkArtifactsOr =
       linkerTool->linkDynamicLibrary(libraryName, objectFiles);
   if (!linkArtifactsOr.has_value()) {
@@ -1019,6 +1000,7 @@ LogicalResult CoralNPUTargetBackend::serializeDynamicLibraryExecutable(
       return variantOp.emitError() << "failed to read back dylib temp file at "
                                    << linkArtifacts.libraryFile.path;
     }
+    if (linkedElf) *linkedElf = *elfFile;
     if (!options.dumpBinariesPath.empty()) {
       IREE::HAL::dumpDataToPath<int8_t>(options.dumpBinariesPath,
                                         options.dumpBaseName,

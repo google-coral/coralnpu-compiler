@@ -13,21 +13,23 @@
 // limitations under the License.
 
 #include "compiler/Target/CoralNPUTargetBackend.h"
+#include "metrics/compiler/MetricsOptions.h"
+#include "metrics/compiler/MetricsTargetHooks.h"
 
-// IREE headers
+// IREE:
 #include "iree/compiler/Codegen/Common/Transforms.h"
 #include "iree/compiler/Dialect/HAL/IR/HALTypes.h"
 #include "iree/compiler/Dialect/HAL/Target/TargetRegistry.h"
 #include "iree/compiler/Dialect/Util/IR/UtilOps.h"
 #include "iree/compiler/PluginAPI/Client.h"
 
-// MLIR headers
+// MLIR:
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Pass/Pass.h"
 
-// LLVM headers
+// LLVM:
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -38,6 +40,19 @@ using namespace mlir;
 using namespace mlir::iree_compiler;
 
 namespace mlir::coralnpu_compiler {
+
+// The options of the plugin: those of the target backend and those of the
+// compiler metrics (metrics/compiler).
+struct CoralNPUPluginOptions {
+  CoralNPUOptions target;
+  MetricsOptions metrics;
+
+  // Binds the options to their flags.
+  void bindOptions(OptionsBinder &binder) {
+    target.bindOptions(binder);
+    metrics.bindOptions(binder);
+  }
+};
 
 namespace {
 
@@ -62,20 +77,28 @@ struct CoralNPUTargetDevice final : public IREE::HAL::TargetDevice {
 };
 
 struct CoralNPUSession
-    : public PluginSession<CoralNPUSession, CoralNPUOptions,
+    : public PluginSession<CoralNPUSession, CoralNPUPluginOptions,
                            PluginActivationPolicy::DefaultActivated> {
   static void registerPasses() { registerCoralNPUPasses(); }
 
+  // Registers the CoralNPU HAL target device.
   void populateHALTargetDevices(IREE::HAL::TargetDeviceList &targets) override {
     targets.add("coralnpu", [=]() {
-      return std::make_shared<CoralNPUTargetDevice>(options);
+      return std::make_shared<CoralNPUTargetDevice>(options.target);
     });
   }
 
+  // Registers the CoralNPU HAL target backend and wires its metrics hooks.
   virtual void populateHALTargetBackends(
       IREE::HAL::TargetBackendList &targets) override {
     targets.add("coralnpu", [=]() {
-      return std::make_shared<CoralNPUTargetBackend>(options);
+      // The metrics observe the backend through its hooks, if requested.
+      MetricsTargetConfig metricsConfig;
+      metricsConfig.dtcmSizeKb = options.target.dtcmSizeKb;
+      metricsConfig.numVectorRegisters = options.target.numVectorRegisters;
+      return std::make_shared<CoralNPUTargetBackend>(
+          options.target,
+          createMetricsTargetHooks(options.metrics, metricsConfig));
     });
   }
 
@@ -85,7 +108,7 @@ struct CoralNPUSession
 
   LogicalResult onActivate() override {
     LLVM_DEBUG(llvm::dbgs() << "Coral plugin activated\n");
-    if (failed(options.validate(context))) {
+    if (failed(options.target.validate(context))) {
       return failure();
     }
     return success();
@@ -120,24 +143,26 @@ struct CoralNPUSession
   // Adds passes to the |buildDispatchCreationPassPipeline| pipeline at the end.
   void extendDispatchCreationPassPipeline(OpPassManager &passManager) override {
     passManager.addPass(createCoralNPUAffinityAnnotationPass(
-        {options.rooflineSpeedupThreshold}));
+        {options.target.rooflineSpeedupThreshold}));
   }
 
   // Adds the affinity profile dump at the end of the Stream pipeline, the
   // earliest point at which stream affinities are resolved.
   void extendStreamPassPipeline(OpPassManager &passManager) override {
-    if (options.dumpAffinityProfileFormat == DumpOutputFormat::None) {
+    if (options.target.dumpAffinityProfileFormat == DumpOutputFormat::None) {
       return;
     }
     passManager.addPass(createCoralNPUDumpAffinityExecutionProfilePass(
-        {options.dumpAffinityProfileFormat, options.dumpAffinityProfileFile}));
+        {options.target.dumpAffinityProfileFormat,
+         options.target.dumpAffinityProfileFile}));
   }
 };
 
 }  // namespace
 }  // namespace mlir::coralnpu_compiler
 
-IREE_DEFINE_COMPILER_OPTION_FLAGS(mlir::coralnpu_compiler::CoralNPUOptions);
+IREE_DEFINE_COMPILER_OPTION_FLAGS(
+    mlir::coralnpu_compiler::CoralNPUPluginOptions);
 
 extern "C" bool iree_register_compiler_plugin_coralnpu(
     mlir::iree_compiler::PluginRegistrar *registrar) {

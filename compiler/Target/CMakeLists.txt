@@ -22,8 +22,29 @@ iree_cc_library(
   INCLUDES
     "${CMAKE_SOURCE_DIR}"
   DEPS
+    iree::compiler::Codegen::Utils
+    iree::compiler::Dialect::HAL::IR
     iree::compiler::Dialect::HAL::Target
+    LLVMSupport
+    MLIRFunctionInterfaces
     MLIRIR
+    MLIRSupport
+  PUBLIC
+)
+
+# The hooks of the target backend, through which code outside it (e.g.
+# coralnpu_metrics_compiler) observes how it compiles the executables.
+iree_cc_library(
+  NAME
+    TargetHooks
+  HDRS
+    "CoralNPUTargetHooks.h"
+  INCLUDES
+    "${CMAKE_SOURCE_DIR}"
+  DEPS
+    iree::compiler::Dialect::HAL::IR
+    LLVMSupport
+    MLIRSupport
   PUBLIC
 )
 
@@ -44,8 +65,11 @@ iree_cc_library(
   INCLUDES
     "${CMAKE_SOURCE_DIR}"
   DEPS
+    coralnpu_compiler::Target::TargetHooks
     coralnpu_compiler::Target::Utils
     coralnpu_compiler::Transforms
+    coralnpu_metrics_compiler::MetricsOptions
+    coralnpu_metrics_compiler::MetricsTargetHooks
     iree::compiler::plugins::target::LLVMCPU::LLVMCPU
     iree::compiler::plugins::target::LLVMCPU::LLVMIRPasses
     iree::compiler::plugins::target::LLVMCPU::LLVMTargetOptions
