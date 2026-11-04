@@ -289,6 +289,168 @@ flowchart LR
 
 ---
 
+## 3. Workload Report & Bazel Integration (`metrics/tools/`)
+
+### 3.1 Overview, Pipeline & Join Key
+
+The workload report tools in `metrics/tools/` join compile-time
+`coralnpu.metrics.v1` bundles with runtime `coralnpu.stats.v1` JSON Lines traces
+into a unified `coralnpu.report.v1` JSON document and space-aligned Markdown
+tables (`# CoralNPU workload report`):
+
+```mermaid
+flowchart LR
+  MLIR["workload.mlir"] -->|"iree-compile<br/>--coralnpu-dump-metrics-format=json<br/>--coralnpu-dump-metrics-dir=-"| VMFB["<name>_module.vmfb"]
+  MLIR -->|"stdout redirect"| BUNDLES["<name>.metrics.json<br/>(coralnpu.metrics.v1)"]
+  VMFB -->|"workload_report.py<br/>iree-run-module --simulator=mpact<br/>--coralnpu_stats_format=json<br/>--coralnpu_stats_collect=stack"| STATS["stats_mpact.jsonl<br/>(coralnpu.stats.v1)"]
+  BUNDLES --> REPORT["report.py<br/>(build_report)"]
+  STATS --> REPORT
+  REPORT --> MD["report.md<br/>(--format=pretty)"]
+  REPORT --> JSON["report.json<br/>(coralnpu.report.v1)"]
+```
+
+- **Exact `(executable, name)` Join Across Compiler and Runtime**: During
+  compilation, `MetricsTargetHooks::onExecutableSerialized`
+  (`metrics/compiler/MetricsTargetHooks.cpp`) records `"executable"` from
+  `IREE::HAL::ExecutableOp::getName()` and each dispatch's `"name"` from
+  `IREE::HAL::ExecutableExportOp::getName()`. IREE's ELF library generator
+  embeds those strings into the ELF executable library header's `name` and
+  `exports.names` tables inside the linked firmware ELF. At runtime,
+  `coralnpu_executable.c` reads those exact strings from the ELF library header
+  (rather than the `.vmfb` module filename stem), so joining on
+  `(executable, name)` correlates multi-executable workloads deterministically.
+
+### 3.2 Report Schema, Aggregation Rules & Bazel Runner
+
+- **Compile-Time Bundle Capture (`build_tools/bazel/bytecode_module.bzl`)**:
+  `coralnpu_bytecode_module(..., metrics_name = "<name>.metrics.json")` adds
+  `metrics_name` to the genrule `outs`, appends
+  `--coralnpu-dump-metrics-format=json --coralnpu-dump-metrics-dir=-` to
+  `iree-compile`, and redirects `stdout` to `$(execpath <metrics_name>)`.
+- **Bundle & Stats Loading (`metrics/tools/report.py`)**:
+  - `load_bundles(paths)` expands directory paths to sorted `*.metrics.json`
+    files, decodes one or more concatenated JSON objects per file via
+    `json.JSONDecoder.raw_decode`, and keeps dicts with
+    `schema == "coralnpu.metrics.v1"`, raising `ValueError` on duplicate
+    `executable` names.
+  - `read_stats(paths)` parses JSON Lines files and keeps dicts with
+    `schema == "coralnpu.stats.v1"`.
+- **Merging & Completeness Invariants (`build_report`, `find_problems`)**:
+  - `build_report(bundles, records)` produces a `coralnpu.report.v1` dict with
+    `target` (from `bundles[0]` when `bundles` is non-empty, adding `itcm_kb`
+    from the ELF region size), `simulators` (in first-seen order),
+    `executables`, `dispatches`, and `summary` (`{firmware, zvt, simulators}`).
+    Each entry in `executables` copies the region dicts from
+    `bundle.elf.regions` into `{executable, itcm, dtcm}` when present, and
+    `dispatches` lists bundled dispatches (`in_bundle = True`, with `itcm_used`
+    and `data_used` copied from the executable's `itcm` and `dtcm` regions or
+    from the runtime stats record as a fallback, raising `ValueError` if the two
+    disagree) in bundle order followed by any runtime-only `(executable, name)`
+    pairs (`in_bundle = False`).
+  - Each per-simulator `run` aggregates all records for one dispatch on one
+    simulator into `runs`, `failures` (`status.code != "OK"`), `cycles_per_run`
+    and `instret_per_run` (integer floor division over successful runs, emitted
+    **only** when every successful run reported that counter), `cycles`
+    (`{total, kernel}` sums), `instret` (`{kernel}` sum), and `memory` (maxima
+    across runs for `heap_used`, `stack_peak`, and `stack_overflow`). A `cycles`
+    or `instret` sum (per-dispatch or in
+    `summary.simulators.<sim>.{cycles,instret}`) is emitted **only** when every
+    constituent run reported that counter; for example, a failed run omits
+    `cycles.kernel` while still reporting `cycles.total`, and backends without a
+    total cycle counter omit `cycles.total`.
+  - `summary.firmware` records `{executables, itcm_used, dtcm_used}` (peak
+    static ELF usage across executables), and `summary.zvt` computes
+    `{candidates, lowered_candidates, rate}`
+    (`round(lowered_candidates / candidates, 4)`, omitting `rate` when
+    `candidates == 0`) statically over all entries in `report["dispatches"]`
+    with `candidate == True` (`{candidate: False, lowered: True}` dispatches are
+    excluded from `summary.zvt` and rendered as `no/yes` in `## Dispatches`).
+  - `find_problems(report, simulators)` returns error strings for missing
+    compiler bundles, missing simulator stats, runtime dispatches without a
+    compiler bundle, failed runs, and stack overflows.
+- **Pretty Markdown Format (`format_pretty`)**:
+  Renders `# CoralNPU workload report` with a bullet summary (`Target` with
+  `ITCM` and `DTCM` capacities, peak `Firmware` ITCM/DTCM `used` bytes without
+  heap/stack, `Static Zvt rate`, and per-simulator run/failure/cycle totals) and
+  space-aligned fenced code tables for `## Dispatches` and `## Tile grid`
+  (omitted when no dispatch has `tile_grid`). Dispatch names are qualified as
+  `<executable>::<name>` when non-unique across executables. In `## Dispatches`,
+  the `zvt` column renders `yes` or `no` when `candidate` and `lowered` match,
+  and `<cand>/<low>` (such as `yes/no`) when they differ; in `## Tile grid`, the
+  `zvt` column is left blank when `zvt_grid` is absent. Bundled dispatches that
+  did not run render a single row with `n/a` runtime columns in `## Dispatches`;
+  lists render as `MxNxK` and stack overflows as `<peak>!`:
+
+  ~~~markdown
+  # CoralNPU workload report
+
+  - Target: riscv32-unknown-elf, VLEN 128, Zvt yes, ITCM 8 KB, DTCM 32 KB
+  - Firmware: up to 1824 bytes of ITCM and 64 bytes of DTCM, without the heap and the stack, in 1 executables
+  - Static Zvt rate: 1 of 1 Zvt candidates lowered to Zvt (100.0%)
+  - mpact: 1 dispatch runs, 0 failed, 420 cycles, 310 in the kernels
+
+  ## Dispatches
+
+  Per run: the cycles of the run and of the kernel (the workgroup loop), the instructions of the kernel, the ITCM and static DTCM data of the executable, the heap and the stack peak in bytes ("!" for an overflow), and whether the root op is a Zvt candidate and lowered to Zvt ("cand/low" when they differ).
+
+  ```
+  dispatch           simulator  runs  failed  cycles  kernel  kinstret  itcm  data  heap  stack  zvt
+  matmul_dispatch_0  mpact      1     0       420     310     280       1824  64    512   128    yes
+  ```
+
+  ## Tile grid
+
+  The loop ranges of the root op, and its workgroup, DTCM and vector tile sizes; the Zvt grid is the number of 16x16 Zvt tiles of a vector tile along M and N.
+
+  ```
+  dispatch           op             loops       workgroup   dtcm        vector    zvt
+  matmul_dispatch_0  linalg.matmul  64x96x128   64x96x128   64x96x128   32x32x1   2x2
+  ```
+  ~~~
+
+- **Bazel Workload Report Macro & Runner (`metrics/tools/defs.bzl`,
+  `metrics/tools/workload_report.py`)**:
+  `coralnpu_workload_report` compiles the `.mlir` source via
+  `coralnpu_bytecode_module(..., metrics_name = "<name>.metrics.json")` and
+  defines a `native_test` running `//metrics/tools:workload_report` on the
+  configured `simulators` (default `["mpact"]`, tagged `driver=coralnpu`,
+  `simulator=<sim>`, `target=coralnpu`). Before each simulator run,
+  `workload_report.py` removes any existing `stats_<simulator>.jsonl` in
+  `--output-dir` (default `$TEST_UNDECLARED_OUTPUTS_DIR`, because
+  `stats_writer.c` opens stats files in `"a"` append mode) and strips ambient
+  `CORALNPU_SIMULATOR` and `CORALNPU_STATS_*` environment variables. It then
+  runs `iree-run-module` with
+  `--coralnpu_stats_format=json --coralnpu_stats_collect=stack`, writes
+  `report.md` and `report.json` on exit `0` or `1` (even if a run failed), and
+  exits with `0` (no problems), `1` (`iree-run-module` non-zero exit, simulator
+  stats read/parse failure, or `find_problems` errors), or `2`
+  (unreadable/malformed `--compiler-metrics` bundles or bundle/stats footprint
+  mismatches; standalone `report.py` exits with `2` on any unreadable or
+  inconsistent bundle or stats input). Behavior is verified by
+  `//metrics/tests/tools:report_test` and `//metrics/tests/report:mlp_f32`.
+
+### 3.3 Why Not Alternative Report Designs
+
+- **Why split `report.py` (offline merger) from `workload_report.py` (simulator
+  runner) instead of merging inside `metrics/runtime/` C?** Keeping report
+  merging in standalone Python preserves the strict separation between
+  `metrics/compiler/` and `metrics/runtime/` and avoids adding a JSON parser to
+  the C HAL driver. It also lets developers re-format saved `.metrics.json` and
+  `.jsonl` files offline without re-running simulators.
+- **Why require all runs to report a counter before emitting `cycles` sums?**
+  A dispatch that fails before finishing the workgroup loop omits
+  `cycles.kernel` (while still reporting `cycles.total`), and some targets (such
+  as FPGA) do not report `cycles.total`. Omitting any `cycles` sum that is
+  missing on a constituent run prevents a partial sum from being misread as a
+  complete workload total.
+- **Why run `iree-run-module` inside `workload_report.py` (`native_test`) rather
+  than a build-time `genrule`?** Running simulation and report generation in a
+  test target keeps compilation cached as a normal build action while only
+  executing the simulator during `bazel test`. It also still writes `report.md`
+  and `report.json` to `$TEST_UNDECLARED_OUTPUTS_DIR` when a dispatch fails.
+
+---
+
 ## TODOs
 
 - [ ] Record DTCM tile footprint estimate in `RecordTileGridPass` using
@@ -301,3 +463,9 @@ flowchart LR
 - [ ] Record BF16 `vecmat` K-loop candidate and `vfwmaccbf16.vf` lowering status
   in `coralnpu.metrics` and emit missed remarks when falling back to generic RVV
   (`metrics/compiler/*`, `compiler/Transforms/CoralNPUMatrixCodegen.cpp`).
+- [ ] Add dynamic instruction mix and runtime-weighted Zvt execution rate to
+  runtime stats and workload reports (`metrics/runtime/`,
+  `metrics/tools/report.py`).
+- [ ] Add optional performance and memory threshold checks to
+  `workload_report.py` (`metrics/tools/workload_report.py`,
+  `metrics/tools/defs.bzl`).

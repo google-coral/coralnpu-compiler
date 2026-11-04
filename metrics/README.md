@@ -8,6 +8,7 @@ only generic hooks, and the code here implements them.
 | ----------- | ----------------------------------------------------------------- |
 | `compiler/` | Per-executable metrics bundle (`--coralnpu-dump-metrics-format`). |
 | `runtime/`  | Per-dispatch execution statistics (`--coralnpu_stats_format`).    |
+| `tools/`    | Workload report, which merges the bundles and the statistics.     |
 | `tests/`    | Tests of the metrics.                                             |
 
 The dependencies go one way: the metrics code depends on the hook interfaces
@@ -18,6 +19,63 @@ which install the metrics: the driver registration
 dispatch observer of the devices, and the compiler plugin
 (`compiler/Target/CoralNPUTarget.cpp`) passes the metrics hooks to the target
 backend.
+
+## Workload report
+
+The workload report (`metrics/tools/report.py`) merges the compiler metrics
+bundles and the runtime statistics of a workload, and reports these metrics
+per dispatch and for the whole workload:
+
+- **Cycles:** the cycles of each run, and of its kernel (the workgroup loop),
+  which the firmware measures.
+- **ITCM and DTCM use:** the use of the firmware ELF (bundle), the heap of the
+  dispatch data and, with `--coralnpu_stats_collect=stack`, the stack peak.
+- **Tile grid:** the workgroup, DTCM and vector tile sizes of the root op, and
+  its Zvt grid (bundle).
+- **Static Zvt rate:** the Zvt candidates that the compiler lowered to Zvt
+  (bundle).
+
+The `coralnpu_workload_report` Bazel macro (`metrics/tools/defs.bzl`)
+compiles a workload with its bundles, runs it on MPACT with the statistics,
+and writes the report to the test outputs. For example:
+
+```shell
+bazel test --config=dev //metrics/tests/report:mlp_f32
+cat bazel-testlogs/metrics/tests/report/mlp_f32/test.outputs/report.md
+```
+
+Without Bazel, the same report takes three commands:
+
+```shell
+iree-compile --iree-hal-target-device=coralnpu \
+  --coralnpu-dump-metrics-format=json --coralnpu-dump-metrics-dir=- \
+  model.mlir -o model.vmfb > model.metrics.json
+iree-run-module --module=model.vmfb --device=coralnpu --simulator=mpact \
+  --coralnpu_stats_format=json --coralnpu_stats_file=stats.jsonl \
+  --coralnpu_stats_collect=stack --input=...
+python3 metrics/tools/report.py --compiler-metrics model.metrics.json \
+  --runtime-stats stats.jsonl
+```
+
+`--format=json` writes the report as one `coralnpu.report.v1` JSON document,
+whose keys the docstring of `report.py` describes. The report of the MLP
+starts with a summary of the workload:
+
+```markdown
+- Static Zvt rate: 2 of 2 Zvt candidates lowered to Zvt (100.0%)
+- mpact: 2 dispatch runs, 0 failed, 2169 cycles, 1589 in the kernels
+```
+
+Keep these limits in mind:
+
+- MPACT is a functional simulator: it executes one instruction per cycle.
+  Verilator gives the cycles of the RTL.
+- The DTCM tile sizes fit the working set of a tile in the DTCM, and promoted
+  RVV contractions and Zvt scratch tiles are allocated in the DTCM heap (in 4 KB
+  pages), whereas unpromoted bindings stay in DDR.
+- The `coralnpu-zvt` missed remarks of the compiler
+  (`--remarks-filter=coralnpu-zvt`, see the top-level `README.md`) tell why a
+  Zvt candidate is not lowered to Zvt.
 
 ## Compiler metrics
 

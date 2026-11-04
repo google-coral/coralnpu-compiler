@@ -109,18 +109,18 @@ test` (rather than `bazel build`) while writing `report.md` and `report.json` to
 
 ## 3. Implementation & Verification Plan
 
-- [ ] **Step 1 (`build_tools/bazel/bytecode_module.bzl`)**: Add optional
+- [x] **Step 1 (`build_tools/bazel/bytecode_module.bzl`)**: Add optional
   `metrics_name = None` output to `coralnpu_bytecode_module` dumping JSON
   compiler metrics bundles to `$(execpath <metrics_name>)`.
-- [ ] **Step 2 (`metrics/tools/report.py`, `metrics/tools/BUILD.bazel`)**:
+- [x] **Step 2 (`metrics/tools/report.py`, `metrics/tools/BUILD.bazel`)**:
   Implement `coralnpu.report.v1` loading (`load_bundles`, `read_stats`),
   merging (`build_report`), validation (`find_problems`), Markdown formatting
   (`format_pretty`), and CLI (`//metrics/tools:report_lib`,
   `//metrics/tools:report`).
-- [ ] **Step 3 (`metrics/tools/workload_report.py`, `metrics/tools/defs.bzl`)**:
+- [x] **Step 3 (`metrics/tools/workload_report.py`, `metrics/tools/defs.bzl`)**:
   Implement the simulator runner (`//metrics/tools:workload_report`) and the
   `coralnpu_workload_report` Bazel macro.
-- [ ] **Tests (`metrics/tests/tools/*`, `metrics/tests/report/*`,
+- [x] **Tests (`metrics/tests/tools/*`, `metrics/tests/report/*`,
   `tests/BUILD.bazel`)**: *Positive*: Verify multi-run aggregation, memory
   maxima, static Zvt rates, Markdown formatting, and bundle loading in
   `//metrics/tests/tools:report_test`, and end-to-end MLP report generation in
@@ -129,7 +129,7 @@ test` (rather than `bazel build`) while writing `report.md` and `report.json` to
   partial sums and per-run averages are omitted when a run lacks a counter, and
   `find_problems` flags missing bundles/stats, unbundled dispatches, failed
   runs, and stack overflows.
-- [ ] **Build, Doc & Archive Sync (`metrics/README.md`, `README.md`,
+- [x] **Build, Doc & Archive Sync (`metrics/README.md`, `README.md`,
   `docs/design/metrics.md`, `docs/design/INDEX.md`)**: Document the workload
   report workflow, Bazel macro, 3-command CLI usage, and caveats; sync
   `docs/design/metrics.md` and `docs/design/INDEX.md`, `git mv` this doc to
@@ -143,7 +143,7 @@ test` (rather than `bazel build`) while writing `report.md` and `report.json` to
 
 ## 4. Follow-Up Items (For Reviewer Approval -> Buganizer `2161972`)
 
-- [ ] **Add dynamic instruction mix and runtime-weighted Zvt execution rate to
+- [x] **Add dynamic instruction mix and runtime-weighted Zvt execution rate to
       runtime stats and workload reports** (`P2` | `metrics/runtime/`,
       `metrics/tools/report.py`):
       Complement the compile-time `summary.zvt.rate` with runtime Zvt coverage
@@ -151,7 +151,7 @@ test` (rather than `bazel build`) while writing `report.md` and `report.json` to
       instruction-mix counters (retired Zvt matrix instructions vs. RVV vector
       and scalar instructions). This lets reports show both static lowering
       coverage and dynamic execution share.
-- [ ] **Add optional performance and memory threshold checks to
+- [x] **Add optional performance and memory threshold checks to
       `workload_report.py`** (`P3` | `metrics/tools/workload_report.py`,
       `metrics/tools/defs.bzl`):
       Support opt-in cycle, DTCM/ITCM, and Zvt lowering rate assertions for

@@ -19,6 +19,7 @@ def coralnpu_bytecode_module(
         src,
         flags,
         module_name = None,
+        metrics_name = None,
         compile_tool = "@iree_core//tools:iree-compile",
         coralnpu_linker_tool = "@rv32_toolchain//:bin/riscv32-unknown-elf-ld",
         deps = [],
@@ -36,6 +37,10 @@ def coralnpu_bytecode_module(
       src: The source MLIR file.
       flags: Flags to pass to the compile tool.
       module_name: Optional name of the output module.
+      metrics_name: Optional name of a second output with the compiler metrics
+        bundles of the CoralNPU executables of the module, one JSON object
+        after the other (--coralnpu-dump-metrics-format=json, see
+        metrics/README.md).
       compile_tool: The compiler tool target.
       coralnpu_linker_tool: The linker tool target.
       deps: Additional source files needed for compilation.
@@ -55,6 +60,15 @@ def coralnpu_bytecode_module(
         "--mlir-disable-threading",
     ]
 
+    # The bundles go to stdout, which the compile command writes to the
+    # metrics output.
+    if metrics_name:
+        out_files.append(metrics_name)
+        actual_flags += [
+            "--coralnpu-dump-metrics-format=json",
+            "--coralnpu-dump-metrics-dir=-",
+        ]
+
     cmd = " && ".join([
         "mkdir -p crt",
         "cp $(execpath //crt:coralnpu_tcm_ld) crt/coralnpu_tcm.ld",
@@ -67,7 +81,7 @@ def coralnpu_bytecode_module(
             "--coralnpu-embedded-linker-path=$(execpath %s)" % (coralnpu_linker_tool),
             "-o $(execpath %s)" % (module_name),
             "$(execpath %s)" % (src),
-        ]),
+        ] + (["> $(execpath %s)" % (metrics_name)] if metrics_name else [])),
     ])
 
     all_tags = list(tags)
