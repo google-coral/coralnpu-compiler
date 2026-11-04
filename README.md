@@ -296,10 +296,11 @@ overview of the DTCM tiling and promotion is in
 `--coralnpu-dump-metrics-dir=<directory>`
 
 Dumps a `coralnpu.metrics.v1` bundle per executable: the target, the dispatches
-(workgroup size, binding and push constant counts) and the ITCM and DTCM use of
-the linked firmware ELF. The files are named `<executable>.metrics.{json,txt}`;
-if the directory is `-`, the bundle is written to stdout; if empty or omitted,
-it is written to stderr. The code is in [`metrics/`](metrics/README.md).
+(workgroup size, binding and push constant counts, and the tile grid of the root
+op: its workgroup, DTCM and vector tile sizes) and the ITCM and DTCM use of the
+linked firmware ELF. The files are named `<executable>.metrics.{json,txt}`; if
+the directory is `-`, the bundle is written to stdout; if empty or omitted, it
+is written to stderr. The code is in [`metrics/`](metrics/README.md).
 
 **Executable linking:**
 

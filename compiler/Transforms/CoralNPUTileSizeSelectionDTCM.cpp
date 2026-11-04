@@ -33,7 +33,6 @@
 // MLIR:
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
-#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
@@ -71,15 +70,6 @@ namespace mlir::coralnpu_compiler {
 #include "compiler/Transforms/Passes.h.inc"
 
 namespace {
-
-// Returns the static loop ranges of `op`, or `std::nullopt` if any loop has a
-// dynamic range.
-std::optional<SmallVector<int64_t>> getStaticLoopRanges(TilingInterface op) {
-  OpBuilder builder(op);
-  auto [offsets, sizes, strides] =
-      getOffsetsSizesAndStrides(op.getIterationDomain(builder));
-  return getConstantIntValues(sizes);
-}
 
 // Returns true if `map` is a projected permutation whose results are
 // `AffineDimExpr`s in strictly increasing dimension order (no constant zeros or
@@ -121,17 +111,7 @@ FailureOr<DTCMRoot> getDTCMRoot(FunctionOpInterface funcOp,
   // Find the unique root op, identified by having workgroup (distribution)
   // tile sizes from LLVMCPUSelectLoweringStrategyPass.
   DTCMRoot root;
-  for (Operation *op : computeOps) {
-    auto config = getLoweringConfig<IREE::CPU::LoweringConfigAttr>(op);
-    if (!config || !config.hasWorkgroupTilingLevel()) continue;
-    // More than one root op is unsupported.
-    if (root.op) {
-      root.op = nullptr;
-      break;
-    }
-    root.op = op;
-    root.config = config;
-  }
+  std::tie(root.op, root.config) = getTiledRootOp(computeOps);
   if (!root.op || !getTranslationInfo(funcOp)) {
     LDBG() << "skip " << funcOp.getName()
            << ": no unique root op with CPU distribution tile sizes and "

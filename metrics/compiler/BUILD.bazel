@@ -14,7 +14,7 @@
 
 # Compiler metrics of the CoralNPU target backend: a metrics bundle per
 # executable, which the hooks of the backend (//compiler/Target:TargetHooks)
-# fill as it serializes the executable. Depends on these hooks, not on the
+# fill as it compiles the executable. Depends on these hooks, not on the
 # backend.
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
@@ -58,20 +58,54 @@ cc_library(
     ],
 )
 
-# The hooks that fill and write the metrics bundles.
+# The `coralnpu.metrics` attribute of the dispatch functions.
+cc_library(
+    name = "MetricsAttr",
+    srcs = ["MetricsAttr.cpp"],
+    hdrs = ["MetricsAttr.h"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+# Records the tile grid of each dispatch after the configuration pipeline.
+cc_library(
+    name = "RecordTileGridPass",
+    srcs = ["RecordTileGridPass.cpp"],
+    hdrs = ["RecordTileGridPass.h"],
+    deps = [
+        ":MetricsAttr",
+        "//compiler/Transforms",
+        "@iree_core//compiler/src/iree/compiler/Codegen/Dialect/CPU/IR:IREECPUDialect",
+        "@iree_core//compiler/src/iree/compiler/Codegen/Dialect/Codegen/IR:IREECodegenDialect",
+        "@iree_core//compiler/src/iree/compiler/Codegen/Utils",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:FunctionInterfaces",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:TilingInterface",
+    ],
+)
+
+# The hooks that add the metrics passes and fill and write the metrics
+# bundles.
 cc_library(
     name = "MetricsTargetHooks",
     srcs = ["MetricsTargetHooks.cpp"],
     hdrs = ["MetricsTargetHooks.h"],
     deps = [
+        ":MetricsAttr",
         ":MetricsBundle",
         ":MetricsElf",
         ":MetricsOptions",
+        ":RecordTileGridPass",
         "//compiler/Target:TargetHooks",
         "//compiler/Target:Utils",
         "@iree_core//compiler/plugins/target/LLVMCPU:LLVMTargetOptions",
         "@iree_core//compiler/src/iree/compiler/Dialect/HAL/IR",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
     ],
 )

@@ -60,10 +60,9 @@
 // CHECK-JSON-NEXT:         1
 // CHECK-JSON-NEXT:       ],
 // CHECK-JSON-NEXT:       "binding_count": 3,
-// CHECK-JSON-NEXT:       "constant_count": 0
-// CHECK-JSON-NEXT:     }
-// CHECK-JSON-NEXT:   ],
-// CHECK-JSON-NEXT:   "elf": {
+// CHECK-JSON-NEXT:       "constant_count": 0,
+// CHECK-JSON-NEXT:       "tile_grid": {
+// CHECK-JSON:          "elf": {
 
 // CHECK-NONE-NOT: CoralNPU Metrics
 // CHECK-NONE-NOT: coralnpu.metrics.v1

@@ -79,7 +79,10 @@ struct CoralNPUTargetDevice final : public IREE::HAL::TargetDevice {
 struct CoralNPUSession
     : public PluginSession<CoralNPUSession, CoralNPUPluginOptions,
                            PluginActivationPolicy::DefaultActivated> {
-  static void registerPasses() { registerCoralNPUPasses(); }
+  static void registerPasses() {
+    registerCoralNPUPasses();
+    registerMetricsPasses();
+  }
 
   // Registers the CoralNPU HAL target device.
   void populateHALTargetDevices(IREE::HAL::TargetDeviceList &targets) override {

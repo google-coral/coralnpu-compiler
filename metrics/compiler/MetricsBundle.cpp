@@ -15,16 +15,28 @@
 #include "metrics/compiler/MetricsBundle.h"
 
 // LLVM:
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
 
 // Standard library:
+#include <algorithm>
 #include <cinttypes>
 
 namespace mlir::coralnpu_compiler {
 
 namespace {
+
+// Returns the keys of |object| in sorted order, for a stable output.
+llvm::SmallVector<llvm::StringRef> sortedKeys(
+    const llvm::json::Object &object) {
+  llvm::SmallVector<llvm::StringRef> keys;
+  for (const auto &entry : object) keys.push_back(entry.first);
+  llvm::sort(keys);
+  return keys;
+}
 
 // Returns "Yes" or "No", for the text report.
 const char *yesNo(bool value) { return value ? "Yes" : "No"; }
@@ -100,6 +112,12 @@ void dumpElfPretty(llvm::raw_ostream &os, const MetricsElfInfo &elf) {
 
 }  // namespace
 
+bool isReservedDispatchKey(llvm::StringRef key) {
+  constexpr llvm::StringLiteral kReservedDispatchKeys[] = {
+      "name", "ordinal", "workgroup_size", "binding_count", "constant_count"};
+  return llvm::is_contained(kReservedDispatchKeys, key);
+}
+
 void MetricsBundle::dumpJson(llvm::raw_ostream &os) const {
   llvm::json::OStream jsonWriter(os, /*IndentSize=*/2);
   jsonWriter.object([&] {
@@ -129,6 +147,9 @@ void MetricsBundle::dumpJson(llvm::raw_ostream &os) const {
           }
           jsonWriter.attribute("binding_count", dispatch.bindingCount);
           jsonWriter.attribute("constant_count", dispatch.constantCount);
+          for (llvm::StringRef key : sortedKeys(dispatch.extra)) {
+            jsonWriter.attribute(key, *dispatch.extra.get(key));
+          }
         });
       }
     });
@@ -167,6 +188,9 @@ void MetricsBundle::dumpPretty(llvm::raw_ostream &os) const {
     }
     os << "    Bindings: " << dispatch.bindingCount
        << ", Constants: " << dispatch.constantCount << "\n";
+    for (llvm::StringRef key : sortedKeys(dispatch.extra)) {
+      os << "    " << key << ": " << *dispatch.extra.get(key) << "\n";
+    }
   }
   if (elf) dumpElfPretty(os, *elf);
 }

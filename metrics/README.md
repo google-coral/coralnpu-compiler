@@ -22,12 +22,20 @@ backend.
 ## Compiler metrics
 
 The target backend calls its hooks (`compiler/Target/CoralNPUTargetHooks.h`)
-as it serializes each executable. The metrics hooks
+as it compiles each executable. The metrics hooks
 (`metrics/compiler/MetricsTargetHooks.h`) fill a bundle
-(`metrics/compiler/MetricsBundle.h`) with the target, the dispatches and the
-ITCM and DTCM use of the linked firmware ELF (`metrics/compiler/MetricsElf.h`),
-and write it. The `--coralnpu-dump-metrics-*` flags in the top-level
-`README.md` select the format and the directory.
+(`metrics/compiler/MetricsBundle.h`) and write it:
+
+- at the end of the configuration pipeline, metrics passes record facts about
+  each dispatch in the `coralnpu.metrics` attribute of its function
+  (`metrics/compiler/MetricsAttr.h`), for example the tile grid of the root op
+  (`metrics/compiler/RecordTileGridPass.h`);
+- when the backend serializes the executable, the bundle gets the target, the
+  dispatches with their `coralnpu.metrics` entries, and the ITCM and DTCM use of
+  the linked firmware ELF (`metrics/compiler/MetricsElf.h`).
+
+The `--coralnpu-dump-metrics-*` flags in the top-level `README.md` select the
+format and the directory.
 
 ## Runtime statistics
 

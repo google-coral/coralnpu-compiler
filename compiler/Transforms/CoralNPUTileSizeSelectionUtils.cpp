@@ -24,6 +24,8 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/TypeUtilities.h"
 
@@ -34,11 +36,35 @@
 
 // Standard library:
 #include <algorithm>
+#include <optional>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::iree_compiler;
 
 namespace mlir::coralnpu_compiler {
+
+std::optional<SmallVector<int64_t>> getStaticLoopRanges(TilingInterface op) {
+  OpBuilder builder(op);
+  auto [offsets, sizes, strides] =
+      getOffsetsSizesAndStrides(op.getIterationDomain(builder));
+  return getConstantIntValues(sizes);
+}
+
+std::pair<Operation *, IREE::CPU::LoweringConfigAttr> getTiledRootOp(
+    ArrayRef<Operation *> computeOps) {
+  Operation *rootOp = nullptr;
+  IREE::CPU::LoweringConfigAttr rootConfig;
+  for (Operation *op : computeOps) {
+    auto config = getLoweringConfig<IREE::CPU::LoweringConfigAttr>(op);
+    if (!config || !config.hasWorkgroupTilingLevel()) continue;
+    // More than one root op is unsupported.
+    if (rootOp) return {nullptr, {}};
+    rootOp = op;
+    rootConfig = config;
+  }
+  return {rootOp, rootConfig};
+}
 
 void classifyLoops(TilingInterface tilingOp,
                    SmallVectorImpl<unsigned> &parallelLoops,

@@ -433,6 +433,8 @@ void CoralNPUTargetBackend::buildConfigurationPassPipeline(
 
   OpPassManager &funcPassManager = modulePassManager.nest<func::FuncOp>();
   funcPassManager.addPass(createCoralNPUTileSizeSelectionDTCMPass(dtcmOptions));
+
+  if (hooks_) hooks_->addConfigurationPasses(funcPassManager);
 }
 
 void CoralNPUTargetBackend::buildTranslationPassPipeline(

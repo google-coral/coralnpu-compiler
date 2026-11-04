@@ -32,6 +32,10 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
+// Standard library:
+#include <optional>
+#include <utility>
+
 namespace mlir::coralnpu_compiler {
 
 // The root op of a dispatch and its loops, for the DTCM tile-size selection.
@@ -43,6 +47,16 @@ struct DTCMRoot {
   SmallVector<unsigned> reductionLoops;     // outermost first
   SmallVector<TilingInterface> nonRootOps;  // multi-op reduction peers
 };
+
+// Returns the static loop ranges of `op`, or `std::nullopt` if any loop has a
+// dynamic range.
+std::optional<SmallVector<int64_t>> getStaticLoopRanges(TilingInterface op);
+
+// Returns the unique operation in `computeOps` with CPU distribution
+// (workgroup) tile sizes from LLVMCPUSelectLoweringStrategyPass, or
+// `{nullptr, {}}` if none or more than one exists.
+std::pair<Operation *, iree_compiler::IREE::CPU::LoweringConfigAttr>
+getTiledRootOp(ArrayRef<Operation *> computeOps);
 
 // Classifies loops of `tilingOp` into parallel and reduction loops (outermost
 // first).

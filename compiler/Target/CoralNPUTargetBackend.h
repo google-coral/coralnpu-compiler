@@ -222,6 +222,8 @@ class CoralNPUTargetBackend final
 
   void getDependentDialects(DialectRegistry &registry) const override;
 
+  // Populates |passManager| with the configuration pipeline for |targetAttr|,
+  // including configuration passes from `hooks_` if configured.
   void buildConfigurationPassPipeline(
       iree_compiler::IREE::HAL::ExecutableTargetAttr targetAttr,
       OpPassManager &passManager) override;

@@ -15,8 +15,8 @@
 
 # Compiler metrics of the CoralNPU target backend: a metrics bundle per
 # executable, which the hooks of the backend
-# (coralnpu_compiler::Target::TargetHooks) fill as it serializes the
-# executable. Depends on these hooks, not on the backend.
+# (coralnpu_compiler::Target::TargetHooks) fill as it compiles the executable.
+# Depends on these hooks, not on the backend.
 
 iree_setup_c_src_root(
   PACKAGE_ROOT_PREFIX
@@ -70,7 +70,48 @@ iree_cc_library(
   PUBLIC
 )
 
-# The hooks that fill and write the metrics bundles.
+# The `coralnpu.metrics` attribute of the dispatch functions.
+iree_cc_library(
+  NAME
+    MetricsAttr
+  HDRS
+    "MetricsAttr.h"
+  SRCS
+    "MetricsAttr.cpp"
+  INCLUDES
+    "${CMAKE_SOURCE_DIR}"
+  DEPS
+    LLVMSupport
+    MLIRIR
+  PUBLIC
+)
+
+# Records the tile grid of each dispatch after the configuration pipeline.
+iree_cc_library(
+  NAME
+    RecordTileGridPass
+  HDRS
+    "RecordTileGridPass.h"
+  SRCS
+    "RecordTileGridPass.cpp"
+  INCLUDES
+    "${CMAKE_SOURCE_DIR}"
+  DEPS
+    ::MetricsAttr
+    coralnpu_compiler::Transforms
+    iree::compiler::Codegen::Dialect::CPU::IR::IREECPUDialect
+    iree::compiler::Codegen::Dialect::Codegen::IR::IREECodegenDialect
+    iree::compiler::Codegen::Utils
+    LLVMSupport
+    MLIRFunctionInterfaces
+    MLIRIR
+    MLIRPass
+    MLIRTilingInterface
+  PUBLIC
+)
+
+# The hooks that add the metrics passes and fill and write the metrics
+# bundles.
 iree_cc_library(
   NAME
     MetricsTargetHooks
@@ -81,14 +122,17 @@ iree_cc_library(
   INCLUDES
     "${CMAKE_SOURCE_DIR}"
   DEPS
+    ::MetricsAttr
     ::MetricsBundle
     ::MetricsElf
     ::MetricsOptions
+    ::RecordTileGridPass
     coralnpu_compiler::Target::TargetHooks
     coralnpu_compiler::Target::Utils
     iree::compiler::plugins::target::LLVMCPU::LLVMTargetOptions
     iree::compiler::Dialect::HAL::IR
     LLVMSupport
     MLIRIR
+    MLIRPass
   PUBLIC
 )

@@ -132,7 +132,7 @@ per-dispatch facts from configuration and codegen passes to serialization.
 
 ### CL 2b: Add Per-Dispatch Tile Grid and `coralnpu.metrics` Attribute Channel
 
-- [ ] **Step 2 (`compiler/Target/*`, `compiler/Transforms/*`,
+- [x] **Step 2 (`compiler/Target/*`, `compiler/Transforms/*`,
   `metrics/compiler/*`, `README.md`, `metrics/README.md`, `docs/design/*`)**:
   Add `CoralNPUTargetHooks::addConfigurationPasses`, implement `MetricsAttr`
   (`coralnpu.metrics`) and `RecordTileGridPass`
@@ -140,7 +140,7 @@ per-dispatch facts from configuration and codegen passes to serialization.
   their enclosing level's tile size), register compiler metrics passes via
   `registerMetricsPasses()`, and serialize `coralnpu.metrics` dictionary entries
   into each dispatch's bundle output.
-- [ ] **Tests (`metrics/tests/compiler/*`)**: *Positive*: Verify `tile_grid` on
+- [x] **Tests (`metrics/tests/compiler/*`)**: *Positive*: Verify `tile_grid` on
   untiled and DTCM-tiled `linalg.matmul` and `linalg.generic` dispatches
   (`metrics_tile_grid.mlir`) and supported `coralnpu.metrics` attribute types
   (`metrics_bundle_attr.mlir`). *Negative*: Verify reserved dispatch keys,

@@ -18,7 +18,9 @@ iree_lit_test_suite(
     lit
   SRCS
     "metrics_bundle.mlir"
+    "metrics_bundle_attr.mlir"
     "metrics_elf.mlir"
+    "metrics_tile_grid.mlir"
   TOOLS
     FileCheck
     iree-compile

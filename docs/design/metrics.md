@@ -156,33 +156,41 @@ and simulator backends (`runtime/sim/`) across two narrow C boundaries:
 
 ---
 
-## 2. Compiler Metrics Bundle (`metrics/compiler/`)
+## 2. Compiler Metrics Bundle & Tile Grid (`metrics/compiler/`)
 
 ### 2.1 Overview & Backend Hook Architecture
 
 The compiler metrics library (`metrics/compiler/`) is decoupled from
 `compiler/Target/` through `CoralNPUTargetHooks`
-(`compiler/Target/CoralNPUTargetHooks.h`). Enabling
+(`compiler/Target/CoralNPUTargetHooks.h`), with its passes registered in
+`CoralNPUSession::registerPasses` via `registerMetricsPasses()`. Enabling
 `--coralnpu-dump-metrics-format` obeys a **zero-codegen-impact invariant**: the
-hooks only observe the executable and serialize the sideband report, never
-altering tile selection, pass pipelines, or generated code:
+hooks only attach discardable `coralnpu.metrics` attributes on dispatch
+functions and serialize the sideband report, never altering tile selection, pass
+pipelines, or generated code:
 
-- **`onExecutableSerialized(variantOp, target, linkedElf)`**:
-  Called at the end of `CoralNPUTargetBackend::serializeExecutable` after
-  translating the inner module to LLVM IR and linking the executable.
-  `MetricsTargetHooks::onExecutableSerialized` (`MetricsTargetHooks.cpp`)
-  collects target metadata (`MetricsTargetInfo`) and export metadata
-  (`MetricsDispatchInfo`). When `serializeDynamicLibraryExecutable` links an
-  embedded firmware ELF (`target.getLinkEmbedded()`, so `linkedElf` is
-  non-empty), it parses the ELF via `parseMetricsElf` (`MetricsElf.{h,cpp}`);
-  any ELF parse failure logs via `LDBG()` and omits the `"elf"` section without
-  failing compilation. Finally, it writes the `coralnpu.metrics.v1` JSON or
-  `pretty` bundle (`MetricsBundle.{h,cpp}`) to
-  `<executable>.metrics.{json,txt}`, `stdout` (`-`), or `stderr` via
-  `writeReport` (`compiler/Target/Utils.h`). Any file I/O error emits a warning
-  on `variantOp` without failing compilation.
+1. **`addConfigurationPasses(OpPassManager &funcPassManager)`**:
+   Called at the end of `CoralNPUTargetBackend::buildConfigurationPassPipeline`
+   after `createLLVMCPUSelectLoweringStrategyPass()` and
+   `createCoralNPUTileSizeSelectionDTCMPass(dtcmOptions)`. Schedules
+   `RecordTileGridPass` on `FunctionOpInterface`.
+2. **`onExecutableSerialized(variantOp, target, linkedElf)`**:
+   Called at the end of `CoralNPUTargetBackend::serializeExecutable` after
+   translating the inner module to LLVM IR and linking the executable.
+   `MetricsTargetHooks::onExecutableSerialized` (`MetricsTargetHooks.cpp`)
+   collects target metadata (`MetricsTargetInfo`), export metadata
+   (`MetricsDispatchInfo`), and any `coralnpu.metrics` dictionary entries on
+   each dispatch function (`MetricsAttr.{h,cpp}`). When
+   `serializeDynamicLibraryExecutable` links an embedded firmware ELF
+   (`target.getLinkEmbedded()`, so `linkedElf` is non-empty), it parses the ELF
+   via `parseMetricsElf` (`MetricsElf.{h,cpp}`); any ELF parse failure logs via
+   `LDBG()` and omits the `"elf"` section without failing compilation. Finally,
+   it writes the `coralnpu.metrics.v1` JSON or `pretty` bundle
+   (`MetricsBundle.{h,cpp}`) to `<executable>.metrics.{json,txt}`, `stdout`
+   (`-`), or `stderr` via `writeReport` (`compiler/Target/Utils.h`). Any file
+   I/O error emits a warning on `variantOp` without failing compilation.
 
-### 2.2 Linked Firmware ELF & Target Metadata
+### 2.2 Per-Dispatch `coralnpu.metrics` Channel, Tile Grid & ELF Accounting
 
 - **Linked Firmware ELF & Target Metadata (`MetricsElf.{h,cpp}`,
   `MetricsBundle.{h,cpp}`, `MetricsTargetHooks.cpp`)**:
@@ -201,3 +209,30 @@ altering tile selection, pass pipelines, or generated code:
   `itcm.used` and `dtcm.used`, subtracting the byte overlap of `.heap` and
   `.stack` sections from `dtcm.used` so `itcm.used`, `dtcm.used`, and
   `dtcm.free()` match `metrics/runtime/firmware_memory.c` to the byte.
+- **Discardable Function Attribute Channel (`MetricsAttr.{h,cpp}`,
+  `MetricsTargetHooks.cpp`)**:
+  Passes attach metrics to the enclosing `FunctionOpInterface` under the
+  discardable `DictionaryAttr` key `coralnpu.metrics` (`getMetricsEntry`,
+  `setMetricsEntry`). During serialization, `MetricsTargetHooks.cpp` converts
+  supported MLIR attributes (booleans, unit, `<= 64`-bit integers, floats,
+  strings, arrays, and dictionaries) into `MetricsDispatchInfo::extra`, skipping
+  reserved dispatch keys (`isReservedDispatchKey` in `MetricsBundle.h`: `name`,
+  `ordinal`, `workgroup_size`, `binding_count`, `constant_count`) and
+  unsupported attributes via `LDBG()`.
+- **Tile Grid Recording (`RecordTileGridPass.{h,cpp}`)**:
+  Finds the dispatch's tiled root compute operation via
+  `iree_compiler::getComputeOps` + `getTiledRootOp`
+  (`CoralNPUTileSizeSelectionUtils.h`). When the root op implements
+  `TilingInterface` with static loop ranges (`getStaticLoopRanges`) and carries
+  an `IREE::CPU::LoweringConfigAttr`, it records
+  `tile_grid = {op, loops, workgroup, dtcm, vector}` (clamping each level's
+  positive tile sizes to the enclosing level's tile size, and inheriting the
+  enclosing level's tile size when a loop is left untiled with `0`).
+
+### 2.3 Why Not Alternative Compiler Metrics Designs
+
+- **Why `coralnpu.metrics` on `FunctionOpInterface` rather than op attributes or
+  side tables?** Root Linalg operations are tiled, vectorized, bufferized, and
+  erased during translation, whereas the enclosing dispatch `func.func` persists
+  through `serializeExecutable` and survives `-compile-to` / `-start-from`
+  round-trips without thread-unsafe side tables.

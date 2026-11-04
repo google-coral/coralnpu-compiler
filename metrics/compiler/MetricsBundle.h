@@ -22,6 +22,7 @@
 // LLVM:
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/JSON.h"
 
 // Standard library:
 #include <array>
@@ -43,7 +44,13 @@ namespace mlir::coralnpu_compiler {
 //   target      {triple, cpu_features, abi, vlen, float, zvt, dtcm_kb,
 //               num_vector_registers}: MetricsTargetInfo
 //   dispatches  [{name, ordinal, workgroup_size[], binding_count,
-//               constant_count}]: MetricsDispatchInfo
+//               constant_count, ...}]: MetricsDispatchInfo; the entries of
+//               the `coralnpu.metrics` attribute of the dispatch function
+//               follow, sorted by key (MetricsAttr.h):
+//               tile_grid  {op, loops[], workgroup[], dtcm[], vector[],
+//                          zvt_grid[]} (RecordTileGridPass.h)
+//               zvt        {candidate, lowered} (RecordTileGridPass.h,
+//                          RecordZvtLoweringPass.h)
 //   elf         {size_bytes, regions, sections[]}: MetricsElfInfo
 //               (MetricsElf.h)
 inline constexpr llvm::StringLiteral kMetricsSchema = "coralnpu.metrics.v1";
@@ -68,6 +75,8 @@ struct MetricsDispatchInfo {
   std::optional<std::array<uint32_t, 3>> workgroupSize;
   int64_t bindingCount = 0;
   int64_t constantCount = 0;
+  // Entries of the `coralnpu.metrics` attribute of the dispatch function.
+  llvm::json::Object extra;
 };
 
 // Holds the compile-time metrics of one executable and writes them as a
@@ -104,6 +113,12 @@ class MetricsBundle {
   llvm::SmallVector<MetricsDispatchInfo> dispatches;
   std::optional<MetricsElfInfo> elf;
 };
+
+// Returns true if |key| is one of the fixed top-level keys of a dispatch entry
+// in the metrics bundle ("name", "ordinal", "workgroup_size",
+// "binding_count", "constant_count") that `coralnpu.metrics` attributes must
+// not shadow.
+bool isReservedDispatchKey(llvm::StringRef key);
 
 }  // namespace mlir::coralnpu_compiler
 

@@ -14,7 +14,7 @@
 
 // The compiler metrics of the CoralNPU target backend: a metrics bundle per
 // executable (MetricsBundle.h), which the hooks of the backend
-// (compiler/Target/CoralNPUTargetHooks.h) fill as it serializes the
+// (compiler/Target/CoralNPUTargetHooks.h) fill as it compiles the
 // executable.
 
 #ifndef METRICS_COMPILER_METRICSTARGETHOOKS_H_
@@ -33,6 +33,10 @@ struct MetricsTargetConfig {
   int dtcmSizeKb = 0;
   int numVectorRegisters = 0;
 };
+
+// Registers the compiler metrics passes with the MLIR pass registry so they
+// can be run from `iree-opt` and `--pass-pipeline`.
+void registerMetricsPasses();
 
 // Returns the hooks that write the metrics bundle of each executable as
 // |options| request, or null if they request none.

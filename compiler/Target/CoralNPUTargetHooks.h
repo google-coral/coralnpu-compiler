@@ -13,8 +13,9 @@
 // limitations under the License.
 
 // Hooks through which code outside the CoralNPU target backend (e.g. the
-// compiler metrics in metrics/compiler) observes how the backend serializes
-// the executables, without the backend knowing what the hooks do.
+// compiler metrics in metrics/compiler) adds passes to the pipelines of the
+// backend and observes how it serializes the executables, without the backend
+// knowing what the hooks do.
 
 #ifndef COMPILER_TARGET_CORALNPUTARGETHOOKS_H_
 #define COMPILER_TARGET_CORALNPUTARGETHOOKS_H_
@@ -31,6 +32,10 @@
 // Standard library:
 #include <cstdint>
 
+namespace mlir {
+class OpPassManager;
+}  // namespace mlir
+
 namespace mlir::iree_compiler::IREE::HAL {
 struct LLVMTarget;
 }  // namespace mlir::iree_compiler::IREE::HAL
@@ -41,6 +46,11 @@ namespace mlir::coralnpu_compiler {
 class CoralNPUTargetHooks {
  public:
   virtual ~CoralNPUTargetHooks() = default;
+
+  // Adds passes at the end of the configuration pipeline, once the lowering
+  // configuration of each dispatch is final. |funcPassManager| runs on each
+  // dispatch function.
+  virtual void addConfigurationPasses(OpPassManager &funcPassManager) {}
 
   // Called after |variantOp| has been serialized for |target|. |linkedElf| is
   // the embedded firmware ELF (`target.getLinkEmbedded()`) that the backend

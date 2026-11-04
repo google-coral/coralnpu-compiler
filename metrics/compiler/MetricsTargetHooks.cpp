@@ -15,8 +15,10 @@
 #include "metrics/compiler/MetricsTargetHooks.h"
 
 #include "compiler/Target/Utils.h"
+#include "metrics/compiler/MetricsAttr.h"
 #include "metrics/compiler/MetricsBundle.h"
 #include "metrics/compiler/MetricsElf.h"
+#include "metrics/compiler/RecordTileGridPass.h"
 
 // IREE:
 #include "compiler/plugins/target/LLVMCPU/LLVMTargetOptions.h"
@@ -24,6 +26,9 @@
 
 // MLIR:
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/Pass/PassManager.h"
 
 // LLVM:
 #include "llvm/ADT/STLExtras.h"
@@ -33,6 +38,7 @@
 
 // Standard library:
 #include <array>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -43,6 +49,72 @@ namespace mlir::coralnpu_compiler {
 namespace {
 
 namespace HAL = iree_compiler::IREE::HAL;
+
+// Converts |attr| to JSON. Returns nullopt if |attr|, or a nested element, is
+// not a supported kind or is an integer wider than 64 bits.
+std::optional<llvm::json::Value> attrToJson(Attribute attr) {
+  if (auto boolAttr = dyn_cast<BoolAttr>(attr)) return boolAttr.getValue();
+  if (isa<UnitAttr>(attr)) return true;
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr)) {
+    const APInt &value = intAttr.getValue();
+    // llvm::json::Value holds integers of at most 64 bits.
+    if (value.getBitWidth() > 64) return std::nullopt;
+    if (intAttr.getType().isUnsignedInteger()) {
+      return static_cast<uint64_t>(value.getZExtValue());
+    }
+    return static_cast<int64_t>(value.getSExtValue());
+  }
+  if (auto floatAttr = dyn_cast<FloatAttr>(attr)) {
+    if (!floatAttr.getValue().isFinite()) return std::nullopt;
+    return floatAttr.getValueAsDouble();
+  }
+  if (auto strAttr = dyn_cast<StringAttr>(attr)) return strAttr.str();
+  if (auto arrayAttr = dyn_cast<ArrayAttr>(attr)) {
+    llvm::json::Array array;
+    for (Attribute element : arrayAttr) {
+      std::optional<llvm::json::Value> value = attrToJson(element);
+      if (!value) return std::nullopt;
+      array.push_back(std::move(*value));
+    }
+    return llvm::json::Value(std::move(array));
+  }
+  if (auto dictAttr = dyn_cast<DictionaryAttr>(attr)) {
+    llvm::json::Object object;
+    for (NamedAttribute entry : dictAttr) {
+      std::optional<llvm::json::Value> value = attrToJson(entry.getValue());
+      if (!value) return std::nullopt;
+      object[entry.getName().strref()] = std::move(*value);
+    }
+    return llvm::json::Value(std::move(object));
+  }
+  return std::nullopt;
+}
+
+// Copies the entries of the `coralnpu.metrics` attribute of function
+// |funcName| in |innerModule| into |info.extra|. Skips the reserved keys and
+// the unsupported values, which only a faulty metrics pass sets.
+void readMetricsAttr(ModuleOp innerModule, llvm::StringRef funcName,
+                     MetricsDispatchInfo &info) {
+  Operation *funcOp = SymbolTable::lookupSymbolIn(innerModule, funcName);
+  if (!funcOp) return;
+  auto dictAttr = funcOp->getAttrOfType<DictionaryAttr>(kMetricsAttrName);
+  if (!dictAttr) return;
+  for (NamedAttribute entry : dictAttr) {
+    llvm::StringRef key = entry.getName().strref();
+    if (isReservedDispatchKey(key)) {
+      LDBG() << "skipping the reserved metrics entry '" << key << "' of "
+             << funcName;
+      continue;
+    }
+    std::optional<llvm::json::Value> value = attrToJson(entry.getValue());
+    if (!value) {
+      LDBG() << "skipping the metrics entry '" << key << "' of " << funcName
+             << ": unsupported value";
+      continue;
+    }
+    info.extra[key] = std::move(*value);
+  }
+}
 
 // Returns the target facts of |variantOp|: the triple, the CPU features, and
 // the ABI of |target|, the target features queried via compiler/Target/Utils.h,
@@ -66,8 +138,10 @@ MetricsTargetInfo makeTargetInfo(HAL::ExecutableVariantOp variantOp,
   return targetInfo;
 }
 
-// Returns the entry of |exportOp|.
-MetricsDispatchInfo makeDispatchInfo(HAL::ExecutableExportOp exportOp) {
+// Returns the entry of |exportOp|, with the `coralnpu.metrics` entries of its
+// function in |innerModule|. |innerModule| is null for external variants.
+MetricsDispatchInfo makeDispatchInfo(HAL::ExecutableExportOp exportOp,
+                                     ModuleOp innerModule) {
   MetricsDispatchInfo dispatch;
   dispatch.name = exportOp.getName().str();
   // The ordinal is optional on the export.
@@ -90,16 +164,24 @@ MetricsDispatchInfo makeDispatchInfo(HAL::ExecutableExportOp exportOp) {
     dispatch.constantCount = layoutAttr.getConstants();
     dispatch.bindingCount = layoutAttr.getBindings().size();
   }
+  // External variants have no inner module, so no coralnpu.metrics entries.
+  if (innerModule) readMetricsAttr(innerModule, dispatch.name, dispatch);
   return dispatch;
 }
 
-// The hooks that write the metrics bundle of each executable.
+// The hooks that add the metrics passes and fill and write the metrics
+// bundle of each executable.
 class MetricsTargetHooks final : public CoralNPUTargetHooks {
  public:
   // Creates target hooks configured by |options| and |config|.
   MetricsTargetHooks(const MetricsOptions &options,
                      const MetricsTargetConfig &config)
       : options_(options), config_(config) {}
+
+  // Adds the passes that record the per-dispatch facts of the configuration.
+  void addConfigurationPasses(OpPassManager &funcPassManager) override {
+    funcPassManager.addPass(createRecordTileGridPass());
+  }
 
   // Builds and writes the metrics bundle of |variantOp| once it is serialized.
   void onExecutableSerialized(HAL::ExecutableVariantOp variantOp,
@@ -108,9 +190,10 @@ class MetricsTargetHooks final : public CoralNPUTargetHooks {
     MetricsBundle bundle(
         variantOp->getParentOfType<HAL::ExecutableOp>().getName().str());
     bundle.setTarget(makeTargetInfo(variantOp, target, config_));
+    ModuleOp innerModule = variantOp.getInnerModule();
     // One entry per export, in the order of the exports.
     for (auto exportOp : variantOp.getExportOps()) {
-      bundle.addDispatch(makeDispatchInfo(exportOp));
+      bundle.addDispatch(makeDispatchInfo(exportOp, innerModule));
     }
     if (!linkedElf.empty()) {
       // A bundle without the size report is still useful.
@@ -141,6 +224,8 @@ class MetricsTargetHooks final : public CoralNPUTargetHooks {
 };
 
 }  // namespace
+
+void registerMetricsPasses() { registerRecordTileGridPass(); }
 
 std::shared_ptr<CoralNPUTargetHooks> createMetricsTargetHooks(
     const MetricsOptions &options, const MetricsTargetConfig &config) {

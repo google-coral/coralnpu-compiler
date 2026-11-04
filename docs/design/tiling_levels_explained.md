@@ -340,6 +340,13 @@ graph TD
     DTCMPass -->|Sets distribution = cache_parallel, cache_reduction; Zvt & refined RVV vector sizes| Output[Configured IR]
 ```
 
+When compiler metrics are enabled (`--coralnpu-dump-metrics-format`),
+`RecordTileGridPass` (`metrics/compiler/RecordTileGridPass.cpp`) runs at the end
+of `buildConfigurationPassPipeline` via
+`CoralNPUTargetHooks::addConfigurationPasses` to record
+`tile_grid = {op, loops, workgroup, dtcm, vector}` in the dispatch function's
+`coralnpu.metrics` attribute (see [metrics.md](metrics.md)).
+
 ### Summary of Lowering Pipeline Flow (CPUDoubleTilingExpert)
 
 The following diagram shows where each tiling attribute is consumed in the
