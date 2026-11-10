@@ -208,7 +208,7 @@ bool preferCoralNPU(IREE::Flow::DispatchWorkgroupsOp workgroupsOp,
   unsigned bitWidth = 32;
   bool hasBF16Input = false;
   for (Value input : rootOp.getDpsInputs()) {
-    Type type = getElementTypeOrSelf(input.getType());
+    Type type = getElementTypeOrSelf(isZvt ? getZvtLoadSource(input) : input);
     if (type.isIntOrFloat())
       bitWidth = std::min(bitWidth, type.getIntOrFloatBitWidth());
     hasBF16Input |= type.isBF16();

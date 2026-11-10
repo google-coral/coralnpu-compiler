@@ -21,9 +21,10 @@ _MODELS = [
     "add_i32_4_8-4_8",
     "matmul_f32_4_8-8_4",
     "matmul_i8_4_8-8_4",
-    # Zvt: N >= 8, and an i32 accumulator for i8.
+    # Zvt: N >= 8, and an i32 accumulator for i8/i16.
     "matmul_f32_16_8-8_16",
     "matmul_i8_i32_16_8-8_16",
+    "matmul_i16_i32_16_8-8_16",
 ]
 
 [
@@ -40,6 +41,18 @@ _MODELS = [
     )
     for model in _MODELS
 ]
+
+coralnpu_check_test(
+    name = "matmul_i16_i32_16_8-8_16_mpact_test",
+    timeout = "short",
+    src = "matmul_i16_i32_16_8-8_16.mlir",
+    compiler_flags = [
+        "--iree-hal-target-device=coralnpu",
+        "> /dev/null",
+    ],
+    simulator = "mpact",
+    tags = ["ci"],
+)
 
 test_suite(
     name = "ci",

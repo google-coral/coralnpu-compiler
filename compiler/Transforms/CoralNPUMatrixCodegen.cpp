@@ -40,7 +40,7 @@
 // Lowers vector.contract to Zvt matrix instructions (msetmtype, vtzero,
 // vtmms.tvv / vtfmm.tvv / vtfmm.alt.tvv, vtmv).
 //
-// Supports FP32->FP32, BF16->FP32 and INT8->INT32 in 16x16, 16x32, 32x16,
+// Supports FP32/BF16->FP32 and INT16/INT8->INT32 in 16x16, 16x32, 32x16,
 // 32x32, 16x64, 64x16 and partial tile shapes. A contraction yielded by an
 // scf.for reduction (constant bounds, step 1, k the row or innermost index of
 // A and B, no memory writes in the body) replaces the whole loop with one
@@ -109,8 +109,13 @@ Value traceToSourceValue(Value val) {
       if (slice.hasNonUnitStrides() ||
           !llvm::all_of(slice.getOffsets(), isZeroInteger))
         break;
-    } else if (!isa<arith::ExtFOp, arith::ExtSIOp, vector::BroadcastOp,
-                    vector::ShapeCastOp>(def)) {
+    } else if (auto bc = dyn_cast<vector::BroadcastOp>(def)) {
+      // Reject broadcasts that replicate elements rather than adding unit dims.
+      auto srcVt = dyn_cast<VectorType>(bc.getSourceType());
+      if ((srcVt ? srcVt.getNumElements() : 1) !=
+          bc.getResultVectorType().getNumElements())
+        break;
+    } else if (!isa<arith::ExtFOp, arith::ExtSIOp, vector::ShapeCastOp>(def)) {
       break;
     }
     val = def->getOperand(0);
@@ -118,13 +123,13 @@ Value traceToSourceValue(Value val) {
   return val;
 }
 
-// Drops a widening ext or shape_cast, as the asm reads the narrow input
+// Drops widening ext and shape_cast ops, as the asm reads the narrow input
 // elements.
 Value stripExt(Value v) {
-  while (auto sc = v.getDefiningOp<vector::ShapeCastOp>()) v = sc.getSource();
-  Operation* d = v.getDefiningOp();
-  return isa_and_nonnull<arith::ExtFOp, arith::ExtSIOp>(d) ? d->getOperand(0)
-                                                           : v;
+  while (isa_and_nonnull<arith::ExtFOp, arith::ExtSIOp, vector::ShapeCastOp>(
+      v.getDefiningOp()))
+    v = v.getDefiningOp()->getOperand(0);
+  return v;
 }
 
 // The accumulator shapes are those of isZvtAccumulatorShape, which the DTCM
@@ -202,24 +207,27 @@ constexpr const char* kClobbers =
 
 // msetmtype operands (decode: third_party/coralnpu .../design/RvvFrontEnd.sv).
 // mtype (rs1): tm = bits[23:10], tk = bits[7:5], mtwiden = bits[1:0]. Always
-// TM=16; mtwiden is 3 for i8 (TWIDEN=4), 2 for bf16 and 1 for f32.
+// TM=16; mtwiden is 3 for i8 (TWIDEN=4), 2 for bf16/i16 and 1 for f32.
 // vtype (rs2): SEW = bits[5:3], LMUL = bits[2:0], altfmt = bit 8. altfmt makes
-// the *second* operand signed INT8 / BF16; the opcode does so for the first
-// (vtmms, vtfmm.alt). FP32 leaves it clear. vtype is 256 (SEW8, LMUL1, altfmt)
-// for i8, 265 (SEW16, LMUL2, altfmt) for bf16 and 18 (SEW32, LMUL4) for f32.
+// the *second* operand signed INT8 / INT16 / BF16; the opcode does so for the
+// first (vtmms, vtfmm.alt). FP32 leaves it clear. vtype is 256 (SEW8, LMUL1,
+// altfmt) for i8, 265 (SEW16, LMUL2, altfmt) for bf16/i16 and 18 (SEW32, LMUL4)
+// for f32.
 // Programs mtype/vtype, then TN (msetmtype zeroes vl). Emitted per block, as
 // LLVM may insert a vset* between blocks, which clears mtype and vtype.altfmt.
 // Clobbers t5 and t6. A null `elTy` selects the 32-bit accumulator config.
 std::string emitTileConfigAsm(Type elTy = {}, int64_t tk = 1, int64_t tn = 16) {
-  int w = elTy && elTy.isInteger(8) ? 3 : (elTy && elTy.isBF16() ? 2 : 1);
+  unsigned bits = elTy ? elTy.getIntOrFloatBitWidth() : 32;
+  int w = bits == 8 ? 3 : (bits == 16 ? 2 : 1);
   return llvm::formatv(
       "li t5, {0}\n\tli t6, {1}\n\tmsetmtype t5, t6\n\tli t6, {2}\n\t"
       "msettn zero, t6\n\t",
       16384 | (tk << 5) | w, w == 3 ? 256 : (w == 2 ? 265 : 18), tn);
 }
 
+// Returns the Zvt matrix-multiply mnemonic for the narrow input type `elTy`.
 StringRef getMatmulOp(Type elTy) {
-  if (elTy.isInteger(8)) return "vtmms.tvv";
+  if (isa<IntegerType>(elTy)) return "vtmms.tvv";
   return elTy.isBF16() ? "vtfmm.alt.tvv" : "vtfmm.tvv";
 }
 
@@ -361,8 +369,8 @@ void emitInlineFusedGEMM(OpBuilder& b, Location loc, const TileAddr& lhs,
   // A partial tile's operand loads still take 16 elements, so mask them to the
   // rowsM (A) or colsN (B) valid ones to stay within the operand. With both
   // partial, the masks wait in v0-v7 registers clear of slot 1's A operand
-  // (v1/v3/v5/v7 for i8, v2-v3/v6-v7 for bf16, v4-v7 for f32) and are copied
-  // to v0 before each operand's loads.
+  // (v1/v3/v5/v7 for i8, v2-v3/v6-v7 for bf16/i16, v4-v7 for f32) and are
+  // copied to v0 before each operand's loads.
   bool masked[2] = {rowsM < 16, colsN < 16};
   int64_t maskReg[2] = {masked[0] && masked[1] ? (inBytes == 1 ? 2 : 1) : 0,
                         masked[0] && masked[1] ? (inBytes == 4 ? 2 : 4) : 0};
@@ -633,7 +641,8 @@ std::pair<TileAddr, SmallVector<Operation*>> matchTileStore(
   auto vecTy = cast<VectorType>(res.getType());
   int64_t m = vecTy.getDimSize(0),
           n = vecTy.getRank() > 1 ? vecTy.getDimSize(1) : 0;
-  bool canTranspose = transposedOut && vecTy.getElementType().isF32();
+  Type elTy = vecTy.getElementType();
+  bool canTranspose = transposedOut && (elTy.isF32() || elTy.isInteger(32));
   if (auto tr = dyn_cast_or_null<vector::TransposeOp>(
           canTranspose && worklist.size() == 1 ? worklist[0] : nullptr);
       tr && tr.getPermutation() == ArrayRef<int64_t>{1, 0}) {
@@ -1128,14 +1137,13 @@ struct CoralNPUMatrixCodegenPass
           getElementTypeOrSelf(traceToSourceValue(contractOp.getLhs()));
       Location loc = contractOp.getLoc();
 
-      TileAddr lhs, rhs;
+      TileAddr lhs = getLoadAddr(contractOp.getLhs(), /*trace=*/true),
+               rhs = getLoadAddr(contractOp.getRhs(), /*trace=*/true);
       int64_t kA = -1, kB = -1, kTripCount = 0;
       bool fuse = false;
       if (forOp) {
         // C is hoisted even when unfused: the drain goes right after the loop.
         if (!hoistAddr(c, root)) continue;
-        lhs = getLoadAddr(contractOp.getLhs(), true);
-        rhs = getLoadAddr(contractOp.getRhs(), true);
         Value iv = forOp.getInductionVar();
         splitKIndex(lhs, iv);
         splitKIndex(rhs, iv);
@@ -1156,9 +1164,10 @@ struct CoralNPUMatrixCodegenPass
           fuse = hoistAddr(lhs, forOp) && hoistAddr(rhs, forOp);
         }
       }
-      // The unfused asm takes full tiles of operand values as inputElTy.
+      // The unfused asm takes full tiles of readable operand values as
+      // inputElTy.
       if (!fuse &&
-          (rowsM % 16 != 0 || colsN % 16 != 0 ||
+          (!lhs || !rhs || rowsM % 16 != 0 || colsN % 16 != 0 ||
            getElementTypeOrSelf(stripExt(contractOp.getLhs())) != inputElTy ||
            getElementTypeOrSelf(stripExt(contractOp.getRhs())) != inputElTy))
         continue;
@@ -1281,6 +1290,9 @@ struct CoralNPUMatrixCodegenPass
         auto fma = forOp.getYieldedValues()[t].getDefiningOp<vector::FMAOp>();
         if (!fma || fma.getAcc() != forOp.getRegionIterArgs()[t]) return;
         auto getX = [&](Value v) -> TileAddr {
+          v = stripExt(v);
+          if (auto bc = v.getDefiningOp<vector::BroadcastOp>())
+            v = bc.getSource();
           v = traceToSourceValue(v);
           if (auto vt = dyn_cast<VectorType>(v.getType());
               vt && vt.getNumElements() != 1)

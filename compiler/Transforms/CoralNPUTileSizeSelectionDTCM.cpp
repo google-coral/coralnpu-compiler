@@ -517,7 +517,7 @@ FailureOr<SelectedTileSizes> selectDTCMTileSizes(
   // both inputs with Zvt element types: a root whose input a fused op computes
   // (e.g. a dequantization) stays on RVV, with promotion.
   std::optional<unsigned> zvtMLoop, zvtNLoop;
-  if (isZvtMatrixContraction(root.op) && isZvtReadableInputs(root.op) &&
+  if (isZvtMatrixContraction(root.op) &&
       setZvtVectorSizes(root, footprintModel, budgetBytes,
                         selected.vectorParallelSizes,
                         selected.vectorReductionSizes)) {

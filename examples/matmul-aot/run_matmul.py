@@ -66,6 +66,9 @@ def main():
   dtype.add_argument("--int8",
                      action="store_true",
                      help="Use INT8 inputs and INT32 outputs")
+  dtype.add_argument("--int16",
+                     action="store_true",
+                     help="Use INT16 inputs and INT32 outputs")
   dtype.add_argument("--bf16",
                      action="store_true",
                      help="Use BF16 inputs and FP32 outputs")
@@ -80,6 +83,9 @@ def main():
   if args.int8:
     x = np.random.randint(-128, 128, size=(args.n, args.n), dtype=np.int8)
     y = np.random.randint(-128, 128, size=(args.n, args.n), dtype=np.int8)
+  elif args.int16:
+    x = np.random.randint(-32768, 32768, size=(args.n, args.n), dtype=np.int16)
+    y = np.random.randint(-32768, 32768, size=(args.n, args.n), dtype=np.int16)
   elif args.bf16:
     x = np.random.randn(args.n, args.n).astype(ml_dtypes.bfloat16)
     y = np.random.randn(args.n, args.n).astype(ml_dtypes.bfloat16)
@@ -91,10 +97,11 @@ def main():
 
   output_np = np.asarray(output)
   lhs = x.T if args.transpose_lhs else x
-  acc_dt = np.int32 if args.int8 else np.float32
+  is_int = args.int8 or args.int16
+  acc_dt = np.int32 if is_int else np.float32
   expected = lhs.astype(acc_dt) @ y.astype(acc_dt)
 
-  matches = (np.array_equal(output_np, expected) if args.int8 else np.allclose(
+  matches = (np.array_equal(output_np, expected) if is_int else np.allclose(
       output_np, expected, atol=1e-4, rtol=1e-4))
   if matches:
     print("SUCCESS: Results match numpy reference!")

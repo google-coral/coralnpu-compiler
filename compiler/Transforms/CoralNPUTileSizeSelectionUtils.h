@@ -96,7 +96,7 @@ bool hasZvtTargetFeature(Operation *op);
 bool hasCoralNPUTargetFeature(Operation *op, StringRef feature);
 
 // Returns true for the Zvt element types: f32 x f32 or bf16 x bf16 -> f32, and
-// i8 x i8 -> i32.
+// i8 x i8 or i16 x i16 -> i32.
 bool isZvtElementTypes(Type lhs, Type rhs, Type acc);
 
 // Returns true if the shape of the accumulator of a vector.contract (after the
@@ -108,26 +108,28 @@ bool isZvtElementTypes(Type lhs, Type rhs, Type acc);
 // CoralNPUMatrixCodegen.cpp uses this check.
 bool isZvtAccumulatorShape(int64_t m, int64_t n, bool rank1, bool swap);
 
-// Returns true if the Zvt asm can load the two inputs of `op`, a linalg op
-// with two inputs and one init, from memory with Zvt element types. The asm
-// loads an input that no linalg op computes. It also loads the input of an
-// elementwise op that computes an input from one tensor with only an
-// arith.extf or arith.extsi (the asm reads the narrow elements), if no linalg
-// op computes that tensor. Other producers (e.g. a dequantization or an
-// arith.sitofp) keep the asm from taking `op`. The element types that the asm
-// loads (before the extension) and the init element type must be Zvt element
-// types (isZvtElementTypes); e.g. a bf16 lhs that an arith.extf widens to f32
-// does not go with an f32 rhs. Keep in sync with traceToSourceValue and
-// isSupportedMatrixContraction in CoralNPUMatrixCodegen.cpp.
-bool isZvtReadableInputs(Operation *op);
+// Returns the tensor that the Zvt asm loads for `input` (peeling one
+// elementwise `arith.extf` or `arith.extsi` producer; also requiring a
+// single-consumer 1:1 map when `strictLayoutAndSingleUse` is true), or null if
+// unreadable.
+Value getZvtLoadSource(Value input, bool strictLayoutAndSingleUse = true);
+
+// Returns true if `op` has a signed/FP multiply-accumulate body (`arith.extf`
+// or `arith.extsi` only) and the Zvt asm can load its two inputs from memory
+// with Zvt element types (`getZvtLoadSource` + `isZvtElementTypes`). Keep in
+// sync with `traceToSourceValue` and `isSupportedMatrixContraction` in
+// `CoralNPUMatrixCodegen.cpp`.
+bool isZvtReadableInputs(Operation *op, bool strictLayoutAndSingleUse = true);
 
 // Returns true if hasZvtTargetFeature(op) and op is a Zvt-eligible contraction
-// or convolution: supported types, shapes and layouts, a zero or loaded init,
-// and no reduction consumer.
+// or convolution: readable inputs (`isZvtReadableInputs`), supported shapes and
+// layouts, a zero or loaded init, and no reduction consumer.
 bool isZvtMatrixContraction(Operation *op);
 
-// isZvtMatrixContraction without the target feature check.
-bool isZvtMatrixContractionShape(Operation *op);
+// isZvtMatrixContraction without the target feature check; forwards
+// `strictLayoutAndSingleUse` to `isZvtReadableInputs`.
+bool isZvtMatrixContractionShape(Operation *op,
+                                 bool strictLayoutAndSingleUse = true);
 
 // Returns true if `op` is a contraction with extent > 1 (or dynamic) along
 // both M and N, excluding zero-reuse matvec, vecmat, and dot products.

@@ -2,7 +2,6 @@
 
 - **Author(s)**: Lun Dong
 - **Component Doc(s)**: [matrix_codegen.md](../matrix_codegen.md)
-  *(updated in chained CL 2)*
 - **Bug(s)**: N/A
 
 ---
@@ -107,26 +106,23 @@ and [`compiler/Transforms/Passes.td`](../../../compiler/Transforms/Passes.td).
 
 ### MPACT, Spike & Verilator RTL Enablement
 
-- **MPACT (`mpact-riscv-0004-zvt-i16-matmul.patch`, `MODULE.bazel`)**: Extend
+- **MPACT (`mpact-riscv-0005-zvt-i16-matmul.patch`, `MODULE.bazel`)**: Extend
   `vtmms.tvv` in `riscv/riscv_zvt_instructions.cc` (placed after `0001`/`0002`
   to cover both fast and generic loops) to accept `SEW = 16, TWIDEN = 2` with
   `uint32_t` modular accumulation matching RTL wraparound without signed UB.
-- **Spike (`build_tools/bazel/extensions.bzl`)**: Apply
-  `@coralnpu_hw//third_party/spike:0010-Add-Zvti16i32mm-support.patch` to
-  `riscv_isa_sim` (synced with `third_party/coralnpu/rules/repo_defs.bzl`,
-  `third_party/spike.BUILD`, and `sw/coralnpu_sim/spike_simulator.h`) for
-  `EXT_ZVTI16I32MM` (`SEW = 16, widen = 2` `vtmmu.tvv`/`vtmms.tvv` with
-  `uint32_t` wraparound, 4-register tile alignment, and `SEW = 16`
-  `altfmt = 1`).
+- **Spike (`riscv-isa-sim-0002-zvt-i16-matmul.patch`,
+  `build_tools/bazel/extensions.bzl`)**: Extend `riscv/insns/vtmms_tvv.h` and
+  `riscv/v_ext_macros.h` on `riscv_isa_sim` to accept `SEW = 16, TWIDEN = 2`
+  `vtmms.tvv` (`uint32_t` wraparound + `dot_product<int64_t>`) and `SEW = 16`
+  `altfmt = 1`.
 - **Verilator RTL & FPGA (`third_party/coralnpu`)**: Bump `third_party/coralnpu`
-  so Verilator VME (`hdl/chisel/src/coralnpu/{Core,rvv/RvvCore}.scala`,
+  (`4d82d8701` to `1aeb3f46c`) so Verilator VME
+  (`hdl/chisel/src/coralnpu/{Core,rvv/RvvCore}.scala`,
   `hdl/chisel/src/coralnpu/flags.bzl`) and Nexus FPGA matrix builds
   (`fpga/{BUILD,chip_nexus.core}`) enable `ZVTI16I32MM_ON`, and RVV/scalar
   decode (`hdl/chisel/src/coralnpu/{rvv/RvvDecode,scalar/Decode}.scala`,
   `hdl/verilog/rvv/design/RvvFrontEnd.sv`) accepts `SEW = 16, LMUL = 2,
-  mtwiden = 2` integer `vtmm` ops with Slot-0 dynamic OP-VE traps (alongside
-  Spike `0010`, TileLink-UL banked TCMs + `hw_sim` AXI fixes, RVV
-  fault-only-first/interlock fixes, and cosim/UVM/Bazel updates).
+  mtwiden = 2` integer `vtmm` ops (alongside cosim/UVM/AXI updates).
 
 ### Alternatives Considered
 
@@ -148,36 +144,35 @@ and [`compiler/Transforms/Passes.td`](../../../compiler/Transforms/Passes.td).
 
 ## 3. Implementation & Verification Plan
 
-- [ ] **Step 1 (`compiler/Transforms/CoralNPUTileSizeSelectionUtils.{h,cpp}`,
+- [x] **Step 1 (`compiler/Transforms/CoralNPUTileSizeSelectionUtils.{h,cpp}`,
   `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`,
   `compiler/Transforms/CoralNPUTileSizeSelectionFootprint.cpp`,
   `compiler/Transforms/CoralNPUAffinityAnnotation.cpp`)**: Unify signed `i16 ->
   i32` readability, scratch budgeting, and roofline tier scaling (§2).
-- [ ] **Step 2 (`compiler/Transforms/CoralNPUMatrixCodegen.cpp`,
+- [x] **Step 2 (`compiler/Transforms/CoralNPUMatrixCodegen.cpp`,
   `compiler/Transforms/Passes.td`)**: Emit 16-bit `vtmms.tvv`, tighten
   broadcast/extension/unfused guards, add `i32` transpose drains & `Passes.td`.
-- [ ] **Step 3 (`iree-0006-llvmcpu-add-beforelowertollvmhook.patch`)**: Check
+- [x] **Step 3 (`iree-0006-llvmcpu-add-beforelowertollvmhook.patch`)**: Check
   both operands (with 1-channel conv extracts, without `arith.extui`) and verify
   narrow input + 32-bit accumulator types in `isZvtMatrixContraction`.
-- [ ] **Step 4 (`mpact-riscv-0004-zvt-i16-matmul.patch`, `MODULE.bazel`)**:
+- [x] **Step 4 (`mpact-riscv-0005-zvt-i16-matmul.patch`, `MODULE.bazel`)**:
   Enable `SEW = 16, TWIDEN = 2` 16-bit integer lanes + `uint32_t` accumulation
   after `0002`.
-- [ ] **Step 5 (`build_tools/bazel/extensions.bzl`)**: Register
-  `@coralnpu_hw//third_party/spike:0010-Add-Zvti16i32mm-support.patch` on
-  `riscv_isa_sim` for `EXT_ZVTI16I32MM` (`SEW = 16, widen = 2` `vtmms.tvv` and
-  `SEW = 16` `altfmt`).
-- [ ] **Step 6 (`third_party/coralnpu`)**: Bump submodule for `ZVTI16I32MM_ON`
-  Verilator VME / Nexus FPGA matrix support, Spike
-  `0010-Add-Zvti16i32mm-support.patch`, and upstream RTL/cosim updates (§2).
-- [ ] **Step 7 (`examples/matmul-aot/`)**: Add `--int16` to `export_matmul.py`,
+- [x] **Step 5 (`riscv-isa-sim-0002-zvt-i16-matmul.patch`,
+  `build_tools/bazel/extensions.bzl`)**: Enable `SEW = 16, TWIDEN = 2`
+  (`uint32_t` + `dot_product<int64_t>`) and `SEW = 16` `altfmt` in Spike.
+- [x] **Step 6 (`third_party/coralnpu`)**: Bump submodule to `1aeb3f46c` for
+  `ZVTI16I32MM_ON` Verilator VME / Nexus FPGA matrix support and upstream
+  RTL/cosim updates (§2).
+- [x] **Step 7 (`examples/matmul-aot/`)**: Add `--int16` to `export_matmul.py`,
   `run_matmul.py`, and `test_matmul.sh` (MPACT and Verilator), plus
   `test_mmt4d.py`.
-- [ ] **Tests (`tests/transforms/`, `tests/spike/`, `tests/verilator/`)**:
+- [x] **Tests (`tests/transforms/`, `tests/spike/`, `tests/verilator/`)**:
   Positive/negative `CHECK`/`NOVSET`/`GATE`/`SMALL` tests in
   `matrix_codegen.mlir`, `tile_size_selection_{dtcm,footprint}.mlir`, and
   `affinity_annotation.mlir`, plus Spike, MPACT, and Verilator runs of
   `matmul_i16_i32_16_8-8_16.mlir`.
-- [ ] **Build, Doc & Archive Sync**: Register `matmul_i16_i32_16_8-8_16` in
+- [x] **Build, Doc & Archive Sync**: Register `matmul_i16_i32_16_8-8_16` in
   `tests/spike/{BUILD.bazel,CMakeLists.txt}` (`mpact` outside
   `if(CORALNPU_ENABLE_SPIKE)`) and
   `tests/verilator/{BUILD.bazel,CMakeLists.txt}`, update

@@ -45,6 +45,11 @@ def main():
       help="Export INT8 inputs with INT32 accumulator",
   )
   dtype.add_argument(
+      "--int16",
+      action="store_true",
+      help="Export INT16 inputs with INT32 accumulator",
+  )
+  dtype.add_argument(
       "--bf16",
       action="store_true",
       help="Export BF16 inputs with FP32 accumulator",
@@ -54,13 +59,14 @@ def main():
   @jax.jit
   def predict(x, y):
     lhs = x.T if args.transpose_lhs else x
-    if args.int8:
+    if args.int8 or args.int16:
       return jnp.matmul(lhs, y, preferred_element_type=jnp.int32)
     if args.bf16:
       return jnp.matmul(lhs, y, preferred_element_type=jnp.float32)
     return lhs @ y
 
-  dtype = jnp.int8 if args.int8 else jnp.bfloat16 if args.bf16 else jnp.float32
+  dtype = (jnp.int8 if args.int8 else jnp.int16
+           if args.int16 else jnp.bfloat16 if args.bf16 else jnp.float32)
   lhs_dummy = jnp.zeros([args.n, args.n], dtype=dtype)
   rhs_dummy = jnp.zeros([args.n, args.n], dtype=dtype)
 

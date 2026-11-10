@@ -11,10 +11,10 @@ forwards both callbacks.
 ---
  .../Codegen/Common/ConvolutionToIGEMM.cpp     |  8 ++-
  .../iree/compiler/Codegen/Common/Transforms.h |  4 ++
- .../LLVMCPU/LLVMCPUVirtualVectorLowering.cpp  | 57 +++++++++++++++++--
+ .../LLVMCPU/LLVMCPUVirtualVectorLowering.cpp  | 63 ++++++++++++++++++-
  .../iree/compiler/Codegen/LLVMCPU/Passes.cpp  | 11 +++-
  .../iree/compiler/Codegen/LLVMCPU/Passes.h    |  8 ++-
- 5 files changed, 77 insertions(+), 11 deletions(-)
+ 5 files changed, 83 insertions(+), 11 deletions(-)
 
 diff --git a/compiler/src/iree/compiler/Codegen/Common/ConvolutionToIGEMM.cpp b/compiler/src/iree/compiler/Codegen/Common/ConvolutionToIGEMM.cpp
 index 285b4980a..730dc6d8a 100644
@@ -53,10 +53,10 @@ index 91b0aede3..863517fee 100644
  LogicalResult eliminateEmptyTensors(
      RewriterBase &rewriter, Operation *op,
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp
-index 05140f19c..bd85211cc 100644
+index 05140f19c..5b7ee94e9 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp
-@@ -144,6 +144,45 @@ struct ContiguousMemrefGather1DToConditionalLoads
+@@ -144,6 +144,51 @@ struct ContiguousMemrefGather1DToConditionalLoads
    }
  };
  
@@ -86,23 +86,29 @@ index 05140f19c..bd85211cc 100644
 +  if (isa<BlockArgument>(acc)) {
 +    return false;
 +  }
-+  Value v = op.getLhs();
-+  while (Operation *def = v.getDefiningOp()) {
-+    if (isa<arith::ExtFOp, arith::ExtSIOp, arith::ExtUIOp, vector::BroadcastOp,
-+            vector::ShapeCastOp, vector::ExtractStridedSliceOp>(def)) {
-+      v = def->getOperand(0);
-+    } else {
-+      break;
++  auto stripZvtOperand = [](Value v) {
++    while (Operation *def = v.getDefiningOp()) {
++      if (isa<arith::ExtFOp, arith::ExtSIOp, vector::BroadcastOp,
++              vector::ShapeCastOp, vector::ExtractStridedSliceOp,
++              vector::FromElementsOp, vector::ExtractOp>(def)) {
++        v = def->getOperand(0);
++      } else {
++        break;
++      }
 +    }
-+  }
-+  Type elTy = getElementTypeOrSelf(v);
-+  return elTy.isF32() || elTy.isBF16() || elTy.isInteger(8);
++    return getElementTypeOrSelf(v);
++  };
++  Type elTy = stripZvtOperand(op.getLhs());
++  if (elTy != stripZvtOperand(op.getRhs())) return false;
++  Type accElTy = accTy.getElementType();
++  return (accElTy.isF32() && (elTy.isF32() || elTy.isBF16())) ||
++         (accElTy.isInteger(32) && (elTy.isInteger(8) || elTy.isInteger(16)));
 +}
 +
  class LLVMCPUVirtualVectorLoweringPass
      : public impl::LLVMCPUVirtualVectorLoweringPassBase<
            LLVMCPUVirtualVectorLoweringPass> {
-@@ -224,10 +263,20 @@ void LLVMCPUVirtualVectorLoweringPass::runOnOperation() {
+@@ -224,10 +269,20 @@ void LLVMCPUVirtualVectorLoweringPass::runOnOperation() {
                                                                 /*benefit=*/100);
      }
      vector::populateVectorGatherLoweringPatterns(patterns);

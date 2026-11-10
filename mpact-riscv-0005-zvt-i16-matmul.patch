@@ -1,0 +1,111 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lun Dong <lundong@google.com>
+Date: Sun, 8 Nov 2026 00:00:00 -0800
+Subject: [PATCH] Support SEW16 TWIDEN2 in Zvt vtmms.tvv
+
+Enable 16-bit integer widening matrix multiplication (SEW = 16,
+TWIDEN = 2 -> TEW = 32) in RiscVZvtVtmms, read 16-bit elements via a
+shared read_int helper when sew_bytes == 2, and accumulate integer
+products in uint32_t to match two's-complement wrap without signed
+overflow UB.
+---
+diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
+index 7f7038d..39b19aa 100644
+--- a/riscv/riscv_zvt_instructions.cc
++++ b/riscv/riscv_zvt_instructions.cc
+@@ -1128,29 +1128,32 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+     std::memcpy(&d, &span[e * sew_bytes], sizeof(d));
+     return d;
+   };
+-  auto read_int_a = [&get_span, kind, stride, elements_per_vector](
+-                        RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
+-                        int kk, int col) -> int32_t {
+-    const int reg = kk * stride + col / elements_per_vector;
++  auto read_int = [&get_span, stride, elements_per_vector, sew_bytes](
++                      RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
++                      int kk, int col, bool is_signed) -> int32_t {
++    absl::Span<uint8_t> span =
++        get_span(spans, kk * stride + col / elements_per_vector, op);
+     const int e = col % elements_per_vector;
+-    absl::Span<uint8_t> span = get_span(spans, reg, op);
+-    if (kind == RiscVZvtMatmulKind::kInt8Signed ||
+-        kind == RiscVZvtMatmulKind::kInt8SignedUnsigned) {
+-      return static_cast<int8_t>(span[e]);
++    if (sew_bytes == 2) {
++      uint16_t u;
++      std::memcpy(&u, &span[e * 2], sizeof(u));
++      return is_signed ? static_cast<int16_t>(u) : static_cast<int32_t>(u);
+     }
+-    return static_cast<uint8_t>(span[e]);
++    return is_signed ? static_cast<int8_t>(span[e]) : span[e];
+   };
+-  auto read_int_b = [&get_span, kind, stride, elements_per_vector](
+-                        RV32VectorSourceOperand* op, absl::Span<uint8_t>* spans,
+-                        int kk, int col) -> int32_t {
+-    const int reg = kk * stride + col / elements_per_vector;
+-    const int e = col % elements_per_vector;
+-    absl::Span<uint8_t> span = get_span(spans, reg, op);
+-    if (kind == RiscVZvtMatmulKind::kInt8Signed ||
+-        kind == RiscVZvtMatmulKind::kInt8UnsignedSigned) {
+-      return static_cast<int8_t>(span[e]);
+-    }
+-    return static_cast<uint8_t>(span[e]);
++  auto read_int_a = [&read_int, kind](RV32VectorSourceOperand* op,
++                                      absl::Span<uint8_t>* spans, int kk,
++                                      int col) {
++    return read_int(op, spans, kk, col,
++                    kind == RiscVZvtMatmulKind::kInt8Signed ||
++                        kind == RiscVZvtMatmulKind::kInt8SignedUnsigned);
++  };
++  auto read_int_b = [&read_int, kind](RV32VectorSourceOperand* op,
++                                      absl::Span<uint8_t>* spans, int kk,
++                                      int col) {
++    return read_int(op, spans, kk, col,
++                    kind == RiscVZvtMatmulKind::kInt8Signed ||
++                        kind == RiscVZvtMatmulKind::kInt8UnsignedSigned);
+   };
+ 
+   auto* fp_state = matrix_state->riscv_state()->rv_fp();
+@@ -1229,10 +1232,11 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+               std::memcpy(&tile[offset], &final_acc, sizeof(float));
+             }
+           } else {
+-            int32_t acc = 0;
++            uint32_t acc = 0;
+             if (offset >= 0) std::memcpy(&acc, &tile[offset], sizeof(acc));
+             for (int kk = 0; kk < tile_k; kk++) {
+-              acc += a_i[kk][mm] * b_i[kk][nn];
++              acc += static_cast<uint32_t>(a_i[kk][mm]) *
++                     static_cast<uint32_t>(b_i[kk][nn]);
+             }
+             if (offset >= 0) std::memcpy(&tile[offset], &acc, sizeof(acc));
+           }
+@@ -1297,14 +1301,14 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+                 .IgnoreError();
+           }
+         } else {
+-          int32_t acc = matrix_state->GetElem<int32_t>(dest_tile, mm, nn, tew)
+-                            .value_or(0);
++          uint32_t acc = matrix_state->GetElem<uint32_t>(dest_tile, mm, nn, tew)
++                             .value_or(0);
+           for (int kk = 0; kk < tile_k; kk++) {
+             auto av = read_int_a(a, a_spans, kk, mm);
+             auto bv = read_int_b(b, b_spans, kk, nn);
+-            acc += av * bv;
++            acc += static_cast<uint32_t>(av) * static_cast<uint32_t>(bv);
+           }
+-          matrix_state->SetElem<int32_t>(dest_tile, mm, nn, tew, acc)
++          matrix_state->SetElem<uint32_t>(dest_tile, mm, nn, tew, acc)
+               .IgnoreError();
+         }
+       }
+@@ -1350,7 +1354,8 @@ void RiscVZvtVtmms(const Instruction* inst) {
+   auto* matrix_state = *m_result;
+   auto* vector_state = matrix_state->riscv_state()->rv_vector();
+   const int sew_bits = GetSewBits(vector_state);
+-  if (sew_bits != 8 || matrix_state->twiden() != 4) {
++  if (!((sew_bits == 8 && matrix_state->twiden() == 4) ||
++        (sew_bits == 16 && matrix_state->twiden() == 2))) {
+     matrix_state->riscv_state()->Trap(
+         /*is_interrupt=*/false, /*trap_value=*/0,
+         *ExceptionCode::kIllegalInstruction, inst->address(), inst);

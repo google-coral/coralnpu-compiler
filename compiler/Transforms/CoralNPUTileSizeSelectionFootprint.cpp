@@ -697,8 +697,10 @@ int64_t estimateZvtScratchBytes(
   int64_t numLoops = loopRanges.size();
   // The asm needs +zvtbase, and a contraction or a convolution that the conv
   // vectorizer lowers to contractions with the Zvt layout.
-  bool isZvtConvolution = linalg::isaConvolutionOpInterface(rootOp) &&
-                          isZvtMatrixContractionShape(rootOp.getOperation());
+  bool isZvtConvolution =
+      linalg::isaConvolutionOpInterface(rootOp) &&
+      isZvtMatrixContractionShape(rootOp.getOperation(),
+                                  /*strictLayoutAndSingleUse=*/false);
   if (!hasZvtTargetFeature(rootOp) || splitsReduction ||
       vectorParallelSizes.size() != numLoops ||
       vectorReductionSizes.size() != numLoops ||
@@ -712,8 +714,10 @@ int64_t estimateZvtScratchBytes(
   Type accType = getElementTypeOrSelf(init->get());
   // The asm loads its operands, with Zvt element types (isZvtReadableInputs):
   // it does not take an operand that a fused op computes (e.g. a
-  // dequantization).
-  if (!isZvtReadableInputs(rootOp)) return 0;
+  // dequantization), though RVV tiling can clone multi-use or non-1:1
+  // extensions into a K loop that the asm still lowers.
+  if (!isZvtReadableInputs(rootOp, /*strictLayoutAndSingleUse=*/false))
+    return 0;
 
   auto isFusedLinalgOp = [&](Operation *op) {
     return isa_and_nonnull<linalg::LinalgOp>(op) && computeOps.contains(op);

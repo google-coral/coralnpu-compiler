@@ -162,8 +162,9 @@ bool hasZvtTargetFeature(Operation *op) {
 }
 
 bool isZvtElementTypes(Type lhs, Type rhs, Type acc) {
-  return lhs == rhs && ((acc.isF32() && (lhs.isF32() || lhs.isBF16())) ||
-                        (acc.isInteger(32) && lhs.isInteger(8)));
+  return lhs == rhs &&
+         ((acc.isF32() && (lhs.isF32() || lhs.isBF16())) ||
+          (acc.isInteger(32) && (lhs.isInteger(8) || lhs.isInteger(16))));
 }
 
 bool isZvtAccumulatorShape(int64_t m, int64_t n, bool rank1, bool swap) {
@@ -177,19 +178,19 @@ bool isZvtAccumulatorShape(int64_t m, int64_t n, bool rank1, bool swap) {
   return llvm::alignTo(m, 16) * llvm::alignTo(n, 16) <= 1024;
 }
 
-namespace {
-
-// Returns the tensor that the Zvt asm loads from memory for `input`, an input
-// of a root op, or null if the asm cannot load it (see isZvtReadableInputs).
-Value getZvtLoadSource(Value input) {
+Value getZvtLoadSource(Value input, bool strictLayoutAndSingleUse) {
   Operation *def = input.getDefiningOp();
   // The asm loads an input that no tileable op computes.
   if (!isa_and_nonnull<TilingInterface>(def)) return input;
-  // Else, the producer must be an elementwise extension of one tensor: its
-  // body is one arith.extf or arith.extsi of the input element.
+  // Else, the producer must be an elementwise extension (`arith.extf` or
+  // `arith.extsi`) of one tensor (single-consumer and 1:1 for Zvt root tiling).
   auto producer = dyn_cast<linalg::LinalgOp>(def);
   if (!producer || producer.getNumDpsInputs() != 1 ||
-      producer->getNumResults() != 1 || !linalg::isElementwise(producer)) {
+      producer->getNumResults() != 1 || !linalg::isElementwise(producer) ||
+      (strictLayoutAndSingleUse &&
+       (input.use_empty() || !llvm::all_equal(input.getUsers()) ||
+        producer.getMatchingIndexingMap(producer.getDpsInputOperand(0)) !=
+            producer.getMatchingIndexingMap(producer.getDpsInitOperand(0))))) {
     return nullptr;
   }
   Block *body = producer.getBlock();
@@ -209,16 +210,46 @@ Value getZvtLoadSource(Value input) {
   return source;
 }
 
+namespace {
+
+// Returns true if `op` yields `acc + ext(in0) * ext(in1)` using only
+// `arith.extf` or `arith.extsi` casts.
+bool hasZvtMacBody(linalg::LinalgOp op) {
+  Block *body = op.getBlock();
+  if (!body || body->getNumArguments() != 3) return false;
+  auto yield = dyn_cast<linalg::YieldOp>(body->getTerminator());
+  Operation *add = yield && yield.getNumOperands() == 1
+                       ? yield.getOperand(0).getDefiningOp()
+                       : nullptr;
+  if (!isa_and_nonnull<arith::AddFOp, arith::AddIOp>(add)) return false;
+  Value acc = body->getArgument(2);
+  Value prod = add->getOperand(0) == acc
+                   ? add->getOperand(1)
+                   : (add->getOperand(1) == acc ? add->getOperand(0) : Value());
+  Operation *mul = prod ? prod.getDefiningOp() : nullptr;
+  if (!isa_and_nonnull<arith::MulFOp, arith::MulIOp>(mul)) return false;
+  auto strip = [](Value v) {
+    while (isa_and_nonnull<arith::ExtFOp, arith::ExtSIOp>(v.getDefiningOp()))
+      v = v.getDefiningOp()->getOperand(0);
+    return v;
+  };
+  Value lhs = strip(mul->getOperand(0)), rhs = strip(mul->getOperand(1));
+  return (lhs == body->getArgument(0) && rhs == body->getArgument(1)) ||
+         (lhs == body->getArgument(1) && rhs == body->getArgument(0));
+}
+
 }  // namespace
 
-bool isZvtReadableInputs(Operation *op) {
+bool isZvtReadableInputs(Operation *op, bool strictLayoutAndSingleUse) {
   auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
   if (!linalgOp || linalgOp.getNumDpsInputs() != 2 ||
-      linalgOp.getNumDpsInits() != 1) {
+      linalgOp.getNumDpsInits() != 1 || !hasZvtMacBody(linalgOp)) {
     return false;
   }
-  Value lhs = getZvtLoadSource(linalgOp.getDpsInputOperand(0)->get());
-  Value rhs = getZvtLoadSource(linalgOp.getDpsInputOperand(1)->get());
+  Value lhs = getZvtLoadSource(linalgOp.getDpsInputOperand(0)->get(),
+                               strictLayoutAndSingleUse);
+  Value rhs = getZvtLoadSource(linalgOp.getDpsInputOperand(1)->get(),
+                               strictLayoutAndSingleUse);
   // The asm checks the element types that it loads, not the types of the
   // operands of `op` (e.g. f32 after an arith.extf of bf16).
   return lhs && rhs &&
@@ -235,27 +266,22 @@ bool isZvtMatrixContraction(Operation *op) {
   return hasZvtTargetFeature(op) && isZvtMatrixContractionShape(op);
 }
 
-bool isZvtMatrixContractionShape(Operation *op) {
+bool isZvtMatrixContractionShape(Operation *op, bool strictLayoutAndSingleUse) {
   auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
-  if (!linalgOp || (!linalg::isaContractionOpInterface(linalgOp) &&
-                    !linalg::isaConvolutionOpInterface(linalgOp)))
+  if (!linalgOp ||
+      (!linalg::isaContractionOpInterface(linalgOp) &&
+       !linalg::isaConvolutionOpInterface(linalgOp)) ||
+      !isZvtReadableInputs(op, strictLayoutAndSingleUse))
     return false;
   for (Operation *user : linalgOp->getUsers())
     if (auto c = dyn_cast<linalg::LinalgOp>(user);
         c && c.getNumReductionLoops() != 0)
       return false;
 
-  auto in0Shaped =
-      dyn_cast<ShapedType>(linalgOp.getDpsInputOperand(0)->get().getType());
-  auto in1Shaped =
-      dyn_cast<ShapedType>(linalgOp.getDpsInputOperand(1)->get().getType());
   Value init = linalgOp.getDpsInitOperand(0)->get();
   auto initShaped = cast<ShapedType>(init.getType());
-  if (!in0Shaped || !in1Shaped || !initShaped.hasStaticShape()) return false;
+  if (!initShaped.hasStaticShape()) return false;
 
-  if (!isZvtElementTypes(in0Shaped.getElementType(), in1Shaped.getElementType(),
-                         initShaped.getElementType()))
-    return false;
   // The asm zeroes the tiles or seeds them from memory, so any other init
   // (e.g. a broadcast bias) stays on RVV.
   if (auto fill = init.getDefiningOp<linalg::FillOp>())
@@ -267,6 +293,8 @@ bool isZvtMatrixContractionShape(Operation *op) {
     return false;
 
   if (isa<linalg::Mmt4DOp>(linalgOp)) {
+    auto in0Shaped =
+        cast<ShapedType>(linalgOp.getDpsInputOperand(0)->get().getType());
     return in0Shaped.hasStaticShape() && initShaped.getDimSize(2) == 16 &&
            initShaped.getDimSize(3) == 16 && in0Shaped.getDimSize(3) == 1;
   }

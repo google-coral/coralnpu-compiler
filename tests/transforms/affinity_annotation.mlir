@@ -90,6 +90,94 @@ func.func @mixed_precision_matmul(
   return %0 : tensor<32x32xf32>
 }
 
+// CHECK-LABEL: @i16_i32_matmul
+// CHECK-HIGH-SPEEDUP-LABEL: @i16_i32_matmul
+func.func @i16_i32_matmul(
+    %arg0: tensor<32x32xi16>,
+    %arg1: tensor<32x32xi16>,
+    %arg2: tensor<32x32xi32>) -> tensor<32x32xi32> {
+  // 16-bit Zvt tier on CoralNPU vs 16-bit on host, ~2.3 (~0.69 on RVV).
+  // CHECK: flow.dispatch.workgroups
+  // CHECK: stream.affinity = #hal.device.affinity<@__device_1>
+  // CHECK-HIGH-SPEEDUP: flow.dispatch.workgroups
+  // CHECK-HIGH-SPEEDUP: stream.affinity = #hal.device.affinity<@__device_0>
+  %0 = linalg.matmul ins(%arg0, %arg1 : tensor<32x32xi16>, tensor<32x32xi16>)
+                     outs(%arg2 : tensor<32x32xi32>) -> tensor<32x32xi32>
+  return %0 : tensor<32x32xi32>
+}
+
+// CHECK-LABEL: @i16_i32_non_zvt_producer
+// CHECK-HIGH-SPEEDUP-LABEL: @i16_i32_non_zvt_producer
+func.func @i16_i32_non_zvt_producer(
+    %arg0: tensor<32x32xi8>,
+    %arg1: tensor<32x32xi16>,
+    %arg2: tensor<32x32xi32>) -> tensor<32x32xi32> {
+  // Fused arith.extui producer fails isZvtReadableInputs, so CoralNPU scores
+  // it on RVV (~0.69 < 1.0) and keeps it on the host.
+  // CHECK: flow.dispatch.workgroups
+  // CHECK: stream.affinity = #hal.device.affinity<@__device_0>
+  // CHECK-HIGH-SPEEDUP: flow.dispatch.workgroups
+  // CHECK-HIGH-SPEEDUP: stream.affinity = #hal.device.affinity<@__device_0>
+  %empty = tensor.empty() : tensor<32x32xi16>
+  %lhs = linalg.generic {
+    indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
+                     affine_map<(d0, d1) -> (d0, d1)>],
+    iterator_types = ["parallel", "parallel"]
+  } ins(%arg0 : tensor<32x32xi8>) outs(%empty : tensor<32x32xi16>) {
+  ^bb0(%in: i8, %out: i16):
+    %u = arith.extui %in : i8 to i16
+    linalg.yield %u : i16
+  } -> tensor<32x32xi16>
+  %0 = linalg.matmul ins(%lhs, %arg1 : tensor<32x32xi16>, tensor<32x32xi16>)
+                     outs(%arg2 : tensor<32x32xi32>) -> tensor<32x32xi32>
+  return %0 : tensor<32x32xi32>
+}
+
+// CHECK-LABEL: @i16_i32_generic_extsi_producer
+// CHECK-HIGH-SPEEDUP-LABEL: @i16_i32_generic_extsi_producer
+func.func @i16_i32_generic_extsi_producer(
+    %arg0: tensor<32x32xi16>,
+    %arg1: tensor<32x32xi16>,
+    %arg2: tensor<32x32xi32>) -> tensor<32x32xi32> {
+  // getZvtLoadSource peels 1:1 extsi producers to 16-bit tier (~2.4 < 3.0;
+  // ~4.8 >= 3.0 if scored as i32 without getZvtLoadSource).
+  // CHECK: flow.dispatch.workgroups
+  // CHECK: stream.affinity = #hal.device.affinity<@__device_1>
+  // CHECK-HIGH-SPEEDUP: flow.dispatch.workgroups
+  // CHECK-HIGH-SPEEDUP: stream.affinity = #hal.device.affinity<@__device_0>
+  %e = tensor.empty() : tensor<32x32xi32>
+  %lhs = linalg.generic {
+    indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
+                     affine_map<(d0, d1) -> (d0, d1)>],
+    iterator_types = ["parallel", "parallel"]
+  } ins(%arg0 : tensor<32x32xi16>) outs(%e : tensor<32x32xi32>) {
+  ^bb0(%in: i16, %out: i32):
+    %s = arith.extsi %in : i16 to i32
+    linalg.yield %s : i32
+  } -> tensor<32x32xi32>
+  %rhs = linalg.generic {
+    indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>,
+                     affine_map<(d0, d1) -> (d0, d1)>],
+    iterator_types = ["parallel", "parallel"]
+  } ins(%arg1 : tensor<32x32xi16>) outs(%e : tensor<32x32xi32>) {
+  ^bb0(%in: i16, %out: i32):
+    %s = arith.extsi %in : i16 to i32
+    linalg.yield %s : i32
+  } -> tensor<32x32xi32>
+  %0 = linalg.generic {
+    indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d2)>,
+                     affine_map<(d0, d1, d2) -> (d2, d1)>,
+                     affine_map<(d0, d1, d2) -> (d0, d1)>],
+    iterator_types = ["parallel", "parallel", "reduction"]
+  } ins(%lhs, %rhs : tensor<32x32xi32>, tensor<32x32xi32>) outs(%arg2 : tensor<32x32xi32>) {
+  ^bb0(%a: i32, %b: i32, %c: i32):
+    %m = arith.muli %a, %b : i32
+    %s = arith.addi %c, %m : i32
+    linalg.yield %s : i32
+  } -> tensor<32x32xi32>
+  return %0 : tensor<32x32xi32>
+}
+
 // CHECK-LABEL: @chain
 // CHECK-HIGH-SPEEDUP-LABEL: @chain
 func.func @chain(

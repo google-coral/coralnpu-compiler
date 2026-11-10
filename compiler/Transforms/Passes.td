@@ -299,8 +299,8 @@ def CoralNPURaiseApplyScale : Pass<"coralnpu-raise-apply-scale"> {
 def CoralNPUMatrixCodegen : InterfacePass<"coralnpu-matrix-codegen", "mlir::FunctionOpInterface"> {
   let summary = "Lowers vector.contract to Zvt matrix inline assembly";
   let description = [{
-    Lowers FP32, BF16 and INT8 vector.contract ops with a 16x16, 16x32,
-    32x16, 32x32, 16x64, 64x16 or partial (M < 16, N in {8, 12})
+    Lowers FP32, BF16, INT16 and INT8 vector.contract ops with a 16x16,
+    16x32, 32x16, 32x32, 16x64, 64x16 or partial (M < 16, N in {8, 12})
     accumulator (and the scf.for K loop that yields them, when
     fusable) to Zvt inline assembly holding the accumulators in
     mt0..mt12, and +zvfbfwma BF16 vecmat K loops (VLEN 128) to

@@ -9,11 +9,11 @@ The Zvt path lowers contractions
 ($C_{M \times N} \mathrel{+}= A_{M \times K} \times B_{K \times N}$, including
 `linalg.matmul`, `linalg.batch_matmul`, `linalg.mmt4d`, and 2D/N-D
 `linalg.generic`) and spatial convolutions directly to Zvt matrix instructions.
-It supports FP32, BF16, and INT8 inputs ($A$, $B$) with 32-bit accumulation ($C$
-in FP32 or INT32). Convolutions lowered via implicit GEMM (`im2col`) also use
-this path once placement affinity is enabled (§2.0). Operations with unsupported
-shapes, element types, or producer chains fall back to the standard RVV vector
-pipeline.
+It supports FP32, BF16, signed INT16, and signed INT8 inputs ($A$, $B$) with
+32-bit accumulation ($C$ in FP32 or INT32). Convolutions lowered via implicit
+GEMM (`im2col`) also use this path once placement affinity is enabled (§2.0).
+Operations with unsupported shapes, element types, or producer chains fall back
+to the standard RVV vector pipeline.
 
 Compilation happens in two CoralNPU passes around IREE's standard tiling and
 vectorization pipeline. First, `CoralNPUTileSizeSelectionDTCM` (§2.1) selects
@@ -25,10 +25,10 @@ loop into a Zvt inline-assembly microkernel.
 In hardware, the Zvt unit computes outer-product multiply-accumulates on
 $16 \times 16$ tiles ($TM = 16, TN = 16$). Each instruction processes
 $TK \in \{1, 2, 4\}$ reduction steps at once: $TK = 1$ for FP32, up to
-$TK = 2$ for BF16, and up to $TK = 4$ for INT8. The unit provides 16 tile
-registers (`mt0`–`mt15`); each $16 \times 16$ tile of 32-bit accumulators spans
-four registers, yielding four independent accumulators (`mt0`, `mt4`, `mt8`,
-and `mt12`).
+$TK = 2$ for BF16 and INT16, and up to $TK = 4$ for INT8. The unit provides 16
+tile registers (`mt0`–`mt15`); each $16 \times 16$ tile of 32-bit accumulators
+spans four registers, yielding four independent accumulators (`mt0`, `mt4`,
+`mt8`, and `mt12`).
 
 To reuse vector loads across tiles and interleave accumulators across
 consecutive multiplies, the compiler groups up to four $16 \times 16$ tiles per
@@ -115,7 +115,8 @@ fuse with the Zvt tiles.
 
 - **Target & Element Types**: Requires `+zvtbase` (`hasZvtTargetFeature`) and
   matching input types: FP32 $\times$ FP32 $\to$ FP32, BF16 $\times$ BF16 $\to$
-  FP32, or INT8 $\times$ INT8 $\to$ INT32.
+  FP32, signed INT16 $\times$ INT16 $\to$ INT32, or signed INT8 $\times$ INT8
+  $\to$ INT32.
 - **Supported Operations & Dimension Mapping**:
   - *Pre-packed `linalg.mmt4d`*: Requires static LHS and output shapes with
     $16 \times 16 \times 1$ inner tiles.
@@ -140,12 +141,18 @@ fuse with the Zvt tiles.
     dimensions are untransposed $(M, N)$, $A$ is the first input, and $M$ has an
     exact divisor in $[3, 15]$.
 - **Surrounding Dispatch Operations**:
-  - *Inputs (`isZvtReadableInputs`)*: Because the microkernel loads $A$ and $B$
-    directly from memory (widenings are fused into the assembly loop), neither
-    input may be computed by a tileable producer other than a single elementwise
-    `arith.extf` or `arith.extsi` of matching Zvt input types with non-tileable
-    inputs. Other producers (such as `arith.sitofp` or dequantization) stay on
-    RVV.
+  - *Inputs (`isZvtReadableInputs`)*: Requires a signed/FP multiply-accumulate
+    region body (`addf`/`addi` of `mulf`/`muli` widened only by optional
+    `arith.extf` or `arith.extsi`, rejecting unsigned `arith.extui` and
+    zero-point bodies). Because the microkernel loads $A$ and $B$ directly from
+    memory, neither input may be computed by a tileable producer other than a
+    single-consumer 1:1 elementwise `arith.extf` or `arith.extsi` with
+    non-tileable inputs (relaxed in `estimateZvtScratchBytes` so RVV-tiled loops
+    with cloned or transposed extensions still budget Zvt drain scratch), and
+    the element types before such an extension (`getZvtLoadSource`, also used
+    for `CoralNPUAffinityAnnotation` Zvt tier scaling) must be Zvt element
+    types. Other producers (such as `arith.sitofp`, `arith.extui`, or
+    dequantization) stay on RVV.
   - *Accumulator init*: Must be a zero constant, a zero `linalg.fill`, or a
     value loaded from memory (tiles are cleared with `vtzero` or seeded from
     memory). Computed initializers stay on RVV.
@@ -274,25 +281,26 @@ converting to the LLVM dialect, `CoralNPUTargetBackend` runs its
      scratch `memref.alloc` in `#iree_codegen.workgroup_local` (DTCM) memory, as
      the 4 KiB stack cannot hold a $16 \times 64$ FP32 tile. Fused 2D
      elementwise consumers then run as a 1D `scf.for` row loop over the scratch
-     buffer. A `[1, 0]`-transposed FP32 writeback copies out via strided
-     `vlse32.v` + `vse32.v`, and any other consumer reads the scratch buffer via
+     buffer. A `[1, 0]`-transposed writeback of a 32-bit (`f32` or `i32`) tile
+     matching the accumulator element type copies out via strided `vlse32.v` +
+     `vse32.v`, and any other consumer reads the scratch buffer via
      `vector.transfer_read`.
    - **Operand Precision & Layout Tracing**: Because the microkernel loads and
      widens operands directly inside the assembly loop, the pass traces each
-     `vector.contract` input back to its underlying `FP32`, `BF16`, or `INT8`
-     memref read. It looks through widening casts (`arith.extsi`, `arith.extf`)
-     and layout-preserving vector ops (`vector.shape_cast`, `vector.broadcast`,
-     zero-offset unit-stride `vector.extract_strided_slice`, 0-indexed
-     single-element `vector.extract`, and `vector.from_elements` of in-order
-     extracts from one vector, with constant-step extracts on $N \times 1$
-     single-channel convolution tiles stepping rows at that stride). It then
-     checks whether $A$ ($K \times M$ vs. $M \times K$) and $B$ ($K \times N$
-     vs. $N \times K$) are contiguous or strided along $K$, splitting $K$ out of
-     combined spatial+filter indices on unit-channel tiles (`splitKIndex`).
-     Fusing the $K$-loop requires row-major (unit inner stride) $A$ and $B$
-     memrefs with the $K$ induction variable as the row or innermost index;
-     address generation folds all remaining batch or outer `mmt4d` tile indices
-     into the base pointers.
+     `vector.contract` input back to its underlying `FP32`, `BF16`, `INT16`, or
+     `INT8` memref read. It looks through widening casts (`arith.extsi`,
+     `arith.extf`) and layout-preserving vector ops (`vector.shape_cast`,
+     rank-only `vector.broadcast`, zero-offset unit-stride
+     `vector.extract_strided_slice`, 0-indexed single-element `vector.extract`,
+     and `vector.from_elements` of in-order extracts from one vector, with
+     constant-step extracts on $N \times 1$ single-channel convolution tiles
+     stepping rows at that stride). It then checks whether $A$ ($K \times M$ vs.
+     $M \times K$) and $B$ ($K \times N$ vs. $N \times K$) are contiguous or
+     strided along $K$, splitting $K$ out of combined spatial+filter indices on
+     unit-channel tiles (`splitKIndex`). Fusing the $K$-loop requires row-major
+     (unit inner stride) $A$ and $B$ memrefs with the $K$ induction variable as
+     the row or innermost index; address generation folds all remaining batch or
+     outer `mmt4d` tile indices into the base pointers.
    - **BF16 `vecmat` K-Loops (`+zvfbfwma`)**: When `+zvfbfwma` is enabled with
      `VLEN = 128`, the pass also matches 1D `vector<32xf32>` (`1x m8` or jammed
      `2x m8`) BF16 `vecmat` `scf.for` loops (`vector.fma` of broadcast `bf16`
@@ -309,15 +317,16 @@ converting to the LLVM dialect, `CoralNPUTargetBackend` runs its
      LLVM's VSETVLI insertion pass may insert a `vsetvli` between any two
      assembly blocks.
 
-   | Mode                | `msetmtype` (`t5`) | `vtype` (`t6`)                    | Tile Shape & Widening                        | Multiply Op      |
-   | :------------------ | :----------------- | :-------------------------------- | :------------------------------------------- | :--------------- |
-   | **FP32**            | `16417`            | `18` (`SEW=32, LMUL=4`)           | $TM=16, TK=1, \text{mtwiden}=1$              | `vtfmm.tvv`      |
-   | **BF16 ($TK=1/2$)** | `16418` / `16450`  | `265` (`SEW=16, LMUL=2, altfmt`)  | $TM=16, TK=1\text{ or }2, \text{mtwiden}=2$  | `vtfmm.alt.tvv`  |
-   | **INT8 ($TK=1/4$)** | `16419` / `16515`  | `256` (`SEW=8, LMUL=1, altfmt`)   | $TM=16, TK=1\text{ or }4, \text{mtwiden}=3$  | `vtmms.tvv`      |
+   | Mode                 | `msetmtype` (`t5`) | `vtype` (`t6`)                    | Tile Shape & Widening                        | Multiply Op      |
+   | :------------------- | :----------------- | :-------------------------------- | :------------------------------------------- | :--------------- |
+   | **FP32**             | `16417`            | `18` (`SEW=32, LMUL=4`)           | $TM=16, TK=1, \text{mtwiden}=1$              | `vtfmm.tvv`      |
+   | **BF16 ($TK=1/2$)**  | `16418` / `16450`  | `265` (`SEW=16, LMUL=2, altfmt`)  | $TM=16, TK=1\text{ or }2, \text{mtwiden}=2$  | `vtfmm.alt.tvv`  |
+   | **INT16 ($TK=1/2$)** | `16418` / `16450`  | `265` (`SEW=16, LMUL=2, altfmt`)  | $TM=16, TK=1\text{ or }2, \text{mtwiden}=2$  | `vtmms.tvv`      |
+   | **INT8 ($TK=1/4$)**  | `16419` / `16515`  | `256` (`SEW=8, LMUL=1, altfmt`)   | $TM=16, TK=1\text{ or }4, \text{mtwiden}=3$  | `vtmms.tvv`      |
 
    - Setting `altfmt` (bit 8 of `vtype`) marks the *second* operand as signed
-     INT8 (for `vtmms.tvv`, whose opcode only encodes the first operand's
-     signedness) or as BF16 rather than FP16 (for `vtfmm.alt.tvv`).
+     INT16 or INT8 (for `vtmms.tvv`, whose opcode only encodes the first
+     operand's signedness) or as BF16 rather than FP16 (for `vtfmm.alt.tvv`).
    - Because `msetmtype` derives `LMUL`/`ta`/`ma` from `SEW` when
      `mtwiden != 0` (`SEW8` $\to$ `m1`, `SEW16` $\to$ `m2`, `SEW32` $\to$ `m4`)
      and sets `TM` and `TK` directly, it replaces a `vsetivli` + `msettm` pair.
@@ -325,8 +334,8 @@ converting to the LLVM dialect, `CoralNPUTargetBackend` runs its
      when seeding or draining a partial-$N$ tile); no `vset*` instruction
      appears inside any Zvt block.
    - Blocks that clear, seed, or drain accumulators use FP32 mode regardless of
-     input type because accumulators are always 32-bit. INT8 and BF16 kernels
-     then switch to their narrow mode before loading operands (for
+     input type because accumulators are always 32-bit. INT8, INT16, and BF16
+     kernels then switch to their narrow mode before loading operands (for
      multi-reduction convolution chains whose outer filter loops only compute
      addresses, the narrow mode setup is hoisted into the tile-init block). A
      seeded FP32 kernel with $N < 16$ restores $TN = 16$ after seeding, and a
@@ -339,10 +348,11 @@ converting to the LLVM dialect, `CoralNPUTargetBackend` runs its
      the tiles row by row via `vle32.v` + `vtmv.t.v`; the pass leaves any other
      initializer (such as a computed bias) to RVV.
    - **$K$-Packing & Bounded Loop Unrolling**: When $K \bmod TK = 0$ and every
-     contiguous operand is a full tile, the microkernel packs $TK = 2$ (BF16) or
-     $TK = 4$ (INT8) consecutive $K$-steps held in registers $8 / TK$ apart into
-     each multiply. To bound code size, it emits an assembly loop with counter
-     `t6` (`li t6, numKSteps / step; 1: ...; addi t6, t6, -1; bnez t6, 1b`). It
+     contiguous operand is a full tile, the microkernel packs $TK = 2$ (BF16 and
+     INT16) or $TK = 4$ (INT8) consecutive $K$-steps held in registers $8 / TK$
+     apart into each multiply. To bound code size, it emits an assembly loop
+     with counter `t6`
+     (`li t6, numKSteps / step; 1: ...; addi t6, t6, -1; bnez t6, 1b`). It
      unrolls by $8\times$ when $K \ge 32$ and $K \bmod (8 \cdot TK) = 0$, by
      $4\times$ when $K \ge 16$ and $K \bmod (4 \cdot TK) = 0$, or fully without
      a branch when $K \le 4 \cdot TK$ and $K \bmod TK = 0$.
@@ -379,10 +389,11 @@ converting to the LLVM dialect, `CoralNPUTargetBackend` runs its
    - The pass lowers a contraction standalone when it cannot fuse the chain (no
      enclosing `scf.for`, non-constant bounds, non-unit step, a loop body that
      may write memory, or an LHS/RHS address that is not row-major with $K$ as
-     the row or innermost index). This path requires full $16 \times 16$ tiles
-     and any widening `arith.ext*` to be the operand's direct defining op. It
-     passes LHS and RHS vectors as inline-assembly operands pinned to the slot
-     bases (`getZvtOperandBase`: A tiles, then B).
+     the row or innermost index). This path requires full $16 \times 16$-aligned
+     tiles, readable load operands (`lhs && rhs`), and widening `arith.extf` /
+     `arith.extsi` casts sitting beneath only `vector.shape_cast` ops peeled by
+     `stripExt`. It passes LHS and RHS vectors as inline-assembly operands
+     pinned to the slot bases (`getZvtOperandBase`: A tiles, then B).
    - The pass still initializes accumulators before the first multiply. A
      standalone contraction with a zero init clears its tiles inline, whereas a
      seeded contraction or unfused loop runs a separate `vtzero` or seed block
@@ -419,20 +430,23 @@ The LLVM RISC-V backend adds Zvt v0.4 support via
 
 ## 3. Supported Configurations
 
-| Linalg Operation                   | Input Type                     | Accumulator Type     | Extension                                        | Target Instruction / Path                    | Status                                                            |
-| :--------------------------------- | :----------------------------: | :------------------: | :----------------------------------------------: | :------------------------------------------: | :---------------------------------------------------------------: |
-| `matmul`, `batch_matmul`, `mmt4d`  | **FP32**                       | **FP32**             | `+zvtf32f32mm`                                   | `vtfmm.tvv` (Zvt Hardware)                   | **Supported**                                                     |
-| `matmul`, `batch_matmul`, `mmt4d`  | **BF16**                       | **FP32**             | `+zvtf16f32mm`                                   | `vtfmm.alt.tvv` (Zvt Hardware)               | **Supported**                                                     |
-| `matmul`, `batch_matmul`, `mmt4d`  | **INT8**                       | **INT32**            | `+zvti8i32mm`                                    | `vtmms.tvv` (Zvt Hardware)                   | **Supported**                                                     |
-| `matmul`, `batch_matmul`, `mmt4d`  | **INT16**                      | **INT32**            | `+m,+f,+zvl128b,+zve32f`                         | RVV Vector Path / Fallback                   | **Supported**                                                     |
-| `matmul`, `batch_matmul`, `mmt4d`  | **INT32**                      | **INT32**            | `+m,+f,+zvl128b,+zve32f`                         | RVV Vector Path / Fallback                   | **Supported**                                                     |
-| `conv_2d_nhwc_hwcf` / spatial conv | **FP32** / **BF16** / **INT8** | **FP32** / **INT32** | `+zvtf32f32mm` / `+zvtf16f32mm` / `+zvti8i32mm`  | `vtfmm.tvv` / `vtfmm.alt.tvv` / `vtmms.tvv`  | **Supported** (direct multi-reduction loop chain; IGEMM see §2.0) |
+| Linalg Operation                   | Input Type                                | Accumulator Type     | Extension                                        | Target Instruction / Path                    | Status                                                            |
+| :--------------------------------- | :---------------------------------------: | :------------------: | :----------------------------------------------: | :------------------------------------------: | :---------------------------------------------------------------: |
+| `matmul`, `batch_matmul`, `mmt4d`  | **FP32**                                  | **FP32**             | `+zvtf32f32mm`                                   | `vtfmm.tvv` (Zvt Hardware)                   | **Supported**                                                     |
+| `matmul`, `batch_matmul`, `mmt4d`  | **BF16**                                  | **FP32**             | `+zvtf16f32mm`                                   | `vtfmm.alt.tvv` (Zvt Hardware)               | **Supported**                                                     |
+| `matmul`, `batch_matmul`, `mmt4d`  | **INT16**                                 | **INT32**            | `+zvti8i32mm`                                    | `vtmms.tvv` (Zvt Hardware)                   | **Supported**                                                     |
+| `matmul`, `batch_matmul`, `mmt4d`  | **INT8**                                  | **INT32**            | `+zvti8i32mm`                                    | `vtmms.tvv` (Zvt Hardware)                   | **Supported**                                                     |
+| `matmul`, `batch_matmul`, `mmt4d`  | **INT16**                                 | **INT16**            | `+m,+f,+zvl128b,+zve32f`                         | RVV Vector Path / Fallback                   | **Supported**                                                     |
+| `matmul`, `batch_matmul`, `mmt4d`  | **INT32**                                 | **INT32**            | `+m,+f,+zvl128b,+zve32f`                         | RVV Vector Path / Fallback                   | **Supported**                                                     |
+| `conv_2d_nhwc_hwcf` / spatial conv | **FP32** / **BF16** / **INT16** / **INT8** | **FP32** / **INT32** | `+zvtf32f32mm` / `+zvtf16f32mm` / `+zvti8i32mm`  | `vtfmm.tvv` / `vtfmm.alt.tvv` / `vtmms.tvv`  | **Supported** (direct multi-reduction loop chain; IGEMM see §2.0) |
 
 Both compiler passes gate only on `+zvtbase`. The `Extension` column lists each
 multiply instruction's feature flag, though the assembler also accepts
 `vtfmm.tvv` under `+zvtf16f32mm` and `vtfmm.alt.tvv` under `+zvtf8f32mm`. If
 `+zvtbase` is enabled without an accepted multiply sub-extension, the inline
-assembler rejects the instruction rather than falling back.
+assembler rejects the instruction rather than falling back. RTL gates `SEW=16`
+`vtmms.tvv` on `ZVTI16I32MM_ON` (enabled in Verilator VME and Nexus FPGA matrix
+builds), trapping when disabled.
 
 ### Fallback Behavior
 
@@ -453,31 +467,38 @@ Unit tests for the Zvt passes live in `tests/transforms/`:
 
 - `matrix_codegen.mlir`: Verifies `CoralNPUMatrixCodegen` pattern matching,
   per-block CSR setup (`msetmtype`, `msettn`), and generated assembly:
-  - **Tile Shapes & Precisions**: Covers $1 \times 1$ (FP32, BF16, INT8),
-    $1 \times 2$ (INT8, BF16), $1 \times 4$ and $4 \times 1$ (BF16 with $TK=2$
-    and $4\times$ $K$-unrolling), and $2 \times 1$ / $2 \times 2$ (FP32). Also
+  - **Tile Shapes & Precisions**: Covers $1 \times 1$ (FP32, BF16, INT16, INT8,
+    plus chained `i8 -> i16 -> i32` `extsi` through `shape_cast`), $1 \times 2$
+    (INT8, BF16), $1 \times 4$ and $4 \times 1$ (BF16 with $TK=2$ and $4\times$
+    $K$-unrolling), $2 \times 1$ (FP32), and $2 \times 2$ (FP32, INT16). Also
     covers peeled partial-$M$ ($M < 16$, including $M = 1$) and partial-$N$
     ($8 \le N < 16$, $N \bmod 4 = 0$, including an $N \times K$ RHS).
   - **Convolutions & `vecmat`**: Covers nested outer spatial reduction loops,
     strided 1D outer-product reassembly, single-channel $K$-loops over
     $N \times 1$ image columns (unit and strided rows), and jammed BF16 `vecmat`
     $K$-loops (`vfwmaccbf16.vf`).
-  - **Addressing, Init & Writeback**: Covers transposed LHS/RHS/output,
-    non-zero $K$ lower bounds, zero and memory-seeded accumulators, fused and
-    unfused loops, and direct writeback (`transfer_write` or per-row stores).
-    Also covers BF16 narrowing drain (`arith.truncf` with `+zvfbfmin`, or
-    consumer-loop truncation without it). For fused elementwise consumers, it
-    tests DTCM scratch drain via a 1D row loop, or via `transfer_read` when two
-    chains share a scratch tile or transpose an FP32-converted INT8 result.
+  - **Addressing, Init & Writeback**: Covers transposed LHS/RHS and 32-bit
+    (`FP32` and `INT32`) output, non-zero $K$ lower bounds, zero and
+    memory-seeded accumulators, fused and unfused loops, and direct writeback
+    (`transfer_write` or per-row stores). Also covers BF16 narrowing drain
+    (`arith.truncf` with `+zvfbfmin`, or consumer-loop truncation without it).
+    For fused elementwise consumers, it tests DTCM scratch drain via a 1D row
+    loop (including `arith.index_cast`), or via `transfer_read` when two chains
+    share a scratch tile or transpose an FP32-converted INT8 result.
   - **Negative & Fallback Cases**: Verifies that targets without `+zvtbase` or
-    non-CoralNPU backends remain untouched, unsupported $8 \times 4$ shapes fall
-    back to generic contract lowering, and `vecmat` loops without a broadcast
-    scalar LHS keep their original loop.
+    non-CoralNPU backends remain untouched, unsupported $8 \times 4$ shapes,
+    non-widening `i16 -> i16`, mixed signed/unsigned `i16 x ui16 -> i32`,
+    data-replicating `vector.broadcast`, or computed `i16` producers fall back
+    to generic contract lowering, and `vecmat` loops without a broadcast scalar
+    LHS keep their original loop.
   - **Additional `FileCheck` Runs**: A second prefix verifies that no `vset*`
     instruction appears in any Zvt block (while checking the expected `vsetvli`
-    in `@vecmat_bf16_jammed`). A third runs `LLVMCPUVirtualVectorLowering` to
-    verify that `iree-0006` preserves partial-$N$ contractions with an
-    $N \times K$ RHS for `CoralNPUMatrixCodegen`.
+    in `@vecmat_bf16_jammed`). A third (`GATE`) runs
+    `LLVMCPUVirtualVectorLowering` to verify that `iree-0006` defers partial-$N$
+    ($N \times K$ RHS), 1-channel integer convolution (`FromElementsOp` +
+    `ExtractOp`), and signed widening `i16 -> i32` / chained
+    `i8 -> i16 -> i32` contractions while lowering non-widening `i16 -> i16` and
+    mixed signed/unsigned `i16 x ui16 -> i32` contractions.
 - `convolution_to_igemm.mlir`: Tests affinity-aware `im2col` conversion in
   `ConvolutionToIGEMM`.
 
@@ -526,8 +547,9 @@ cd examples/matmul-aot
 # Run FP32 with transposed LHS:
 ./test_matmul.sh --transpose-lhs
 
-# Run INT8 with transposed LHS:
+# Run INT8 or INT16 with transposed LHS:
 ./test_matmul.sh --int8 --transpose-lhs
+./test_matmul.sh --int16 --transpose-lhs
 
 # Run BF16:
 ./test_matmul.sh --bf16
@@ -536,7 +558,7 @@ cd examples/matmul-aot
 # Pass --use-verilator to run on Verilator:
 ./test_matmul.sh --transpose-lhs --use-verilator
 
-# 3. End-to-End linalg.mmt4d Verification (FP32, BF16 and INT8; zero and accumulator inits):
+# 3. End-to-End linalg.mmt4d Verification (FP32, BF16, INT16 and INT8; zero and accumulator inits):
 # Needs: bazel build --config=dev @iree_core//tools:iree-compile @iree_core//tools:iree-run-module
 python3 test_mmt4d.py --bazel
 
@@ -554,6 +576,7 @@ python3 test_mmt4d.py --bazel
 - `--transpose-lhs`: Exercises the contiguous unit-stride LHS load path
   (`vle32.v` / `vle16.v` / `vle8.v`) for $A^T B$.
 - `--int8`: Exercises INT8 $\times$ INT8 $\to$ INT32 matmul via `vtmms.tvv`.
+- `--int16`: Exercises INT16 $\times$ INT16 $\to$ INT32 matmul via `vtmms.tvv`.
 - `--bf16`: Exercises BF16 $\times$ BF16 $\to$ FP32 matmul via `vtfmm.alt.tvv`.
 
 ---

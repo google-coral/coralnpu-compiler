@@ -415,3 +415,99 @@ func.func @matmul_zvt_m196_consumer(%a: tensor<196x64xf32>, %b: tensor<64x64xf32
   } -> tensor<196x64xf32>
   return %o : tensor<196x64xf32>
 }
+
+// Zvt i16 x i16 -> i32 with fused bias + trunci to i16: the Zvt asm drains
+// 32x32 vector tiles to a 32x32 i32 scratch tile (4 KB). With 24 KB, the whole
+// op fits: output 64x64 i16 (8 KB) + scratch (4 KB) + bias 64 i32 (256 B) +
+// A 64x1 i16 (128 B) + B 1x64 i16 (128 B) = 12800 B. With 4 KB (SMALL), the
+// Zvt tile halves to 16x32 (2 KB scratch), and the DTCM tile is 16x32: output
+// 16x32 i16 (1 KB) + scratch (2 KB) + bias 32 i32 (128 B) + A + B = 3328 B.
+// CHECK-LABEL: func.func @matmul_bias_trunc_i16_dispatch_0
+// CHECK:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [0, 0, 0], cache_reduction = [0, 0, 0], distribution = [0, 0, 0], vector_common_parallel = [32, 32, 0], vector_reduction = [0, 0, 1]>}
+// SMALL-LABEL: func.func @matmul_bias_trunc_i16_dispatch_0
+// SMALL:         linalg.matmul {lowering_config = #iree_cpu.lowering_config<cache_parallel = [16, 32, 0], cache_reduction = [0, 0, 0], distribution = [16, 32, 0], vector_common_parallel = [16, 32, 0], vector_reduction = [0, 0, 1]>}
+func.func @matmul_bias_trunc_i16(%a: tensor<64x128xi16>, %b: tensor<128x64xi16>, %bias: tensor<64xi32>) -> tensor<64x64xi16> {
+  %c0 = arith.constant 0 : i32
+  %e = tensor.empty() : tensor<64x64xi32>
+  %f = linalg.fill ins(%c0 : i32) outs(%e : tensor<64x64xi32>) -> tensor<64x64xi32>
+  %r = linalg.matmul ins(%a, %b : tensor<64x128xi16>, tensor<128x64xi16>) outs(%f : tensor<64x64xi32>) -> tensor<64x64xi32>
+  %eo = tensor.empty() : tensor<64x64xi16>
+  %o = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d1)>, affine_map<(d0, d1) -> (d0, d1)>],
+                       iterator_types = ["parallel", "parallel"]}
+      ins(%r, %bias : tensor<64x64xi32>, tensor<64xi32>) outs(%eo : tensor<64x64xi16>) {
+  ^bb0(%in: i32, %bi: i32, %out: i16):
+    %s = arith.addi %in, %bi : i32
+    %t = arith.trunci %s : i32 to i16
+    linalg.yield %t : i16
+  } -> tensor<64x64xi16>
+  return %o : tensor<64x64xi16>
+}
+
+// Non-widening i16 x i16 -> i16 matmul is not a Zvt root (Zvt accumulates in
+// i32), so it stays on RVV with DTCM operand promotion.
+// CHECK-LABEL: func.func @matmul_i16_non_widening_dispatch_0
+// CHECK:         linalg.matmul
+// CHECK-SAME:      promote_operands = [0, 1, 2]
+func.func @matmul_i16_non_widening(%a: tensor<64x64xi16>, %b: tensor<64x64xi16>) -> tensor<64x64xi16> {
+  %c0 = arith.constant 0 : i16
+  %e = tensor.empty() : tensor<64x64xi16>
+  %f = linalg.fill ins(%c0 : i16) outs(%e : tensor<64x64xi16>) -> tensor<64x64xi16>
+  %r = linalg.matmul ins(%a, %b : tensor<64x64xi16>, tensor<64x64xi16>) outs(%f : tensor<64x64xi16>) -> tensor<64x64xi16>
+  return %r : tensor<64x64xi16>
+}
+
+// Unsigned ui16 x ui16 -> i32 matmul with fused trunci stays on RVV with
+// promotion and no phantom Zvt scratch charge: 16x38 i16 (1216 B) + 38x16 i16
+// (1216 B) + 16x16 i32 (1024 B) + 16x16 i16 (512 B) = 3968 B <= 4 KB (SMALL).
+// CHECK-LABEL: func.func @matmul_ui16_i32_dispatch_0
+// CHECK:         linalg.matmul
+// CHECK-SAME:      promote_operands = [0, 1, 2]
+// SMALL-LABEL: func.func @matmul_ui16_i32_dispatch_0
+// SMALL:         linalg.matmul
+// SMALL-SAME:      cache_reduction = [0, 0, 0]
+// SMALL-SAME:      promote_operands = [0, 1, 2]
+func.func @matmul_ui16_i32(%a: tensor<16x38xi16>, %b: tensor<38x16xi16>) -> tensor<16x16xi16> {
+  %c0 = arith.constant 0 : i32
+  %e = tensor.empty() : tensor<16x16xi32>
+  %f = linalg.fill ins(%c0 : i32) outs(%e : tensor<16x16xi32>) -> tensor<16x16xi32>
+  %r = linalg.matmul {cast = #linalg.type_fn<cast_unsigned>}
+      ins(%a, %b : tensor<16x38xi16>, tensor<38x16xi16>) outs(%f : tensor<16x16xi32>) -> tensor<16x16xi32>
+  %eo = tensor.empty() : tensor<16x16xi16>
+  %o = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0, d1)>],
+                       iterator_types = ["parallel", "parallel"]}
+      ins(%r : tensor<16x16xi32>) outs(%eo : tensor<16x16xi16>) {
+  ^bb0(%in: i32, %out: i16):
+    %t = arith.trunci %in : i32 to i16
+    linalg.yield %t : i16
+  } -> tensor<16x16xi16>
+  return %o : tensor<16x16xi16>
+}
+
+// Broadcast arith.extsi producer fails getZvtLoadSource (non-1:1 map), so the
+// i32 matmul stays on RVV with promotion.
+// CHECK-LABEL: func.func @matmul_i16_broadcast_extsi_dispatch_0
+// CHECK:         linalg.matmul
+// CHECK-SAME:      promote_operands = [0, 1, 2]
+func.func @matmul_i16_broadcast_extsi(%a: tensor<64xi16>, %b: tensor<64x64xi16>) -> tensor<64x64xi32> {
+  %c0 = arith.constant 0 : i32
+  %ea = tensor.empty() : tensor<64x64xi32>
+  %lhs = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d1)>, affine_map<(d0, d1) -> (d0, d1)>],
+                         iterator_types = ["parallel", "parallel"]}
+      ins(%a : tensor<64xi16>) outs(%ea : tensor<64x64xi32>) {
+  ^bb0(%in: i16, %out: i32):
+    %s = arith.extsi %in : i16 to i32
+    linalg.yield %s : i32
+  } -> tensor<64x64xi32>
+  %eb = tensor.empty() : tensor<64x64xi32>
+  %rhs = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0, d1)>],
+                         iterator_types = ["parallel", "parallel"]}
+      ins(%b : tensor<64x64xi16>) outs(%eb : tensor<64x64xi32>) {
+  ^bb0(%in: i16, %out: i32):
+    %s = arith.extsi %in : i16 to i32
+    linalg.yield %s : i32
+  } -> tensor<64x64xi32>
+  %ec = tensor.empty() : tensor<64x64xi32>
+  %f = linalg.fill ins(%c0 : i32) outs(%ec : tensor<64x64xi32>) -> tensor<64x64xi32>
+  %r = linalg.matmul ins(%lhs, %rhs : tensor<64x64xi32>, tensor<64x64xi32>) outs(%f : tensor<64x64xi32>) -> tensor<64x64xi32>
+  return %r : tensor<64x64xi32>
+}

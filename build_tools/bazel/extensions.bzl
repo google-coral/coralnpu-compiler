@@ -40,6 +40,7 @@ def _coralnpuc_extension_impl(module_ctx):
                 "@coralnpu_hw//third_party/spike:0008-Link-libstdc-explicitly-in-LIBS.patch",
                 "@coralnpu_hw//third_party/spike:0009-Fix-Zvt-and-CoralNPU-mstatus-alignment.patch",
                 Label("//:riscv-isa-sim-0001-zvt-mstatus-ms-initial.patch"),  # Local.
+                Label("//:riscv-isa-sim-0002-zvt-i16-matmul.patch"),  # Local.
             ],
             sha256 = "064f4c1f22005899fa5106b822bfdc7034ffc9babc2f5821771589047f028a66",
             strip_prefix = "riscv-isa-sim-93a10ae685ac85bd3d8a62054f8f180a4f76fc82",

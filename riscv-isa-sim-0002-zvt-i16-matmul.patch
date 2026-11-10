@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lun Dong <lundong@google.com>
+Date: Sun, 8 Nov 2026 00:00:00 -0800
+Subject: [PATCH] Support SEW16 WIDEN2 in Zvt vtmms.tvv
+
+Enable 16-bit integer widening matrix multiplication (vsew == 16,
+widen == 2 -> 32-bit accumulator) in vtmms.tvv using int64_t dot
+products and uint32_t modular accumulation, and allow vtype.altfmt at
+vsew == 16 under EXT_ZVTI8I32MM.
+---
+diff --git a/riscv/insns/vtmms_tvv.h b/riscv/insns/vtmms_tvv.h
+index 9f267b3..f6abd47 100644
+--- a/riscv/insns/vtmms_tvv.h
++++ b/riscv/insns/vtmms_tvv.h
+@@ -24,6 +24,15 @@ if (P.VU.vsew == 8 && P.VU.widen == 4 && !P.VU.altfmt) {
+   
+     P.VU.mt_elt<int32_t>(td, m, n) += dot_product<int32_t>(a.data(), b.data(), P.VU.tk);
+   })
++} else if (P.VU.vsew == 16 && P.VU.widen == 2) {
++  require_extension(EXT_ZVTI8I32MM);
++  ZVT_MN_LOOP({
++    auto a = P.VU.mt_vector<int16_t>(insn.rs2(), m);
++    int64_t dp = P.VU.altfmt
++        ? dot_product<int64_t>(a.data(), P.VU.mt_vector<int16_t>(insn.rs1(), n).data(), P.VU.tk)
++        : dot_product<int64_t>(a.data(), P.VU.mt_vector<uint16_t>(insn.rs1(), n).data(), P.VU.tk);
++    P.VU.mt_elt<uint32_t>(td, m, n) += static_cast<uint32_t>(dp);
++  })
+ } else {
+   require(false);
+ }
+diff --git a/riscv/vector_unit.cc b/riscv/vector_unit.cc
+index 4301cbd..25d3205 100644
+--- a/riscv/vector_unit.cc
++++ b/riscv/vector_unit.cc
+@@ -128,7 +128,7 @@ reg_t vectorUnit_t::vectorUnit_t::set_vl(int rd, int rs1, reg_t reqVL, reg_t new
+         ill_altfmt = false;
+       else if (p->extension_enabled(EXT_ZVFOFP8MIN) && vsew == 8)
+         ill_altfmt = false;
+-      else if (p->extension_enabled(EXT_ZVTI8I32MM) && vsew == 8)
++      else if (p->extension_enabled(EXT_ZVTI8I32MM) && (vsew == 8 || vsew == 16))
+         ill_altfmt = false;
+       else if (p->extension_enabled(EXT_ZVTOFP8FMM) && vsew == 8)
+         ill_altfmt = false;

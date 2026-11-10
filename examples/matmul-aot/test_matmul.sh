@@ -33,7 +33,7 @@ main() {
   EXTRA_ARGS=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --transpose-lhs | --int8 | --bf16)
+      --transpose-lhs | --int8 | --int16 | --bf16)
         EXTRA_ARGS+=("$1")
         shift
         ;;
@@ -51,7 +51,7 @@ main() {
         ;;
       *)
         echo "Unknown argument: $1" >&2
-        echo "Usage: $0 [-n|--size N] [--transpose-lhs] [--int8|--bf16] [--use-verilator]" >&2
+        echo "Usage: $0 [-n|--size N] [--transpose-lhs] [--int8|--int16|--bf16] [--use-verilator]" >&2
         exit 1
         ;;
     esac

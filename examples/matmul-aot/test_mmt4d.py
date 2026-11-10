@@ -67,8 +67,9 @@ def find_tools(build_dir, force_cmake=False, force_bazel=False):
 def verify_dtype(dtype, zero_init, compile_tool, run_tool):
   init = "zero-fill" if zero_init else "accumulator"
   print(f"\n=== Verifying linalg.mmt4d ({dtype.upper()}, {init} init) ===")
-  is_f32 = dtype != "i8"  # bf16 is generated as f32, truncated below
-  in_dt = np.float32 if is_f32 else np.int8
+  # bf16 is generated as f32, truncated below
+  is_f32 = dtype not in ("i8", "i16")
+  in_dt = np.float32 if is_f32 else (np.int16 if dtype == "i16" else np.int8)
   acc_dt = np.float32 if is_f32 else np.int32
   t_acc = "f32" if is_f32 else "i32"
 
@@ -76,7 +77,8 @@ def verify_dtype(dtype, zero_init, compile_tool, run_tool):
   if is_f32:
     gen = lambda s: np.random.uniform(-1.0, 1.0, s)
   else:
-    gen = lambda s: np.random.randint(-3, 4, s)
+    lim = 1000 if dtype == "i16" else 4
+    gen = lambda s: np.random.randint(-lim, lim, s)
   lhs, rhs = [gen((2, 16, 16, 1)).astype(in_dt) for _ in range(2)]
   ref = [x.astype(acc_dt) for x in (lhs, rhs)]
   if dtype == "bf16":
@@ -161,7 +163,7 @@ def main():
   # A list, not a generator: run every case even if one mismatches.
   ok = [
       verify_dtype(t, z, compile_tool, run_tool)
-      for t in ("f32", "bf16", "i8")
+      for t in ("f32", "bf16", "i16", "i8")
       for z in (True, False)
   ]
   sys.exit(0 if all(ok) else 1)

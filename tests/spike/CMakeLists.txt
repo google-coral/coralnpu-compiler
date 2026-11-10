@@ -19,7 +19,8 @@ if(CORALNPU_ENABLE_SPIKE)
       "matmul_f32_4_8-8_4.mlir"
       "matmul_f32_16_8-8_16.mlir"
       "matmul_i8_4_8-8_4.mlir"
-      "matmul_i8_i32_16_8-8_16.mlir")
+      "matmul_i8_i32_16_8-8_16.mlir"
+      "matmul_i16_i32_16_8-8_16.mlir")
     get_filename_component(_BASE_NAME "${_SPIKE_TEST}" NAME_WE)
     coralnpu_check_test(
       NAME
@@ -36,3 +37,17 @@ if(CORALNPU_ENABLE_SPIKE)
     )
   endforeach()
 endif()
+
+coralnpu_check_test(
+  NAME
+    "matmul_i16_i32_16_8-8_16_mpact_test"
+  SRC
+    "matmul_i16_i32_16_8-8_16.mlir"
+  COMPILER_FLAGS
+    "--iree-hal-target-device=coralnpu"
+  RUNNER_ARGS
+    "--device=coralnpu"
+    "--simulator=mpact"
+  LABELS
+    "ci"
+)

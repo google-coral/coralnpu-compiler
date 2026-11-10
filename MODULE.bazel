@@ -182,6 +182,7 @@ git_override(
         "//:mpact-riscv-0003-zvt-bf16-rounding.patch",
         "//:mpact-riscv-0001-speed-up-emulation.patch",
         "//:mpact-riscv-0002-round-vector-fp-to-int-converts.patch",
+        "//:mpact-riscv-0005-zvt-i16-matmul.patch",
     ],
     remote = "https://github.com/google/mpact-riscv.git",
 )
