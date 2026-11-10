@@ -90,12 +90,18 @@ Record only non-trivial design adaptations made during coding (omit or keep
 
 ---
 
-## 4. Follow-Up Items (For Reviewer Approval -> Buganizer `2161972`)
+## 4. Follow-Up Items (`<component>.md` TODOs / Buganizer `2161972`)
 
-Record work deferred during design (CL 1) or adjacent issues discovered during
-implementation (CL 2). Once the implementation CL receives `+2`, run
-`/implement-design file-followups` to file them in Buganizer under component
-`2161972`.
+Record all work deferred during design (CL 1) or adjacent issues discovered
+during implementation (CL 2). By default, items target `## TODOs` in
+[`<component>.md`](../<component>.md) (moved there by `/implement-design archive`
+before CL 2 is submitted). Reserve Buganizer (`2161972`, filed via
+`/implement-design file-followups` after `+2`) for cross-cutting tasks, bugs
+with an unknown source, multi-component architectural changes, or work needing
+an assignee, priority, or `b/<id>`.
 
-- [ ] **<Short Follow-Up Title>** (`P2` | `path/to/file.cpp`):
+- [ ] **<Short Follow-Up Title>** (`<component>.md` | `path/to/file.cpp`):
+      1–2 sentence description of the follow-up problem and proposed direction.
+- [ ] **<Cross-Cutting or Multi-Component Title>** (`Buganizer 2161972` | `P2` |
+      `path/to/file.cpp`):
       1–2 sentence description of the follow-up problem and proposed direction.

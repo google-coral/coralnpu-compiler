@@ -605,7 +605,7 @@ Run this step in the final implementation CL before uploading for review:
 
 ## Part 3: Follow-Up Items (For Reviewer Approval -> Buganizer `2161972`)
 
-- [ ] **Upstream CoralNPU RVV register tile heuristics into IREE's
+- [x] **Upstream CoralNPU RVV register tile heuristics into IREE's
       `LLVMCPUSelectLoweringStrategyPass`** (`P2` |
       `third_party/iree/compiler/src/iree/compiler/Codegen/LLVMCPU/KernelDispatch.cpp`):
       Incrementally upstream the structural RISC-V vector tile selection rules

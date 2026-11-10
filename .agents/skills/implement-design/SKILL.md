@@ -7,10 +7,10 @@ description: >-
   updates). Supports four descriptive steps: `code` (implement tasks, sync
   build/doc files, and update `<change>.md` and `<component>.md`), `audit`
   (spawn an isolated narrow-view subagent with no chat history for a code,
-  style, and semantic-drift audit), `archive` (verify `<component>.md` sync, git
-  mv `<change>.md` to `archive/`, and format code), and `file-followups` (file
-  approved Section 4 follow-ups in Buganizer component 2161972 without
-  implementing them).
+  style, and semantic-drift audit), `archive` (verify `<component>.md` sync,
+  update its TODOs from Section 4, `git mv` `<change>.md` to `archive/`, and
+  format code), and `file-followups` (file remaining Buganizer-bound Section 4
+  follow-ups in component 2161972 without implementing them).
 ---
 
 # Design Implementation & Finalization Workflow (`/implement-design`)
@@ -50,8 +50,8 @@ and `./docs/design/<component>.md`.
 | :----------------------------------------------- | :---------------------------------------------------------------------------------------------------- |
 | `/implement-design code [<change>]`              | Implement tasks on top of the initial CL 2 commit, sync build/doc files, and update `<change>.md`.    |
 | `/implement-design audit [<change>] [<commits>]` | Spawn an isolated narrow-view subagent (no chat history) for a code, style, and semantic-drift audit. |
-| `/implement-design archive [<change>]`           | Verify `<component>.md` sync, `git mv` `<change>.md` to `archive/`, and format code.                  |
-| `/implement-design file-followups [<change>]`    | Deduplicate and file approved Section 4 follow-ups into Buganizer component `2161972`.                |
+| `/implement-design archive [<change>]`           | Verify `<component>.md` sync, update TODOs, `git mv` `<change>.md` to `archive/`, and format code.    |
+| `/implement-design file-followups [<change>]`    | Deduplicate and file remaining Buganizer-bound Section 4 follow-ups into component `2161972`.         |
 
 If invoked without a step keyword, default to `code` (unless the prompt
 requests `audit`, `archive`, or `file-followups`).
@@ -125,9 +125,11 @@ review, the developer can ask the main agent in the current session).
 Run in the final implementation CL (`CL 2`, or the last stage `CL 2n` of a
 multi-CL chain) before Gerrit upload:
 
-- **1. Coherence Pass & Archive via `git mv`**:
-  - Complete the `<component>.md` (`+ INDEX.md`) coherence pass per **Section
-    3** of [`references/standards.md`](references/standards.md), then move
+- **1. Coherence Pass, TODOs Update & Archive via `git mv`**:
+  - Complete the `<component>.md` (`+ INDEX.md`) coherence pass and TODOs update
+    (removing ticked `- [x]` items and adding new `- [ ]` component follow-ups
+    from **Section 4** of `<change>.md`) per **Section 3** of
+    [`references/standards.md`](references/standards.md), then move
     `<change>.md` using `git mv`:
 
     ```bash
@@ -135,14 +137,19 @@ multi-CL chain) before Gerrit upload:
     git mv ./docs/design/changes/<change>.md ./docs/design/archive/<change>.md
     ```
 
-  - Mark the final sync item in **Section 3** as `- [x]`, remove
+  - Mark the final sync item in **Section 3** (and any Section 4 items moved
+    into `<component>.md` TODOs) as `- [x]`, remove
     `./agent-temp/<change>.commit` if present
     (`rm -f ./agent-temp/<change>.commit`), and run `./scripts/format-code.sh`.
-- **2. Next Step**:
+- **2. Report `<component>.md` Updates & Next Step**:
+  - Explicitly inform the developer that `<component>.md` was modified,
+    summarizing both the TODO updates (completed items removed and new Section 4
+    follow-ups added) and any prose/adaptation consolidations from the coherence
+    pass, with a clickable link to `<component>.md`.
   - Show the command to amend CL 2 (`git commit --amend`, removing `[WIP]` and
     the initial-review note while preserving `Change-Id`) and push Ready for
     Review, plus `/implement-design file-followups <change>` once CL 2 receives
-    `+2` (if Section 4 has unchecked items):
+    `+2` (if Section 4 still has unchecked Buganizer-bound items):
 
     ```bash
     git push -o ready origin HEAD:refs/for/master
@@ -150,11 +157,13 @@ multi-CL chain) before Gerrit upload:
 
 ---
 
-## Step 4: `file-followups` — File Approved Follow-Ups in Buganizer (`2161972`)
+## Step 4: `file-followups` — File Remaining Buganizer Follow-Ups (`2161972`)
 
 > [!IMPORTANT]
 > **Do NOT implement Section 4 follow-up items in code.** This step only files
-> deferred follow-ups in Buganizer after CL 2 receives `+2` in Gerrit.
+> remaining unchecked (`- [ ]`) Buganizer-bound items from Section 4
+> (cross-cutting tasks, unknown-source bugs, multi-component changes, or items
+> needing an assignee/priority/`b/<id>`) after CL 2 receives `+2` in Gerrit.
 
 - **1. Deduplicate, Confirm & File**:
   - Read unchecked `- [ ]` items in **Section 4: Follow-Up Items** of

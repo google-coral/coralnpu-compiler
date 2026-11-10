@@ -58,7 +58,7 @@ or `commit` automatically during `draft`, `draft-from-commits`, or `revise`.
 
 - **1. Reconnaissance & Buganizer Lookup (`2161972`)**:
   - Read `./docs/design/INDEX.md`, the relevant `./docs/design/<component>.md`
-    living docs, and target source files.
+    living docs (including their TODOs), and target source files.
   - If `/google/bin/releases/issues-cli/issues` exists (pass `BypassSandbox:
     true` if present in the tool schema), read cited `b/<id>` (`issues
     readonly render|list-updates <id>`) and search related open issues
@@ -90,9 +90,11 @@ or `commit` automatically during `draft`, `draft-from-commits`, or `revise`.
        developer's written outline) **one question at a time** per
        [`references/interview.md`](references/interview.md) §2 until aligned.
 - **3. Author `<component>.md`, `.h`/`.td` Interfaces & `changes/<change>.md`**:
-  - Update `./docs/design/<component>.md` (`+ INDEX.md`), any cross-file `.h` /
-    `.td` boundary interfaces, and `./docs/design/changes/<change>.md` (copied
-    from `./docs/design/changes/TEMPLATE.md`) following **Sections 2–3** of
+  - Update `./docs/design/<component>.md` (`+ INDEX.md`, ticking `- [x]` any
+    TODO item resolved by this change without adding new TODOs yet), any
+    cross-file `.h` / `.td` boundary interfaces, and
+    `./docs/design/changes/<change>.md` (copied from
+    `./docs/design/changes/TEMPLATE.md`) following **Sections 2–3** of
     [`references/standards.md`](references/standards.md).
   - **Stop for review** (do not run `challenge`, `audit`, or `commit`). Link
     the modified files and end with a **`Next Step:`** prompt suggesting
@@ -145,7 +147,8 @@ Run **only when explicitly requested** (repeatable):
    opens a multi-branch design question, and apply inline `A:` notes (removing
    resolved `A:` lines) or Gerrit feedback across `changes/<change>.md`,
    `<component>.md`, and `.h`/`.td` files (moving out-of-scope ideas to
-   **Section 4: Follow-Up Items**).
+   **Section 4: Follow-Up Items**, and unticking `- [x]` -> `- [ ]` in
+   `<component>.md` TODOs if a previously ticked item is no longer resolved).
 2. End with a **`Next Step:`** prompt suggesting `/design-doc challenge`,
    `/design-doc audit`, or `/design-doc commit`.
 

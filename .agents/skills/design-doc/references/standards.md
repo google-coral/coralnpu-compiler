@@ -72,18 +72,27 @@ committed as a 2-CL chain by `/design-doc commit`:
        (`egm-draft` Step 5.1) of implementation steps (with affected files
        inline), positive and negative/fallback tests, and the final sync step.
        Never split affected files and tasks into separate lists.
-     - **Section 4 (Follow-Up Items)**: Deferred work for Buganizer
-       (`2161972`).
+     - **Section 4 (Follow-Up Items)**: Single tracker for all follow-ups from
+       this change during `draft`, `revise`, and `code`. Tag each item for
+       `<component>.md` TODOs by default (merged into `<component>.md` during
+       `/implement-design archive`), and reserve Buganizer (`2161972`) for
+       cross-cutting tasks, bugs with an unknown source, multi-component
+       architectural changes, or work needing an assignee, priority, or
+       `b/<id>`.
 2. **Living Component Doc & Boundary Interfaces (`docs/design/<component>.md` +
    `.h`/`.td` — Chained Initial `[WIP]` CL 2 / `CL 2a..2n`)**:
    - **`docs/design/<component>.md`** (`+ INDEX.md` if updated): Holds the
      timeless post-change architecture (summary, pipeline table/diagram, rules
-     and invariants, IR examples, test files, and `TODO(...)` limits). Integrate
-     changes in-place (`"One Contract, One Place"`) without temporal phrasing
-     (*"This CL adds..."*, *"Previously..."*). For multi-CL chains (`CL 2a ..
-     CL 2n`), keep each stage's `<component>.md` additions in separate
-     paragraphs, bullets, or rows so per-stage commits rebase without conflicts
-     (merged by `/implement-design archive` in `CL 2n`).
+     and invariants, IR examples, test files, and a `## TODOs` section of `- [ ]`
+     items). Integrate changes in-place (`"One Contract, One Place"`) without
+     temporal phrasing (*"This CL adds..."*, *"Previously..."*). During `draft`,
+     `revise`, and `code`, tick (`- [x]`) any existing TODO item in
+     `<component>.md` resolved by the change (unticking back to `- [ ]` if scope
+     shrinks), and do not add new TODO items or delete ticked `- [x]` lines
+     until `/implement-design archive`. For multi-CL chains (`CL 2a .. CL 2n`),
+     keep each stage's `<component>.md` additions in separate paragraphs,
+     bullets, or rows so per-stage commits rebase without conflicts (merged by
+     `/implement-design archive` in `CL 2n`).
    - **Boundary Interface Files (`.h` Headers & `.td` TableGen Definitions)**:
      Update added, modified, or deleted cross-file `.h` declarations or `.td`
      definitions directly (with full doc comments per
@@ -155,10 +164,13 @@ modified `.h`/`.td` interfaces, and referenced files across three dimensions:
      upstream/codebase utility reuse (or whether commits in `draft-from-commits`
      can be simplified); and verify realistic alternatives, invariants, and
      graceful fallbacks ([`../../../AGENTS.md`](../../../AGENTS.md)).
-3. **Scope & Implementation Plan Check**:
+3. **Scope, Implementation Plan & TODOs Check**:
    - Verify **Section 3** is a single unified checklist (with target files
-     inline) including positive and negative/fallback tests, and recommend Scope
-     Right-Sizing (§1.2) if too large for a single CL.
+     inline) including positive and negative/fallback tests, verify that every
+     ticked (`- [x]`) TODO in `<component>.md` is genuinely covered by the
+     proposed design (and flag any resolved `- [ ]` item left unticked or any
+     new follow-up added prematurely to `<component>.md` instead of Section 4),
+     and recommend Scope Right-Sizing (§1.2) if too large for a single CL.
 
 ### 4.2 Shared Main-Agent Fact-Checking Protocol (`audit` & `challenge`)
 

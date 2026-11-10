@@ -177,23 +177,35 @@ The patches are at the repo root, and
   `dequant_matmul_f32` (narrow input tiles), together with the other
   contraction tests and the models in [tests/examples](../../tests/examples).
 
-## Limits
+## TODOs
 
-The main limits of the current implementation:
-
-- The copies are synchronous vector copies (`TODO(DMA)`).
-- Zvt contractions get no promotion (`TODO(zvt)`).
-- The footprint model copies a part of the rules of `CoralNPUMatrixCodegen` to
-  count its scratch tiles, and it does not count the scratch tile of the BF16
+- [ ] The copies are synchronous vector copies (`TODO(DMA)`).
+- [ ] Zvt contractions get no promotion (`TODO(zvt)`).
+- [ ] The footprint model copies a part of the rules of `CoralNPUMatrixCodegen`
+  to count its scratch tiles, and it does not count the scratch tile of the BF16
   vecmat path. One decision for Zvt or RVV would remove the copy (`TODO(zvt)`).
-- The tile search gives a large matmul a thin tile with a full K, so the reuse
-  in DTCM is low (`TODO(search)`).
-- A copy of a narrow input (e.g. i8 weights before a fused dequantization)
+- [ ] The tile search gives a large matmul a thin tile with a full K, so the
+  reuse in DTCM is low (`TODO(search)`).
+- [ ] A copy of a narrow input (e.g. i8 weights before a fused dequantization)
   keeps the narrow type, so the inner loop dequantizes each element again for
   each use (`TODO(promotion)`).
-- Only the `DoubleTilingExpert` pipeline (`addMultiTilingExpertPassPipeline`)
+- [ ] Only the `DoubleTilingExpert` pipeline (`addMultiTilingExpertPassPipeline`)
   calls the promotion hook, and convolutions get DTCM tile sizes but no
   promotion (`TODO(scope)`).
+- [ ] Prevent `LLVMCPUTileRootAndFuseInputOperandsPass(VectorReductionTiles)`
+  from fusing producer reductions across dynamic identity parallel slices in
+  IREE (`LLVMCPUTileAndFuseProducerConsumer.cpp`) so multi-row dynamic parallel
+  vector tiles do not need `vector_common_parallel` snapped to `1`.
+- [ ] Support `linalg.softmax` (`AggregatedOpInterface`) and other non-`LinalgOp`
+  compute roots in `CoralNPUAffinityAnnotationPass` and its roofline estimator
+  (`CoralNPUAffinityAnnotation.cpp`).
+- [ ] Run target tile-size selection before `setLoweringConfigForComputeOps` in
+  IREE (and fix `cache_reduction` propagation in
+  `MultiLoweringConfigGenerator`) so non-root compute op configs are derived
+  automatically from the DTCM-refined root config.
+- [ ] Upstream CoralNPU RVV register tile heuristics from
+  `CoralNPUTileSizeSelectionRVV.cpp` into IREE's
+  `LLVMCPUSelectLoweringStrategyPass` (`KernelDispatch.cpp`).
 
 ## Upstream Mapping
 

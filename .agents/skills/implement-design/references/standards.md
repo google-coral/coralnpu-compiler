@@ -50,7 +50,8 @@ prose/citation rules live in
    - Implement the minimum code required to satisfy the specification and tests
      (YAGNI). Do not bundle unrelated refactorings or adjacent feature work;
      record newly discovered out-of-scope issues under **Section 4: Follow-Up
-     Items** in `<change>.md`.
+     Items** in `<change>.md` (and untick `- [x]` -> `- [ ]` in `<component>.md`
+     TODOs if an item ticked during `draft` was deferred).
 
 ---
 
@@ -70,8 +71,10 @@ across four dimensions:
    Enforcement)**:
    - **Specified Goals/Invariants Missing or Broken**: Goals, invariants,
      pipeline steps, or fallback behaviors in `<change>.md` and `<component>.md`
-     that are absent, stubbed, or contradicted by the diff, or completed tasks
-     in **Section 3** still left unchecked (`- [ ]`).
+     that are absent, stubbed, or contradicted by the diff, completed tasks in
+     **Section 3** still left unchecked (`- [ ]`), or ticked `- [x]` TODOs in
+     `<component>.md` that are not actually resolved by the diff (or resolved
+     `- [ ]` items left unticked).
    - **Observable Scope Creep**: New user-facing flags, public interfaces,
      passes, or architectural dependencies in the diff that `<change>.md` and
      `<component>.md` do not cover. *(Apply the **Refactor Invariance Rule**:
@@ -129,7 +132,14 @@ During `/implement-design archive` (in `CL 2` or the final stage `CL 2n`):
   non-obvious "Why Not X" guardrails discovered during `code` into unified,
   cohesive `HEAD` prose in `./docs/design/<component>.md` (and
   `./docs/design/INDEX.md`).
+- **Sync TODOs in `<component>.md`**: Delete all ticked (`- [x]`) lines from
+  `## TODOs` in `<component>.md`, and add new `- [ ]` items for all
+  component-scoped follow-ups from **Section 4** of `<change>.md` (marking those
+  items `- [x]` in `<change>.md` Section 4, while leaving cross-cutting or
+  Buganizer-bound items `- [ ]` for `/implement-design file-followups`).
 - **Timeless `HEAD` Prose**: Verify that `<component>.md` contains no temporal
-  phrasing (*"Recently added..."*, *"This CL introduces..."*), transient task
-  checklists, or C++-in-prose dumps per
-  [`../../design-doc/references/standards.md`](../../design-doc/references/standards.md).
+  phrasing (*"Recently added..."*, *"This CL introduces..."*), completed `- [x]`
+  items outside `archive`, or C++-in-prose dumps per
+  [`../../design-doc/references/standards.md`](../../design-doc/references/standards.md),
+  and explicitly inform the developer of all `<component>.md` changes (TODO
+  updates and coherence-pass consolidations).

@@ -39,7 +39,8 @@ them as a **2-CL chain**:
     **1. Summary & Motivation**, **2. Proposed Change & Component Doc Delta**
     (followed by **Alternatives Considered**), **3. Implementation &
     Verification Plan** (a single unified `- [ ]` checklist), and **4.
-    Follow-Up Items** (for Buganizer `2161972`).
+    Follow-Up Items** (moved to `<component>.md` TODOs by `archive`, or filed in
+    Buganizer `2161972`).
   - Uses natural-language principles and examples by default (never
     transcribing C++ conditionals into prose) and avoids duplicating
     `<component>.md` or pasting `.h`/`.td` code blocks.
@@ -47,7 +48,8 @@ them as a **2-CL chain**:
   `.h`/`.td` — Initial `[WIP]` CL 2 / `CL 2a..2n` Commits)**:
   - **`docs/design/<component>.md`** (+ [INDEX.md](INDEX.md) if updated): Holds
     the timeless architectural explanation at the post-change state (summary,
-    pass pipeline, invariants, IR examples, tests, and `TODO(...)` limits).
+    pass pipeline, invariants, IR examples, tests, and a `## TODOs` section of
+    `- [ ]` component follow-ups).
   - **Boundary Interface Files (`.h` Headers & `.td` TableGen Definitions)**:
     Includes any added, modified, or deleted cross-file C/C++ header
     declarations (`.h`, with doc comments) or TableGen definitions (`.td`),
@@ -95,15 +97,15 @@ them as a **2-CL chain**:
   2. `/implement-design audit`          -> Optional isolated zero-history subagent
            │                               (code, test, & semantic-drift audit)
            ▼
-  3. `/implement-design archive`        -> Coherence pass on `<component>.md`,
-           │                               `git mv` `<change>.md` to `archive/`,
-           │                               and run `./scripts/format-code.sh`
+  3. `/implement-design archive`        -> Coherence pass & TODOs update on
+           │                               `<component>.md`, `git mv` `<change>.md`
+           │                               to `archive/`, and format code
            ▼
   4. Amend CL 2 & Push Ready (`-o ready`) -> Pushes Patchset 2+ of the same CL 2
            │                               -> Receive +2 & Submit CL 2
            ▼
-  5. `/implement-design file-followups` -> File approved Section 4 follow-ups in
-                                           Buganizer (`2161972`)
+  5. `/implement-design file-followups` -> File remaining Buganizer-bound
+                                           Section 4 follow-ups (`2161972`)
 ```
 
 ### Command Reference
@@ -118,8 +120,8 @@ them as a **2-CL chain**:
 | `/design-doc commit [<change>]`                             | Commits `changes/<change>.md` as CL 1 and `<component>.md` + `.h`/`.td` as `[WIP]` CL 2 (`CL 2a..2n`), or offers to fold `<component>.md` for `draft-from-commits`. |
 | `/implement-design code [<change>]`                         | Implements Section 3 tasks on top of CL 2 (`CL 2a..2n`), keeping `<change>.md` and `<component>.md` synced as the code evolves.                   |
 | `/implement-design audit [<change>] [<commits>]`            | Spawns a zero-history subagent to audit the implementation diff for semantic/invariant alignment, test coverage, and `AGENTS.md` compliance.      |
-| `/implement-design archive [<change>]`                      | Runs a coherence pass on `<component>.md`, moves `changes/<change>.md` to `archive/<change>.md` via `git mv`, and runs `./scripts/format-code.sh`. |
-| `/implement-design file-followups [<change>]`               | Deduplicates and files approved Section 4 follow-up items into Buganizer component `2161972` after CL 2 receives `+2`.                            |
+| `/implement-design archive [<change>]`                      | Runs a coherence pass and TODOs update on `<component>.md`, moves `changes/<change>.md` to `archive/` via `git mv`, and formats code.             |
+| `/implement-design file-followups [<change>]`               | Deduplicates and files remaining Buganizer-bound Section 4 follow-up items into component `2161972` after CL 2 receives `+2`.                     |
 
 ### Key Usage Tips
 
@@ -150,7 +152,26 @@ them as a **2-CL chain**:
 
 ---
 
-## 4. Background & References
+## 4. Follow-Ups & TODOs Lifecycle
+
+Component-scoped follow-ups live in the `## TODOs` section of
+`docs/design/<component>.md`, while Buganizer (`2161972`) is reserved for
+cross-cutting tasks, bugs with an unknown source, multi-component architectural
+changes, or work needing an assignee, priority, or `b/<id>`:
+
+- **During `draft`, `revise`, and `code`**: Record all new deferred or
+  discovered follow-ups in **Section 4** of `<change>.md`. In `<component>.md`,
+  tick (`- [x]`) any existing `- [ ]` TODO item resolved by the change (and
+  untick back to `- [ ]` if scope shrinks; checked by `audit`).
+- **During `/implement-design archive`**: Deletes ticked `- [x]` items from
+  `<component>.md` TODOs and moves component-scoped follow-ups from
+  `<change>.md` Section 4 into `<component>.md` as `- [ ]` items.
+- **During `/implement-design file-followups`**: Files any remaining Section 4
+  items in Buganizer (`2161972`) after CL 2 receives `+2`.
+
+---
+
+## 5. Background & References
 
 The workflow and authoring/audit standards in
 [`.agents/skills/design-doc/references/standards.md`](../../.agents/skills/design-doc/references/standards.md)

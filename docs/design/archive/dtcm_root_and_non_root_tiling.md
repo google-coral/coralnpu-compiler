@@ -687,7 +687,7 @@ Run this step in the final implementation CL before uploading for review:
 
 ## Part 3: Follow-Up Items (For Reviewer Approval -> Buganizer `2161972`)
 
-- [ ] **Prevent `LLVMCPUTileRootAndFuseInputOperandsPass(VectorReductionTiles)`
+- [x] **Prevent `LLVMCPUTileRootAndFuseInputOperandsPass(VectorReductionTiles)`
       from fusing producer reductions across dynamic identity parallel slices in
       IREE** (`P2` |
       `third_party/iree/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUTileAndFuseProducerConsumer.cpp`):
@@ -701,7 +701,7 @@ Run this step in the final implementation CL before uploading for review:
       `tensor.extract_slice` ops or by filtering reduction-untiled operands in
       `tileRootAndFuseInputOperands`) so multi-row dynamic parallel vector tiles
       remain safe without snapping `vector_common_parallel` to `1`.
-- [ ] **Support `linalg.softmax` and aggregated ops in
+- [x] **Support `linalg.softmax` and aggregated ops in
       `CoralNPUAffinityAnnotationPass`** (`P2` |
       `compiler/Transforms/CoralNPUAffinityAnnotation.cpp`):
       `CoralNPUAffinityAnnotationPass` runs during `DispatchCreation` (before
@@ -711,7 +711,7 @@ Run this step in the final implementation CL before uploading for review:
       (such as PJRT). Teach `CoralNPUAffinityAnnotationPass` and its roofline
       estimator to recognize `linalg::SoftmaxOp` (and evaluate other
       non-`LinalgOp` compute roots supported by CoralNPU codegen).
-- [ ] **Run target tile-size selection before `setLoweringConfigForComputeOps`
+- [x] **Run target tile-size selection before `setLoweringConfigForComputeOps`
       in IREE** (`P3` | `compiler/Transforms/CoralNPUTileSizeSelectionDTCM.cpp`):
       Evaluate adding an upstreamable hook in `setTranslationInfoAndRootConfig`
       between `setRootConfigImpl` and `setLoweringConfigForComputeOps` (together

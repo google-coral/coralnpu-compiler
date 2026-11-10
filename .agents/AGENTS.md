@@ -36,6 +36,11 @@
   and simpler codebase/upstream alternatives, and avoid validating flattery. If
   a request contradicts an earlier goal or project invariant, point out the
   contradiction before editing files.
+- When spawning subagents (including for read-only research or audits), always
+  use a subagent configuration that inherits the parent agent's full local
+  toolset (including shell execution for `git` / `rg`, never a restricted
+  no-shell or cloud-index research preset) and enforce read-only constraints via
+  the subagent prompt.
 
 ## Temporary Files
 
@@ -55,7 +60,8 @@
 - **Documentation Tiers in `./docs/design/`**:
   - `./docs/design/INDEX.md`: Map of living component docs to source paths and
     passes (check this first when exploring a compiler subsystem).
-  - `./docs/design/<component>.md`: Living component architecture at `HEAD`.
+  - `./docs/design/<component>.md`: Living component architecture and TODOs at
+    `HEAD`.
   - `./docs/design/changes/<change>.md`: Active, unmerged change design briefs.
   - `./docs/design/archive/<change>.md`: Historical completed change briefs
     (reference for past trade-offs only; do not treat as current architecture).
