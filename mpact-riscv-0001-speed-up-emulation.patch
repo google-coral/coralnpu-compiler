@@ -39,7 +39,7 @@ diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
  
  #include "absl/log/log.h"
  #include "absl/types/span.h"
-@@ -927,6 +929,34 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
+@@ -925,6 +927,34 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
  // Matrix multiply: C[m,n] += sum_k A[k,m] * B[k,n]
  // ----------------------------------------------------------------------------
  
@@ -74,7 +74,7 @@ diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
  void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
    if (!m_result.ok()) {
-@@ -1135,7 +1165,81 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+@@ -1125,7 +1155,81 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
        fp_status.emplace(fp_state->host_fp_interface());
      }
  

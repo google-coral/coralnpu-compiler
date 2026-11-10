@@ -175,12 +175,11 @@ git_override(
 bazel_dep(name = "mpact-riscv", version = "1.0.1")
 git_override(
     module_name = "mpact-riscv",
-    commit = "19f9b3c0c8670d8425ca237c28d2d6bf1079cfff",
+    commit = "4262467a57837aa5de0a6283340868dd06d1dfe7",
     patch_strip = 1,
     patches = [
-        # 0003 and 0004 are written against upstream, so they precede 0001.
-        "//:mpact-riscv-0003-zvt-bf16-altfmt.patch",
-        "//:mpact-riscv-0004-zvt-bf16-rounding.patch",
+        # 0003 is written against upstream, so it precedes 0001.
+        "//:mpact-riscv-0003-zvt-bf16-rounding.patch",
         "//:mpact-riscv-0001-speed-up-emulation.patch",
         "//:mpact-riscv-0002-round-vector-fp-to-int-converts.patch",
     ],
@@ -207,6 +206,7 @@ git_override(
     patch_strip = 1,
     patches = [
         "//:coralnpu-mpact-0001-vme-m4-decoder.patch",
+        "//:coralnpu-mpact-0002-vfmerge-vf-frs1.patch",
     ],
     remote = "https://github.com/google-coral/coralnpu-mpact.git",
 )
