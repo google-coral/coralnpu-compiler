@@ -109,13 +109,14 @@ across four dimensions:
 ### 2.2 Main-Agent Fact-Checking Protocol (No Automatic Edits)
 
 Follow **Section 4.2** of
-[`../../design-doc/references/standards.md`](../../design-doc/references/standards.md)
-(do not modify code or docs automatically; label every finding `#1`, `#2`, ...
-as **[Verified]** or **[Refuted by `<file>` (`<symbol>`)]** while preserving
-`[Lens: ...]` tags; present the 1-paragraph Blind Implementation Summary first,
-followed by verified findings, using
-[`../../design-doc/references/interview.md`](../../design-doc/references/interview.md)
-for any non-trivial trade-off).
+[`../../design-doc/references/standards.md`](../../design-doc/references/standards.md):
+do not modify code or docs automatically; present the 1-paragraph Blind
+Implementation Summary first, then format each verified finding (`#1`, `#2`,
+...) with explicit **`Issue`**, **`Proposed Change`**, and **`Recommendation`**
+(`Apply`, `Defer to Section 4`, `Skip (Keep Current)`, or `Decision Needed` via
+[`../../design-doc/references/interview.md`](../../design-doc/references/interview.md))
+fields while grouping any `[Refuted by <file> (<symbol>)]` claims into a compact
+footer.
 
 ---
 

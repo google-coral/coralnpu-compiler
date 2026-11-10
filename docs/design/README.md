@@ -34,12 +34,12 @@ ahead of `HEAD` code, the design phase updates two sets of files and commits
 them as a **2-CL chain**:
 
 - **1. Change Design Brief (`docs/design/changes/<change>.md` — CL 1 Commit)**:
-  - A concise (**80–150 line**) brief based on
+  - A concise (**100–200 line**) brief based on
     [changes/TEMPLATE.md](changes/TEMPLATE.md) covering four flat sections:
     **1. Summary & Motivation**, **2. Proposed Change & Component Doc Delta**
     (followed by **Alternatives Considered**), **3. Implementation &
     Verification Plan** (a single unified `- [ ]` checklist), and **4.
-    Follow-Up Items** (for Buganizer `564546727`).
+    Follow-Up Items** (for Buganizer `2161972`).
   - Uses natural-language principles and examples by default (never
     transcribing C++ conditionals into prose) and avoids duplicating
     `<component>.md` or pasting `.h`/`.td` code blocks.
@@ -103,7 +103,7 @@ them as a **2-CL chain**:
            │                               -> Receive +2 & Submit CL 2
            ▼
   5. `/implement-design file-followups` -> File approved Section 4 follow-ups in
-                                           Buganizer (`564546727`)
+                                           Buganizer (`2161972`)
 ```
 
 ### Command Reference
@@ -119,7 +119,7 @@ them as a **2-CL chain**:
 | `/implement-design code [<change>]`                         | Implements Section 3 tasks on top of CL 2 (`CL 2a..2n`), keeping `<change>.md` and `<component>.md` synced as the code evolves.                   |
 | `/implement-design audit [<change>] [<commits>]`            | Spawns a zero-history subagent to audit the implementation diff for semantic/invariant alignment, test coverage, and `AGENTS.md` compliance.      |
 | `/implement-design archive [<change>]`                      | Runs a coherence pass on `<component>.md`, moves `changes/<change>.md` to `archive/<change>.md` via `git mv`, and runs `./scripts/format-code.sh`. |
-| `/implement-design file-followups [<change>]`               | Deduplicates and files approved Section 4 follow-up items into Buganizer component `564546727` after CL 2 receives `+2`.                          |
+| `/implement-design file-followups [<change>]`               | Deduplicates and files approved Section 4 follow-up items into Buganizer component `2161972` after CL 2 receives `+2`.                            |
 
 ### Key Usage Tips
 

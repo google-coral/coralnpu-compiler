@@ -37,26 +37,43 @@ During the design phase, the agent updates **two complementary sets of files**
 committed as a 2-CL chain by `/design-doc commit`:
 
 1. **Change Design Brief (`docs/design/changes/<change>.md` — CL 1)**:
-   - Target length: **80–150 lines** (hard ceiling **250 lines**). Follow the
+   - Target length: **100–200 lines** (hard ceiling **300 lines**). Follow the
      4-section layout in
      [`TEMPLATE.md`](../../../docs/design/changes/TEMPLATE.md) without
      duplicating `<component>.md` or copy-pasting `.h`/`.td` code blocks:
-     - **Section 1 (Summary & Motivation)**: State the problem and target
-       outcome without embedding the implementation mechanism in the problem
-       statement (`go/writing-a-design-doc`), followed by verifiable **Goals**
-       and plausible **Non-Goals** with 1-line reasons.
-     - **Section 2 (Proposed Change & Component Doc Delta)**: Summarize the
-       design delta, key invariants, and fallback behavior, linking to the
-       updated `<component>.md` and `.h`/`.td` files in CL 2. Place
-       **Alternatives Considered** *after* the proposal (`go/tott/773`), stating
-       why the chosen design wins, what downside it accepts, and why realistic
-       alternatives were rejected.
+     - **Section 1 (Summary & Motivation — *Today -> Gap -> Core Idea ->
+       Outcome Goals*)**:
+       - *Paragraph 1 (Today & Gap)*: Explain how the system works today on a
+         concrete scenario and why it breaks or falls short
+         (`go/writing-a-design-doc`).
+       - *Paragraph 2 (Core Idea)*: State the conceptual fix in 2–3 plain
+         sentences without dumping pass, helper, or field inventories.
+       - *Goals (Observable Outcomes) & Non-Goals*: State what capabilities,
+         guarantees, or metrics the change achieves (never a file-by-file or
+         symbol-by-symbol task list), followed by plausible **Non-Goals** with
+         1-line reasons.
+     - **Section 2 (Proposed Change & Component Doc Delta — *End-to-End Story
+       First, Details Second*)**:
+       - *Opening End-to-End Walkthrough*: Start Section 2 with 1–2 short prose
+         paragraphs tracing **one concrete input or example end to end** (entry
+         point -> transformation -> output) so the reader gets the complete
+         mental model before any topic bullets.
+       - *Key Mechanisms & Component Boundaries*: Follow with 2–4 focused
+         bullets or sub-paragraphs explaining each stage and why it works that
+         way, linking to the updated sections of `<component>.md` and `.h`/`.td`
+         files in CL 2.
+       - *Invariants, Fallbacks & Edge Cases*: Group strict invariants, fallback
+         paths, and corner-case rules at the end of the proposal (or in a
+         compact table) so they never derail the main walkthrough prose.
+       - *Alternatives Considered*: Place *after* the proposal (`go/tott/773`),
+         stating why the chosen design wins, what downside it accepts, and why
+         realistic alternatives were rejected.
      - **Section 3 (Implementation & Verification Plan)**: One unified checklist
        (`egm-draft` Step 5.1) of implementation steps (with affected files
        inline), positive and negative/fallback tests, and the final sync step.
        Never split affected files and tasks into separate lists.
      - **Section 4 (Follow-Up Items)**: Deferred work for Buganizer
-       (`564546727`).
+       (`2161972`).
 2. **Living Component Doc & Boundary Interfaces (`docs/design/<component>.md` +
    `.h`/`.td` — Chained Initial `[WIP]` CL 2 / `CL 2a..2n`)**:
    - **`docs/design/<component>.md`** (`+ INDEX.md` if updated): Holds the
@@ -124,11 +141,14 @@ modified `.h`/`.td` interfaces, and referenced files across three dimensions:
    - **1-Paragraph Blind Summary**: Explain in 1 short paragraph how the current
      system works and what the proposed change does, based *strictly* on
      `<change>.md` and `<component>.md`.
-   - **Readability, Altitude & Length Violations**: Flag C++-in-prose
-     transcription, cross-section repetition, sentences > 35 words or walls of
-     backticks, duplication between `<change>.md` and `<component>.md`, length
-     exceeding 80–150 lines (250 hard ceiling), or undefined terms that forced
-     guessing.
+   - **Readability, Narrative Flow, Altitude & Length Violations**: Flag
+     `Goals` that read like symbol/file inventories, Section 2 drafts that jump
+     into disconnected feature bullets without an opening end-to-end
+     walkthrough, corner cases crammed into the main narrative flow,
+     C++-in-prose transcription, cross-section repetition, sentences > 35 words
+     or walls of backticks, duplication between `<change>.md` and
+     `<component>.md`, length exceeding 100–200 lines (300 hard ceiling), or
+     undefined terms that forced guessing.
 2. **Zoom-Out, Technical Accuracy & Trade-Off Audit**:
    - Verify cited file paths, symbols, interfaces, and build targets exist;
      check whether the design solves the root problem without YAGNI or missed
@@ -146,10 +166,32 @@ When an isolated `audit` or `challenge` subagent finishes:
 
 1. **Do not modify any files automatically.**
 2. **Fact-check every finding against the codebase**: Discard low-signal
-   nitpicks, deduplicate overlapping points, and label each finding (`#1`,
-   `#2`, ...) as **[Verified]** or **[Refuted by `<file>` (`<symbol>`)]**
-   (preserving `[Lens: ...]` tags when present).
-3. **Present findings & wait for direction**: For `audit`, present the
-   1-paragraph Blind Summary prominently first, followed by the verified
-   findings list (using [`interview.md`](interview.md) if any finding opens a
-   non-trivial design choice).
+   nitpicks, deduplicate overlapping points, and classify each claim as
+   **[Verified]** or **[Refuted by `<file>` (`<symbol>`)]** (preserving
+   `[Lens: ...]` tags when present).
+3. **Present findings in a clear, scannable layout**:
+   - **Blind Summary First (`audit` only)**: Present the 1-paragraph Blind
+     Summary prominently at the top.
+   - **Verified Findings (`#1`, `#2`, ...)**: Number only verified findings and
+     format each with three explicit fields so the proposed edit and
+     recommendation are immediately obvious:
+
+     ```markdown
+     ### #1: <Short Title> — [Verified] [Lens: <Tag>]
+     - **Issue**: 1–2 sentences stating the flaw, ambiguity, drift, or missed
+       simplification (with clickable file/symbol links).
+     - **Proposed Change**: The exact edit to make, naming the target file(s)
+       and section(s) (`<change>.md` §2, `<component>.md`, `<file>.h`, or
+       `<file>.cpp`).
+     - **Recommendation**: **<Apply | Defer to Section 4 | Skip | Decision Needed>** —
+       1-sentence rationale (or numbered options `1. (Recommended) ...`,
+       `2. ...` per [`interview.md`](interview.md) when `Decision Needed`).
+     ```
+
+   - **Refuted Findings (Separate Compact Footer)**: Group any refuted claims at
+     the bottom under **Refuted Findings (No Action Needed)** as 1-line bullets
+     (`- **[Refuted by <file> (<symbol>)]**: 1-line claim and why it already
+     holds`).
+   - **Next Step Prompt**: End by listing the recommended actions by number
+     (e.g., *"Reply to apply the recommended changes (`#1`, `#2`), override any
+     item by number, or choose an option for `#3`"*).

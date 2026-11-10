@@ -38,17 +38,26 @@ Use this reference in two modes during [`../SKILL.md`](../SKILL.md):
     fixed context, hardware/project constraints (`AGENTS.md`), and relevant
     pipeline stages/files/symbols (plus a factual summary of
     `<base_sha>..<tip_sha>` for `draft-from-commits`).
-- **2. Select Task-Relevant Lenses & Group into 4–5 Parallel Subagents**:
+- **2. Select Task-Relevant Lenses & Group into 4–6 Parallel Subagents**:
   - Select the 6–10 task-relevant lenses from Section 1 (recording a 1-line
-    note of any skipped lenses) and group them into **4–5 parallel isolated
+    note of any skipped lenses) and group them into **4–6 parallel isolated
     read-only subagents** (`1–2` lenses per subagent) that inherit local
     file-reading and shell/git search capabilities (`git grep` / `rg`) on the
     worktree:
     - **Never pair opposing lenses** in the same subagent (e.g., never pair
-      `Minimalist` with `Rewriter`, or `Skeptical` with `Generalizer`).
-    - **Compatible pairings**: `Minimalist` + `Skeptical`; `Precedent` +
-      `Shifter`; `Modularity` + `Generalizer`; `Rewriter` + `Incremental`;
-      `Performance` + `OOTB`.
+      `Minimalist` with `Rewriter`, `Rewriter` with `Incremental`, or
+      `Skeptical` with any other lens).
+    - **Compatible pairings**:
+      - `Minimalist` + `Incremental` (small, low-risk Step 1 that doesn't paint
+        us into a corner)
+      - `Modularity` + `Generalizer` (clean component boundaries + unified
+        structural invariant)
+      - `Shifter` + `Precedent` (right pipeline stage + upstream IREE/MLIR
+        precedent)
+      - `Rewriter` + `OOTB` (unconstrained clean-slate redesign + IR/framing
+        inversion)
+      - `Performance` (solo)
+      - `Skeptical` (solo)
   - Pass each subagent the **Factual Context Pack**, `.agents/AGENTS.md`, and
     its assigned lens row(s) from Section 1.
   - **Subagent Mandate**: Operate read-only on the worktree (do not edit files
@@ -97,7 +106,7 @@ Before starting the interview in [`interview.md`](interview.md):
 ## 4. Adversarial Mode: Red-Teaming the Proposed Solution (`/design-doc challenge`)
 
 Unlike `/design-doc audit` (a single narrow-view Blind Reader restricted to
-cited files), `/design-doc challenge` spawns **4–5 parallel Adversarial Lens
+cited files), `/design-doc challenge` spawns **4–6 parallel Adversarial Lens
 Subagents** (`1–2` non-opposing lenses each, per Section 2.2) that inherit local
 file-reading and shell/git search capabilities (`git grep` / `rg`) for **wide
 codebase search** (`compiler/`, `runtime/`, `third_party/`) to stress-test

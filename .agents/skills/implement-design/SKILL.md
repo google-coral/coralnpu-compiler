@@ -9,7 +9,7 @@ description: >-
   (spawn an isolated narrow-view subagent with no chat history for a code,
   style, and semantic-drift audit), `archive` (verify `<component>.md` sync, git
   mv `<change>.md` to `archive/`, and format code), and `file-followups` (file
-  approved Section 4 follow-ups in Buganizer component 564546727 without
+  approved Section 4 follow-ups in Buganizer component 2161972 without
   implementing them).
 ---
 
@@ -51,7 +51,7 @@ and `./docs/design/<component>.md`.
 | `/implement-design code [<change>]`              | Implement tasks on top of the initial CL 2 commit, sync build/doc files, and update `<change>.md`.    |
 | `/implement-design audit [<change>] [<commits>]` | Spawn an isolated narrow-view subagent (no chat history) for a code, style, and semantic-drift audit. |
 | `/implement-design archive [<change>]`           | Verify `<component>.md` sync, `git mv` `<change>.md` to `archive/`, and format code.                  |
-| `/implement-design file-followups [<change>]`    | Deduplicate and file approved Section 4 follow-ups into Buganizer component `564546727`.              |
+| `/implement-design file-followups [<change>]`    | Deduplicate and file approved Section 4 follow-ups into Buganizer component `2161972`.                |
 
 If invoked without a step keyword, default to `code` (unless the prompt
 requests `audit`, `archive`, or `file-followups`).
@@ -150,7 +150,7 @@ multi-CL chain) before Gerrit upload:
 
 ---
 
-## Step 4: `file-followups` — File Approved Follow-Ups in Buganizer (`564546727`)
+## Step 4: `file-followups` — File Approved Follow-Ups in Buganizer (`2161972`)
 
 > [!IMPORTANT]
 > **Do NOT implement Section 4 follow-up items in code.** This step only files
@@ -161,11 +161,11 @@ multi-CL chain) before Gerrit upload:
     `./docs/design/archive/<change>.md` (or `changes/<change>.md`).
   - If `/google/bin/releases/issues-cli/issues` is available (pass
     `BypassSandbox: true` if present in the tool schema), search for open
-    duplicates via `issues readonly search "componentid:564546727 status:open
+    duplicates via `issues readonly search "componentid:2161972 status:open
     <keywords>" --limit 5`, present a summary table (Title, Priority, Duplicate
     check result, and 1–2 sentence description referencing the Gerrit CL or
     archive doc path) for **explicit developer authorization**, and create
-    approved tickets via `issues mutate create --component_id=564546727
+    approved tickets via `issues mutate create --component_id=2161972
     --title="<title>" --priority=<P1|P2|P3> --type=BUG
     --description_file=./agent-temp/.bug_desc.md` (or present them for manual
     filing if `issues` is unavailable or fails with a LOAS/ACL restriction such

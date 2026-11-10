@@ -603,7 +603,7 @@ Run this step in the final implementation CL before uploading for review:
 
 ---
 
-## Part 3: Follow-Up Items (For Reviewer Approval -> Buganizer `564546727`)
+## Part 3: Follow-Up Items (For Reviewer Approval -> Buganizer `2161972`)
 
 - [ ] **Upstream CoralNPU RVV register tile heuristics into IREE's
       `LLVMCPUSelectLoweringStrategyPass`** (`P2` |

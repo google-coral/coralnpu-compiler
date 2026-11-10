@@ -9,13 +9,16 @@
 
 ## 1. Summary & Motivation
 
-State the problem and what this change does in 1–2 short paragraphs. Lead with
-concrete examples or measured impact (cycle counts, memory size, failing models)
-rather than implementation mechanics.
+- **Paragraph 1 (Today & Gap)**: Explain how the system works today on a
+  concrete example or scenario and why it breaks or falls short (cycle counts,
+  memory size, failing models).
+- **Paragraph 2 (Core Idea)**: State what this change does at a conceptual level
+  in 2–3 plain sentences without dumping pass, helper, or field inventories.
 
 - **Goals**:
-  - Concrete, verifiable outcomes this change achieves (scoped to a focused,
-    reviewable increment).
+  - Concrete, observable outcomes, capabilities, or guarantees this change
+    achieves (write as user/system outcomes rather than a file-by-file or
+    symbol-by-symbol changelog).
 - **Non-Goals**:
   - Plausible scope extensions or open Buganizer issues (`b/<id>`) that this
     change deliberately leaves out, each with a 1-line reason (and listed in
@@ -26,25 +29,25 @@ rather than implementation mechanics.
 
 ## 2. Proposed Change & Component Doc Delta
 
-Summarize the design delta relative to [`<component>.md`](../<component>.md) in
-plain, natural language. Put the full timeless component architecture, pipeline
-table, and IR examples directly into [`<component>.md`](../<component>.md) and
-any boundary interface changes (`.h` headers and `.td` TableGen definitions)
-directly into the chained CL 2 commit rather than duplicating them here:
+Tell the story of the design from top to bottom in plain, natural language
+before diving into component details and corner cases. Put the full timeless
+component architecture, pipeline table, and IR examples directly into
+[`<component>.md`](../<component>.md) and any boundary interface changes (`.h`
+headers and `.td` TableGen definitions) directly into the chained CL 2 commit
+rather than duplicating them here:
 
-- **How It Works & Key Invariants**: State the core mechanism, the invariants it
-  preserves, and how unsupported inputs or violated preconditions fall back
-  gracefully (citing the updated sections of
-  [`<component>.md`](../<component>.md) and any `.h` / `.td` interface files
-  updated in CL 2, or explaining the change inline if no living component doc
-  applies).
-  - *Default (Prose Principles & Examples)*: State principles, invariants, and
-    1–2 representative examples in short sentences; never transcribe C++
-    conditionals (`if (a && !b)`) into English prose.
-  - *Opt-In (Compact Tables / Pseudocode)*: When specifying multi-category
-    heuristics or decision matrices that do not belong in `<component>.md`, use
-    a compact table (`< 15` words per cell) or a short pseudocode block instead
-    of dense prose paragraphs.
+1. **Opening End-to-End Walkthrough (1–2 short paragraphs)**: Trace one concrete
+   input or example from entry point -> transformation -> output so the reader
+   has a complete mental model before any bullets.
+2. **Key Mechanisms & Component Boundaries (2–4 focused bullets)**: Explain how
+   each stage works and why, citing the updated sections of
+   [`<component>.md`](../<component>.md) and any `.h` / `.td` interface files
+   updated in CL 2 (or explaining inline if no living component doc applies).
+   Never transcribe C++ conditionals (`if (a && !b)`) into English prose.
+3. **Invariants, Fallbacks & Edge Cases**: Group strict invariants, graceful
+   fallback rules for unsupported inputs, and corner cases at the end (or in a
+   compact `< 15`-word-per-cell table / short pseudocode block) so they do not
+   interrupt the main walkthrough narrative.
 
 ### Alternatives Considered
 
@@ -87,12 +90,12 @@ Record only non-trivial design adaptations made during coding (omit or keep
 
 ---
 
-## 4. Follow-Up Items (For Reviewer Approval -> Buganizer `564546727`)
+## 4. Follow-Up Items (For Reviewer Approval -> Buganizer `2161972`)
 
 Record work deferred during design (CL 1) or adjacent issues discovered during
 implementation (CL 2). Once the implementation CL receives `+2`, run
 `/implement-design file-followups` to file them in Buganizer under component
-`564546727`.
+`2161972`.
 
 - [ ] **<Short Follow-Up Title>** (`P2` | `path/to/file.cpp`):
       1–2 sentence description of the follow-up problem and proposed direction.

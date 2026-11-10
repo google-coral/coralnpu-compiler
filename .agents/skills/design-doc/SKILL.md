@@ -56,13 +56,13 @@ or `commit` automatically during `draft`, `draft-from-commits`, or `revise`.
 > **When Running `draft-from-commits`**: Also read and apply **Sections 1–2** of
 > [`references/draft-from-commits.md`](references/draft-from-commits.md).
 
-- **1. Reconnaissance & Buganizer Lookup (`564546727`)**:
+- **1. Reconnaissance & Buganizer Lookup (`2161972`)**:
   - Read `./docs/design/INDEX.md`, the relevant `./docs/design/<component>.md`
     living docs, and target source files.
   - If `/google/bin/releases/issues-cli/issues` exists (pass `BypassSandbox:
     true` if present in the tool schema), read cited `b/<id>` (`issues
     readonly render|list-updates <id>`) and search related open issues
-    (`issues readonly search "componentid:564546727 status:open <keywords>"
+    (`issues readonly search "componentid:2161972 status:open <keywords>"
     --limit 5`); if `issues` is unavailable or fails with a LOAS/ACL
     restriction (`RPC_RESTRICTIONS_VIOLATION` or `LabelACLRejected`), skip it
     and note in `<change>.md` that Buganizer was not searched.
@@ -109,7 +109,7 @@ Run **only when explicitly requested** (repeatable):
    [`references/lenses.md`](references/lenses.md) and
    [`references/interview.md`](references/interview.md) (plus **Section 3** of
    [`references/draft-from-commits.md`](references/draft-from-commits.md) if
-   `./agent-temp/<change>.commit` exists) to spawn 4–5 parallel adversarial
+   `./agent-temp/<change>.commit` exists) to spawn 4–6 parallel adversarial
    lens subagents with wide codebase search, fact-check findings (`[Verified]`
    vs. `[Refuted]`), and walk through resulting choices via `interview.md`.
 

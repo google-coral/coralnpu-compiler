@@ -2,7 +2,7 @@
 
 - **Author(s)**: Shaked Flur
 - **Component Doc(s)**: [metrics.md](../metrics.md) *(updated in chained CL 2)*
-- **Bug(s)**: None (searched component 564546727; no open issues found)
+- **Bug(s)**: None (searched component 2161972; no open issues found)
 
 ---
 
@@ -174,7 +174,7 @@ declarations in `runtime/driver/coralnpu_dispatch_observer.h`,
 
 ---
 
-## 4. Follow-Up Items (For Reviewer Approval -> Buganizer `564546727`)
+## 4. Follow-Up Items (For Reviewer Approval -> Buganizer `2161972`)
 
 - [ ] **Register `stack_peak_test` in CMake and `refresh_compile_commands`**
       (`P3` | `metrics/tests/runtime/`, `BUILD.bazel`): Add `stack_peak_test` to

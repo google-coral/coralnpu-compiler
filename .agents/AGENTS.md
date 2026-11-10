@@ -59,12 +59,12 @@
   - `./docs/design/changes/<change>.md`: Active, unmerged change design briefs.
   - `./docs/design/archive/<change>.md`: Historical completed change briefs
     (reference for past trade-offs only; do not treat as current architecture).
-- **Buganizer Component `564546727` (`issues` CLI)**:
+- **Buganizer Component `2161972` (`issues` CLI)**:
   - When `/google/bin/releases/issues-cli/issues` is available, run it (passing
     `BypassSandbox: true` if present in the tool schema) for read-only lookups
     (`issues readonly render|list-updates|search`), and require explicit user
     authorization before creating tickets
-    (`issues mutate create --component_id=564546727 ...`). If `issues` is
+    (`issues mutate create --component_id=2161972 ...`). If `issues` is
     missing or fails with a LOAS/ACL restriction (`RPC_RESTRICTIONS_VIOLATION`
     or `LabelACLRejected`), treat Buganizer as unavailable and proceed without
     it.
@@ -154,6 +154,9 @@
   not what); omit comments when the code is self-explanatory.
 - Always review and update existing comments in or near code you touch so they
   remain accurate and consistent with the updated implementation.
+- Use blank lines to separate distinct logical phases in functions and unit
+  tests (e.g., setup, action, and verification, or distinct stages of an MLIR
+  rewrite pattern) rather than writing long uninterrupted blocks of statements.
 
 ## MLIR & LLVM Development
 
