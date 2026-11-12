@@ -78,7 +78,7 @@ function(coralnpu_check_generated_sync_test)
 
   add_test(
     NAME "${_TEST_NAME}"
-    COMMAND "${BAZEL_EXECUTABLE}" test "//${_PACKAGE_PATH}:check_generated"
+    COMMAND "${BAZEL_EXECUTABLE}" test --config=dev "//${_PACKAGE_PATH}:check_generated"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
   )
 

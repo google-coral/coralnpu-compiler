@@ -53,6 +53,9 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
 
   set(MPACT_CMAKE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcoralnpu_simulator_mpact.so")
   configure_file("${CORALNPU_MPACT_SIMULATOR_LIB}" "${MPACT_CMAKE_LIB}" COPYONLY)
+  # The tests' LD_LIBRARY_PATH has ${CMAKE_BINARY_DIR}/runtime/sim first; keep
+  # that copy fresh too, so a leftover there cannot shadow this one.
+  configure_file("${CORALNPU_MPACT_SIMULATOR_LIB}" "${CMAKE_BINARY_DIR}/runtime/sim/libcoralnpu_simulator_mpact.so" COPYONLY)
 
   iree_cc_library(
     NAME
