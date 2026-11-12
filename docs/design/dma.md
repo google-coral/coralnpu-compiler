@@ -52,9 +52,9 @@ int load_tile(uint32_t dtcm_dst, uint32_t ddr_src, uint32_t bytes) {
 End-to-end, DDR↔DTCM data movement spans two layers in this repository:
 
 1. **Compiler Tile Promotion & Copy Lowering**
-   (see [dtcm_tiling.md](dtcm_tiling.md) and §7.2 below): sizes tiles to fit the
-   DTCM budget, promotes them to DTCM buffers, and lowers most copies to RVV
-   loops.
+   (see [tiling_and_promotion.md](tiling_and_promotion.md) and §7.2 below):
+   sizes tiles to fit the DTCM budget, promotes them to DTCM buffers, and lowers
+   most copies to RVV loops.
 2. **CRT Driver (`crt/coralnpu_dma.{h,c}`)**: validates `coralnpu_dma_copy_async`
    transfer size/beat alignment and chain length, manages the hardware MMIO
    registers, and implements `DEFERRED` and `IMMEDIATE` issue modes (§4).
@@ -420,8 +420,9 @@ does not call the driver.
 
 ### 7.2 DTCM Tile Promotion & Workgroup Local Memory
 
-[dtcm_tiling.md](dtcm_tiling.md) owns tile sizing, promotion, and copy lowering,
-including what is and is not promoted. These facts matter for DMA:
+[tiling_and_promotion.md](tiling_and_promotion.md) owns tile sizing, promotion,
+and copy lowering, including what is and is not promoted. These facts matter for
+DMA:
 
 - **Which copies exist:** `CoralNPUPromoteOperands` promotes the tiles of RVV
   contractions with reuse (`hasContractionReuse`). With default features, a

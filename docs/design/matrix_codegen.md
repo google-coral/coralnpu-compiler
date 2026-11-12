@@ -199,11 +199,12 @@ fuse with the Zvt tiles.
 - **DTCM Promotion**: Zvt contractions do not set `promote_operands`, so their
   inputs stay in memory (`TODO(zvt)`). RVV contractions do promote operands to
   DTCM via `CoralNPUPromoteOperandsPass` (see
-  [DTCM Promotion](tiling_levels_explained.md#dtcm-promotion)). Pass 2 (§2.3)
-  can still lower compatible RVV vector tiles (such as $2 \times 32$ or
-  $4 \times 16$) to Zvt assembly reading those DTCM copies. Pass 2 also
-  allocates any scratch drain tile (§2.3) in DTCM, and the footprint model
-  counts it (see [DTCM Tiling](dtcm_tiling.md#dtcm-budget-and-footprint)).
+  [DTCM Promotion](tiling_and_promotion.md#5-workgroup-tile-promotion-and-copy-lowering)).
+  Pass 2 (§2.3) can still lower compatible RVV vector tiles (such as
+  $2 \times 32$ or $4 \times 16$) to Zvt assembly reading those DTCM copies.
+  Pass 2 also allocates any scratch drain tile (§2.3) in DTCM, and the footprint
+  model counts it (see
+  [DTCM Tiling](tiling_and_promotion.md#4-dtcm-budget-footprint-and-tile-search-levels-1--0)).
 
 ### 2.2. Vectorization & Pre-LLVM Lowering Hook
 
@@ -215,7 +216,7 @@ converting to the LLVM dialect, `CoralNPUTargetBackend` runs its
 
 1. `CoralNPULowerDTCMCopiesPass`: Lowers DTCM promotion copies into loops of
    vector loads and stores (see
-   [DTCM Promotion](tiling_levels_explained.md#dtcm-promotion)).
+   [DTCM Promotion](tiling_and_promotion.md#5-workgroup-tile-promotion-and-copy-lowering)).
 2. `MemrefCopyToLinalgPass` and `GenericVectorizationPass`: Vectorize remaining
    small ops (`< 1024` elements, such as bufferization `memref.copy` /
    `linalg.copy` ops) and sink `arith.extsi` below `vector.extract` so
@@ -634,7 +635,7 @@ python3 test_mmt4d.py --bazel
   `CoralNPUTileSizeSelectionFootprint` duplicates part of
   `CoralNPUMatrixCodegen`'s eligibility checks to count DTCM scratch tiles and
   does not count the $16 \times 32$ FP32 scratch tile of the BF16 `vecmat` path
-  (see [DTCM Tiling](dtcm_tiling.md#limits)).
+  (see [DTCM Tiling](tiling_and_promotion.md#84-todos)).
 - **`ConvolutionToIGEMM` Placement & Allowlist (§2.0)**: `ConvolutionToIGEMMPass`
   currently runs in global `Preprocessing` with an inactive `"coralnpu"`
   affinity filter. Enabling implicit GEMM requires moving it after placement (or

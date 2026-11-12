@@ -276,9 +276,9 @@ is the DTCM size minus the stack and the reserve, rounded down to 4 KB. With the
 defaults, the budget is 24 KB for a 32 KB DTCM, and 1016 KB for a 1 MB DTCM. For
 an RVV contraction (not a Zvt contraction), the compiler copies the tiles to
 these DTCM buffers (see
-[DTCM Promotion](docs/design/tiling_levels_explained.md#dtcm-promotion)). An
-overview of the DTCM tiling and promotion is in
-[dtcm_tiling.md](docs/design/dtcm_tiling.md).
+[DTCM Promotion](docs/design/tiling_and_promotion.md#5-workgroup-tile-promotion-and-copy-lowering)).
+An overview of the DTCM tiling and promotion is in
+[tiling_and_promotion.md](docs/design/tiling_and_promotion.md).
 
 - `--coralnpu-dtcm-size-kb=<KB>` (default: `32`): the size of the DTCM.
 - `--coralnpu-stack-size-kb=<KB>` (default: `4`, minimum: `2`): the size of the

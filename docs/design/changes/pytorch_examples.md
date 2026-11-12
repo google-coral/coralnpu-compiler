@@ -75,10 +75,11 @@ blocks (`48` projections after merging `Q, K, V`). Because `197` is prime,
 RVV. Zvt requires $N$ divisible by `16`, or by `8`/`12` when $M$ has a divisor
 in `[3, 15]` ([`matrix_codegen.md`](../matrix_codegen.md)). Under the default
 `24 KB` DTCM tile budget (`32 KB` DTCM minus `4 KB` stack and `4 KB` reserve;
-[`dtcm_tiling.md`](../dtcm_tiling.md)), unsplit $M = 197$ shrinks 24 `qkv`/`fc1`
-projections from `16x64` to `16x16` Zvt. It also forces 24 residual `proj`/`fc2`
-projections onto RVV (`832 B` LHS + `2 * 12,608 B` `[197, 16]` residual/output
-slices + `1,024 B` scratch = `27,072 B > 24,576 B`).
+[`tiling_and_promotion.md`](../tiling_and_promotion.md)), unsplit $M = 197$
+shrinks 24 `qkv`/`fc1` projections from `16x64` to `16x16` Zvt. It also forces
+24 residual `proj`/`fc2` projections onto RVV (`832 B` LHS + `2 * 12,608 B`
+`[197, 16]` residual/output slices + `1,024 B` scratch = `27,072 B >
+24,576 B`).
 
 Zero-padding `197` to `208` (`13 x 16`) with `-1e4` key masking and transposing
 projection weights to `(K, N)` (`_transpose_linear()`) restores `16x64` Zvt
