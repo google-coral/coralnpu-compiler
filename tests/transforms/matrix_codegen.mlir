@@ -425,7 +425,7 @@ module {
     hal.executable.variant public @coralnpu_elf target(#target) {
       builtin.module {
         // CHECK-LABEL: func.func @matmul_bf16_trunc_no_zvfbfmin(
-        // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 64 : memref<16x32xf32, #iree_codegen.workgroup_local>
+        // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 16 : memref<16x32xf32, #iree_codegen.workgroup_local>
         // CHECK: llvm.inline_asm {{.*}}vtfmm.alt.tvv mt0{{.*}}vtmv.v.t v0, t0{{.*}}vse32.v v0, (t4)
         // CHECK-NOT: vfncvtbf16
         // CHECK: scf.for
@@ -757,7 +757,7 @@ module {
       builtin.module {
         // CHECK-LABEL: func.func @matmul_fused_consumer_row_loop(
         func.func @matmul_fused_consumer_row_loop(%arg0: memref<16x8xf32>, %arg1: memref<8x16xf32>, %arg2: memref<16xf32>, %arg3: memref<16x16xf32>) {
-          // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 64 : memref<16x16xf32, #iree_codegen.workgroup_local>
+          // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 16 : memref<16x16xf32, #iree_codegen.workgroup_local>
           // CHECK: llvm.inline_asm {{.*}}vtzero mt0{{.*}}vtfmm.tvv mt0{{.*}}vtmv.v.t v0, t0{{.*}}vse32.v v0, (t4)
           // CHECK: scf.for %[[R:.*]] = %{{.*}} to %{{.*}} step %{{.*}} {
           // CHECK:   %[[ROW:.*]] = vector.load %[[SCRATCH]][%[[R]], %{{.*}}] : memref<16x16xf32, #iree_codegen.workgroup_local>, vector<16xf32>
@@ -799,7 +799,7 @@ module {
       builtin.module {
         // CHECK-LABEL: func.func @matmul_shared_scratch(
         func.func @matmul_shared_scratch(%arg0: memref<16x1xf32>, %arg1: memref<1x16xf32>, %arg2: memref<16x16xf32>, %arg3: memref<16x16xf32>) {
-          // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 64 : memref<16x16xf32, #iree_codegen.workgroup_local>
+          // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 16 : memref<16x16xf32, #iree_codegen.workgroup_local>
           // CHECK: llvm.inline_asm {{.*}}vtzero mt0{{.*}}vtfmm.tvv mt0
           // CHECK: llvm.inline_asm {{.*}}vse32.v v0, (t4)
           // CHECK: vector.transfer_read %[[SCRATCH]]
@@ -910,7 +910,7 @@ module {
       builtin.module {
         // CHECK-LABEL: func.func @matmul_partial_m_rows(
         func.func @matmul_partial_m_rows(%arg0: memref<8x4xf32>, %arg1: memref<4x16xf32>, %arg2: memref<16xf32>, %arg3: memref<8x16xf32>) {
-          // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 64 : memref<16x16xf32, #iree_codegen.workgroup_local>
+          // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 16 : memref<16x16xf32, #iree_codegen.workgroup_local>
           // CHECK: llvm.inline_asm {{.*}}vtzero mt0{{.*}}vid.v v8\0A\09li t6, 8\0A\09vmsltu.vx v0, v8, t6{{.*}}vlse32.v v4, (t0), t1, v0.t\0A\09vle32.v v8, (t2)\0A\09vtfmm.tvv mt0, v4, v8{{.*}}li t6, 2\0A\092:\0A\09vtmv.v.t v0, t0\0A\09vse32.v v0, (t4)
           // CHECK: %[[C8:.*]] = arith.constant 8 : index
           // CHECK: scf.for %[[R:.*]] = %{{.*}} to %[[C8]] step %{{.*}} {
@@ -1080,7 +1080,7 @@ module {
       builtin.module {
         // CHECK-LABEL: func.func @matmul_partial_m1(
         func.func @matmul_partial_m1(%arg0: memref<1x4xbf16>, %arg1: memref<4x16xbf16>, %arg2: memref<1x16xbf16>) {
-          // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 64 : memref<16x16xf32, #iree_codegen.workgroup_local>
+          // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 16 : memref<16x16xf32, #iree_codegen.workgroup_local>
           // CHECK: llvm.inline_asm {{.*}}vtzero mt0{{.*}}li t5, 16450{{.*}}vid.v v8\0A\09li t6, 1\0A\09vmsltu.vx v0, v8, t6{{.*}}vlse16.v v2, (t0), t1, v0.t\0A\09vle16.v v8, (t2)\0A\09{{.*}}vtfmm.alt.tvv mt0, v2, v8{{.*}}li t0, 0\0A\09vtmv.v.t v0, t0\0A\09vse32.v v0, (t4)
           // CHECK-NOT: vfncvtbf16
           %c0 = arith.constant 0 : index
@@ -1750,7 +1750,7 @@ module {
         // CHECK-LABEL: func.func @vecmat_bf16_jammed(
         // NOVSET-LABEL: func.func @vecmat_bf16_jammed(
         func.func @vecmat_bf16_jammed(%arg0: memref<1x8xbf16>, %arg1: memref<8x64xbf16>, %arg2: memref<1x64xbf16>) {
-          // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 64 : memref<16x32xf32, #iree_codegen.workgroup_local>
+          // CHECK: %[[SCRATCH:.*]] = memref.alloc() alignment = 16 : memref<16x32xf32, #iree_codegen.workgroup_local>
           // CHECK: llvm.inline_asm {{.*}}vmv.v.i v16, 0{{.*}}vmv.v.i v24, 0{{.*}}flh fa0, 0(t2){{.*}}vl8re16.v v0, (t0){{.*}}vfwmaccbf16.vf v16, fa0, v0{{.*}}vfwmaccbf16.vf v24, fa0, v4{{.*}}flh fa1, 14(t2){{.*}}vse32.v v16, ($3){{.*}}addi t0, $3, 128{{.*}}vse32.v v24, (t0)
           // CHECK: vector.load %[[SCRATCH]]
           // CHECK: vector.load %[[SCRATCH]]

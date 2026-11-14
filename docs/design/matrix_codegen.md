@@ -214,23 +214,29 @@ Linalg contractions into 2D `vector.contract` operations (such as
 converting to the LLVM dialect, `CoralNPUTargetBackend` runs its
 `beforeLowerToLLVMHook` pass sequence:
 
-1. `CoralNPULowerDTCMCopiesPass`: Lowers DTCM promotion copies into loops of
+1. `CoralNPUClampBufferAlignmentPass`: Clamps upstream `memref.alloc`,
+   `memref.alloca`, and `constant` `memref.global` byte alignment $> 16$ bytes
+   down to 16 bytes (`kBufferAlignmentBytes`), and runs again after
+   `buildLLVMCPUCodegenPassPipeline` to clamp `constant` `llvm.mlir.global` ops
+   (see
+   [DTCM Footprint](tiling_and_promotion.md#43-footprint-model-dtcmfootprintmodel)).
+2. `CoralNPULowerDTCMCopiesPass`: Lowers DTCM promotion copies into loops of
    vector loads and stores (see
    [DTCM Promotion](tiling_and_promotion.md#5-workgroup-tile-promotion-and-copy-lowering)).
-2. `MemrefCopyToLinalgPass` and `GenericVectorizationPass`: Vectorize remaining
+3. `MemrefCopyToLinalgPass` and `GenericVectorizationPass`: Vectorize remaining
    small ops (`< 1024` elements, such as bufferization `memref.copy` /
    `linalg.copy` ops) and sink `arith.extsi` below `vector.extract` so
    `CoralNPUMatrixCodegen` sees narrow `i8` convolution operands.
-3. `DropVectorUnitDimsPass`: Folds unit vector dimensions.
-4. `CoralNPUApproximateMathPass` (`--coralnpu-fast-math`, default on) and
+4. `DropVectorUnitDimsPass`: Folds unit vector dimensions.
+5. `CoralNPUApproximateMathPass` (`--coralnpu-fast-math`, default on) and
    `MathTransformPass`: Replace `math.tanh`, `math.exp`, `math.erf`, and `erfc`
    expansions with cheaper approximations, then expand remaining math ops.
-5. `CoralNPUOptimizeVectorLoopsPass`: Accumulates loop-carried
+6. `CoralNPUOptimizeVectorLoopsPass`: Accumulates loop-carried
    `vector.reduction` sums in vectors and unrolls, unroll-and-jams, and
    interchanges vectorized loops.
-6. `CoralNPULimitLoopUnrollingPass`: Caps LLVM loop unrolling to bound ITCM code
+7. `CoralNPULimitLoopUnrollingPass`: Caps LLVM loop unrolling to bound ITCM code
    size.
-7. `CoralNPUMatrixCodegenPass`: Lowers supported vector contractions to Zvt
+8. `CoralNPUMatrixCodegenPass`: Lowers supported vector contractions to Zvt
    inline assembly.
 
 ### 2.3. Pass 2: CoralNPUMatrixCodegen

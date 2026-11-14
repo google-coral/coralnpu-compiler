@@ -157,18 +157,18 @@ vector constants (padding waste, not UB): `InferAlignmentPass` (in
 
 ## 3. Implementation & Verification Plan
 
-- [ ] **Step 1 (`compiler/Target/Utils.h`,
+- [x] **Step 1 (`compiler/Target/Utils.h`,
   `compiler/Transforms/CoralNPUTileSizeSelectionFootprint.{h,cpp}`)**: Define
   `kBufferAlignmentBytes` (16 bytes) and remove the local 64-byte constant.
-- [ ] **Step 2 (`compiler/Transforms/Passes.{td,h}`,
+- [x] **Step 2 (`compiler/Transforms/Passes.{td,h}`,
   `compiler/Transforms/CoralNPUClampBufferAlignment.cpp`,
   `compiler/Target/CoralNPUTargetBackend.cpp`)**: Implement module-scoped
   `CoralNPUClampBufferAlignmentPass` per the §2 clamping table and schedule it
   at the start of `beforeLowerToLLVMHook` and after
   `buildLLVMCPUCodegenPassPipeline`.
-- [ ] **Step 3 (`compiler/Transforms/CoralNPUMatrixCodegen.cpp`)**: Update
+- [x] **Step 3 (`compiler/Transforms/CoralNPUMatrixCodegen.cpp`)**: Update
   `getScratchTile` to use `kBufferAlignmentBytes` (16 bytes) instead of 64.
-- [ ] **Tests (`tests/transforms/clamp_buffer_alignment.mlir`,
+- [x] **Tests (`tests/transforms/clamp_buffer_alignment.mlir`,
   `tests/transforms/matrix_codegen.mlir`,
   `tests/transforms/tile_size_selection_{dtcm,footprint}.mlir`,
   `tests/transforms/promote_operands_pipeline.mlir`)**:
@@ -182,7 +182,7 @@ vector constants (padding waste, not UB): `InferAlignmentPass` (in
   - *Negative / Fallback*: Verify every `Leave unchanged` case from the §2
     table (including unset alignment on all four ops and non-`constant`
     `memref.global` / `llvm.mlir.global` ops) in `clamp_buffer_alignment.mlir`.
-- [ ] **Build, Doc & Archive Sync**: Sync `compiler/Transforms/BUILD.bazel`,
+- [x] **Build, Doc & Archive Sync**: Sync `compiler/Transforms/BUILD.bazel`,
   `compiler/Transforms/CMakeLists.txt`, and `tests/transforms/CMakeLists.txt`,
   verify [tiling_and_promotion.md](../tiling_and_promotion.md),
   [matrix_codegen.md](../matrix_codegen.md), and [INDEX.md](../INDEX.md),
@@ -191,13 +191,13 @@ vector constants (padding waste, not UB): `InferAlignmentPass` (in
 
 ### Implementation Notes & Adaptations
 
-- *(None yet)*
+- *(None)*
 
 ---
 
 ## 4. Follow-Up Items (`<component>.md` TODOs / Buganizer `2161972`)
 
-- [ ] **Upstream separated buffer, stack, and vector alignment controls across
+- [x] **Upstream separated buffer, stack, and vector alignment controls across
   IREE, MLIR, and LLVM** (`tiling_and_promotion.md` |
   `compiler/Transforms/CoralNPUClampBufferAlignment.cpp`): Split the three
   conflated alignment concerns upstream so 16-byte alignment is emitted at

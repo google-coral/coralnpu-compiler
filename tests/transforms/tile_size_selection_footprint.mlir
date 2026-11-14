@@ -197,7 +197,7 @@ hal.executable private @stored_extsi_producer {
 // tiling, while estimateZvtScratchBytes passes strictLayoutAndSingleUse = false
 // to isZvtMatrixContractionShape so the 2 KB (16x32xi32) Zvt scratch tile is
 // still budgeted (24,128 B without scratch <= 24 KB, 26,176 B with scratch >
-// 24 KB, shrinking OH from 22 to 11 at 14,464 B).
+// 24 KB, shrinking OH from 22 to 11 at 14,432 B).
 // CHECK-LABEL: func.func @stored_extsi_conv()
 //       CHECK:   linalg.conv_2d_nhwc_hwcf
 //  CHECK-SAME:     cache_parallel = [0, 11, 0, 0, 0, 0, 0], cache_reduction = [0, 0, 0, 0, 0, 0, 0], distribution = [0, 11, 0, 0, 0, 0, 0]

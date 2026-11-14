@@ -18,6 +18,7 @@ iree_lit_test_suite(
   SRCS
     "affinity_annotation.mlir"
     "approximate_math.mlir"
+    "clamp_buffer_alignment.mlir"
     "convolution_to_igemm.mlir"
     "dump_affinity_execution_profile.mlir"
     "dump_affinity_execution_profile_empty.mlir"

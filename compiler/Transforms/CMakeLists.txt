@@ -35,6 +35,7 @@ iree_cc_library(
   SRCS
     "CoralNPUAffinityAnnotation.cpp"
     "CoralNPUApproximateMath.cpp"
+    "CoralNPUClampBufferAlignment.cpp"
     "CoralNPUDumpAffinityExecutionProfile.cpp"
     "CoralNPULimitLoopUnrolling.cpp"
     "CoralNPULowerDTCMCopies.cpp"

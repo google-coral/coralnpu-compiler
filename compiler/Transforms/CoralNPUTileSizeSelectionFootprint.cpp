@@ -14,6 +14,7 @@
 
 #include "compiler/Transforms/CoralNPUTileSizeSelectionFootprint.h"
 
+#include "compiler/Target/Utils.h"
 #include "compiler/Transforms/CoralNPUTileSizeSelectionUtils.h"
 
 // IREE:
@@ -55,9 +56,6 @@ using namespace mlir::iree_compiler;
 namespace mlir::coralnpu_compiler {
 
 namespace {
-
-// Each DTCM buffer is rounded up to this alignment.
-constexpr int64_t kBufferAlignmentBytes = 64;
 
 // Returns the size in bits of an element of `type`. Types that are not
 // integers or floats (e.g. index or complex) use 64 bits as an upper bound.

@@ -315,5 +315,30 @@ def CoralNPUMatrixCodegen : InterfacePass<"coralnpu-matrix-codegen", "mlir::Func
   ];
 }
 
+def CoralNPUClampBufferAlignment : Pass<"coralnpu-clamp-buffer-alignment", "mlir::ModuleOp"> {
+  let summary = "Clamps buffer and constant global alignment to CoralNPU's 16-byte beat/ABI alignment";
+  let description = [{
+    Temporary CoralNPU-pipeline pass that clamps any explicit byte alignment
+    greater than `kBufferAlignmentBytes` (16 bytes) on `memref.alloc`,
+    `memref.alloca`, and `constant` `memref.global` / `llvm.mlir.global`
+    (`LLVM::GlobalOp`) operations down to 16 bytes, matching current
+    `VLEN = 128` CoralNPU 128-bit (16-byte) `Sram_Nx128` DTCM/ITCM beats and
+    RISC-V `S128` ABI stack alignment. Skips buffers/globals whose type
+    contains a `VectorType`, non-`constant` `memref.global` / `llvm.mlir.global`
+    ops, and `memref.alloc` / `memref.alloca` ops with a direct
+    `vector.type_cast` user (relying on CoralNPU's
+    `splitVectorTransfersTo != "vector-transfers"`, `enableFullUnroll()`,
+    `useVectorAlignment = false`, and `MemRefToLLVM` copying `memref.global`
+    alignment only onto `llvm.mlir.global` instead of transitive view/symbol
+    or `llvm.func` pointer walks). Scheduled at the start of
+    `beforeLowerToLLVMHook` and on `modulePassManager` after
+    `buildLLVMCPUCodegenPassPipeline` (skipping `LLVM::LLVMFuncOp` bodies via
+    pre-order walk on the post-LLVM run).
+  }];
+  let constructor = [{
+    ::mlir::coralnpu_compiler::createCoralNPUClampBufferAlignmentPass()
+  }];
+}
+
 #endif // IREE_CORALNPU_PASSES
 

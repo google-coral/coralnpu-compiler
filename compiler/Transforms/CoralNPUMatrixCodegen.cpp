@@ -955,8 +955,9 @@ struct CoralNPUMatrixCodegenPass
 
     IRRewriter builder(&getContext());
     // The scratch tiles are in DTCM. The DTCM footprint model counts them
-    // (estimateZvtScratchBytes in CoralNPUTileSizeSelectionFootprint.cpp): keep
-    // the two in sync.
+    // (estimateZvtScratchBytes in CoralNPUTileSizeSelectionFootprint.cpp) and
+    // CoralNPUClampBufferAlignment also clamps DTCM allocations to
+    // kBufferAlignmentBytes: keep them in sync.
     DenseMap<Type, TileAddr> scratchTiles;
     auto getScratchTile = [&](VectorType ty) {
       int64_t m = ty.getRank() == 1 ? 16 : llvm::alignTo(ty.getDimSize(0), 16);
@@ -971,8 +972,9 @@ struct CoralNPUMatrixCodegenPass
           keyTy.getShape(), keyTy.getElementType(), MemRefLayoutAttrInterface{},
           iree_compiler::IREE::Codegen::WorkgroupLocalMemoryAttr::get(
               &getContext()));
-      return tile = {memref::AllocOp::create(b, loc, memTy, ValueRange{},
-                                             b.getI64IntegerAttr(64)),
+      return tile = {memref::AllocOp::create(
+                         b, loc, memTy, ValueRange{},
+                         b.getI64IntegerAttr(kBufferAlignmentBytes)),
                      {c0, c0}};
     };
 

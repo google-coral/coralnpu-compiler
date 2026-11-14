@@ -26,7 +26,7 @@ namespace mlir::coralnpu_compiler {
 
 // Estimates the DTCM footprint of one DTCM tile of a dispatch: the sum of the
 // DTCM buffers that the tile of the root op and of the compute ops fused with
-// it need. Each buffer is rounded up to 64 bytes:
+// it need. Each buffer is rounded up to 16 bytes (kBufferAlignmentBytes):
 // - an input slice for each tensor that the fused ops read from memory (e.g. a
 //   binding), in its type in memory (e.g. i8 before a fused extsi), times the
 //   number of buffers for each input slice (e.g. 2 for double buffering);
@@ -41,7 +41,8 @@ namespace mlir::coralnpu_compiler {
 // The footprint of a root that is not a linalg op (e.g. pack or unpack) counts
 // only the operands of the root.
 // CoralNPUPromoteOperands creates the input, output staging and accumulator
-// buffers, and CoralNPUMatrixCodegen the scratch tiles: keep the three in sync.
+// buffers, CoralNPUClampBufferAlignment clamps buffer alignments to 16 bytes,
+// and CoralNPUMatrixCodegen creates the scratch tiles: keep the four in sync.
 class DTCMFootprintModel {
  public:
   // `computeOps` are the compute ops of the dispatch, which includes

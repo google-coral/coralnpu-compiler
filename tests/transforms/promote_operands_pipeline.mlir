@@ -151,3 +151,35 @@ func.func @matmul_bf16_trunc4(%a: tensor<64x224xbf16>, %b: tensor<224x64xbf16>) 
   } -> tensor<64x64xbf16>
   return %o : tensor<64x64xbf16>
 }
+
+// Non-final 16-byte-multiple DTCM buffer and inlined constant global: with a
+// workgroup loop over M (64 rows in CHECK, 2 rows in SMALL), the promoted
+// 32-byte i8 bias buffer is hoisted before B and A and packed at 16-byte
+// alignment without 32 B of 64-byte padding (23584 B in CHECK, 2000 B in SMALL),
+// and the inlined non-splat constant tensor becomes an alignment = 16
+// llvm.mlir.global.
+// CHECK-LABEL: hal.executable.export public @matmul_i8_bias_const_dispatch_0
+//       CHECK:   <workgroup_size = [1 : index, 1 : index, 1 : index], workgroup_local_memory = 23584>
+//       CHECK:   llvm.mlir.global private constant @__constant_32xi8(dense<[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]> : tensor<32xi8>) {addr_space = 0 : i32, alignment = 16 : i64{{.*}}} : !llvm.array<32 x i8>
+// SMALL-LABEL: hal.executable.export public @matmul_i8_bias_const_dispatch_0
+//       SMALL:   <workgroup_size = [1 : index, 1 : index, 1 : index], workgroup_local_memory = 2000>
+func.func @matmul_i8_bias_const(%a: tensor<128x224xi8>, %b: tensor<224x32xi8>, %bias: tensor<32xi8>) -> tensor<128x32xi8> {
+  %c0 = arith.constant 0 : i32
+  %cst_scale = arith.constant dense<[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]> : tensor<32xi8>
+  %e = tensor.empty() : tensor<128x32xi32>
+  %f = linalg.fill ins(%c0 : i32) outs(%e : tensor<128x32xi32>) -> tensor<128x32xi32>
+  %r = linalg.matmul ins(%a, %b : tensor<128x224xi8>, tensor<224x32xi8>) outs(%f : tensor<128x32xi32>) -> tensor<128x32xi32>
+  %eo = tensor.empty() : tensor<128x32xi8>
+  %o = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d1)>, affine_map<(d0, d1) -> (d1)>, affine_map<(d0, d1) -> (d0, d1)>],
+                       iterator_types = ["parallel", "parallel"]}
+      ins(%r, %bias, %cst_scale : tensor<128x32xi32>, tensor<32xi8>, tensor<32xi8>) outs(%eo : tensor<128x32xi8>) {
+  ^bb0(%in: i32, %bi: i8, %sc: i8, %out: i8):
+    %be = arith.extsi %bi : i8 to i32
+    %se = arith.extsi %sc : i8 to i32
+    %s0 = arith.addi %in, %be : i32
+    %s1 = arith.addi %s0, %se : i32
+    %t = arith.trunci %s1 : i32 to i8
+    linalg.yield %t : i8
+  } -> tensor<128x32xi8>
+  return %o : tensor<128x32xi8>
+}

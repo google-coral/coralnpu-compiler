@@ -38,6 +38,17 @@
 
 namespace mlir::coralnpu_compiler {
 
+// The alignment in bytes of DTCM (`#iree_codegen.workgroup_local`)
+// `memref.alloc` buffers, stack `memref.alloca` buffers, and constant `.rodata`
+// global buffers (`memref.global` / `llvm.mlir.global`) on current `VLEN = 128`
+// CoralNPU hardware, matching the 128-bit (16-byte) DTCM/ITCM SRAM
+// (`Sram_Nx128`), `lsuDataBits = 128`, TileLink-UL, and RVV beat width,
+// `kMinWorkgroupLocalAlignment` in `LLVMCPUAssignWorkgroupLocalMemoryPass`, and
+// the 128-bit (`S128`) RISC-V ABI stack alignment. Shared by
+// `DTCMFootprintModel`, `CoralNPUClampBufferAlignmentPass`, and
+// `CoralNPUMatrixCodegenPass`.
+inline constexpr uint64_t kBufferAlignmentBytes = 16;
+
 // Returns the set of scalar and element types supported by CoralNPU.
 iree_compiler::IREE::HAL::TargetBackend::SupportedTypes
 getCoralNPUSupportedTypes(MLIRContext *context);

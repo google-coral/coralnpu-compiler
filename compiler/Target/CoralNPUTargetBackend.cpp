@@ -452,9 +452,14 @@ void CoralNPUTargetBackend::buildTranslationPassPipeline(
         if (!hasPromoteOperands(loweringConfig)) return;
         funcPassManager.addPass(createCoralNPUPromoteOperandsPass());
       };
+  OpPassManager &modulePassManager = passManager.nest<ModuleOp>();
   buildLLVMCPUCodegenPassPipeline(
-      passManager.nest<ModuleOp>(), pipelineOpts,
+      modulePassManager, pipelineOpts,
       /*includeLLVMLowering=*/true, [this](OpPassManager &pm) {
+        // Clamp upstream bufferization (64 B) and vector-transfer split (32 B)
+        // alignments first so later CoralNPU hook passes can intentionally
+        // allocate >= 32-byte buffers (such as 32-byte DMA descriptors).
+        pm.addPass(createCoralNPUClampBufferAlignmentPass());
         OpPassManager &funcPassManager = pm.nest<func::FuncOp>();
         // Lower the copies between memory and DTCM (the DTCM promotion) to
         // vector loops, before the vectorization of the leftover ops below
@@ -485,6 +490,10 @@ void CoralNPUTargetBackend::buildTranslationPassPipeline(
         funcPassManager.addPass(createCoralNPUMatrixCodegenPass());
         if (hooks_) hooks_->addPostMatrixCodegenPasses(funcPassManager);
       });
+  // Clamp `constant` `llvm.mlir.global` ops lowered from
+  // `IREEBufferizeConstantsPass`'s 64-byte `memref.global` ops before LLVM IR
+  // optimization and ITCM linking.
+  modulePassManager.addPass(createCoralNPUClampBufferAlignmentPass());
   buildCodegenTranslationPostProcessingPassPipeline(passManager);
 }
 

@@ -82,6 +82,9 @@ std::unique_ptr<Pass> createCoralNPURaiseApplyScalePass();
 std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
 createCoralNPUMatrixCodegenPass();
 
+std::unique_ptr<OperationPass<ModuleOp>>
+createCoralNPUClampBufferAlignmentPass();
+
 }  // namespace mlir::coralnpu_compiler
 
 #endif  // COMPILER_TRANSFORMS_PASSES_H_

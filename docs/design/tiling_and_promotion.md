@@ -153,16 +153,17 @@ The compiler configures and lowers each tiling level across the following
 passes, where the third column lists the attributes, loops, buffers, or target
 instructions produced at each step:
 
-| Step                                            | Pass                                                    | Attributes / IR Produced                                                                                            |
-| :---------------------------------------------- | :------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------ |
-| 1. Initial strategy (IREE)                      | `LLVMCPUSelectLoweringStrategyPass`                     | Initial `translation_info` pipeline, Level 0 `distribution`, and Level 2 `vector_*` tile sizes.                     |
-| 2. CoralNPU tile selection (Level 2 $\to$ 1/0)  | `CoralNPUTileSizeSelectionDTCM`                         | Refined Zvt/RVV Level 2 `vector_*` sizes & pipeline, Level 1/0 `cache_*`/`distribution` sizes, `promote_operands`.  |
-| 3. Level 0 & Level 1 tiling (IREE)              | `LLVMCPU` tile-and-fuse passes                          | Level 0/1 workgroup `scf.forall` loop and Level 1 split-reduction `scf.for` loop of the DTCM tile.                  |
-| 4. Level 1 operand promotion                    | `CoralNPUPromoteOperands` (`afterCacheTilingHook`, 0014)| `#iree_codegen.workgroup_local` `alloc_tensor` buffers and `materialize_in_destination` input copies on DTCM tiles. |
-| 5. Level 2 tiling & bufferization (IREE)        | `LLVMCPU` vectorization & One-Shot Bufferization        | Level 2 register-tile loops, vectorized inner loops, `memref.alloc` in DTCM (0013), and `linalg.generic` copies.    |
-| 6. DTCM copy lowering                           | `CoralNPULowerDTCMCopies` (`beforeLowerToLLVMHook`)     | `scf.for` loops of RVV `vector.load`/`store` (or `maskedload`/`maskedstore`) along contiguous rows.                 |
-| 7. Zvt matrix codegen                           | `CoralNPUMatrixCodegen` (`beforeLowerToLLVMHook`)       | Zvt inline-assembly microkernels and DTCM scratch tiles (`memref.alloc` in `workgroup_local` space).                |
-| 8. Local memory packing (IREE)                  | `LLVMCPUAssignWorkgroupLocalMemory`                     | Single packed DTCM buffer and the export's `workgroup_local_memory` byte size.                                      |
+| Step                                            | Pass                                                                      | Attributes / IR Produced                                                                                                  |
+| :---------------------------------------------- | :------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------ |
+| 1. Initial strategy (IREE)                      | `LLVMCPUSelectLoweringStrategyPass`                                       | Initial `translation_info` pipeline, Level 0 `distribution`, and Level 2 `vector_*` tile sizes.                           |
+| 2. CoralNPU tile selection (Level 2 $\to$ 1/0)  | `CoralNPUTileSizeSelectionDTCM`                                           | Refined Zvt/RVV Level 2 `vector_*` sizes & pipeline, Level 1/0 `cache_*`/`distribution` sizes, `promote_operands`.        |
+| 3. Level 0 & Level 1 tiling (IREE)              | `LLVMCPU` tile-and-fuse passes                                            | Level 0/1 workgroup `scf.forall` loop and Level 1 split-reduction `scf.for` loop of the DTCM tile.                        |
+| 4. Level 1 operand promotion                    | `CoralNPUPromoteOperands` (`afterCacheTilingHook`, 0014)                  | `#iree_codegen.workgroup_local` `alloc_tensor` buffers and `materialize_in_destination` input copies on DTCM tiles.       |
+| 5. Level 2 tiling & bufferization (IREE)        | `LLVMCPU` vectorization & One-Shot Bufferization                          | Level 2 register-tile loops, vectorized inner loops, `memref.alloc` in DTCM (0013), and `linalg.generic` copies.          |
+| 6. Buffer alignment clamping                    | `CoralNPUClampBufferAlignment` (`beforeLowerToLLVMHook` & post-`LLVMCPU`) | Clamps `memref.alloc`, `memref.alloca`, and `constant` `memref.global` / `llvm.mlir.global` alignment $> 16$ B to 16 B.   |
+| 7. DTCM copy lowering                           | `CoralNPULowerDTCMCopies` (`beforeLowerToLLVMHook`)                       | `scf.for` loops of RVV `vector.load`/`store` (or `maskedload`/`maskedstore`) along contiguous rows.                       |
+| 8. Zvt matrix codegen                           | `CoralNPUMatrixCodegen` (`beforeLowerToLLVMHook`)                         | Zvt inline-assembly microkernels and 16-byte-aligned DTCM scratch tiles (`memref.alloc` in `workgroup_local` space).      |
+| 9. Local memory packing (IREE)                  | `LLVMCPUAssignWorkgroupLocalMemory`                                       | Single 16-byte-aligned packed DTCM buffer and the export's `workgroup_local_memory` byte size.                            |
 
 The CoralNPU pass implementations live in
 [compiler/Transforms/](../../compiler/Transforms), and the pipeline hooks are
@@ -222,10 +223,12 @@ the 4 KB-aligned budget also fits after page rounding. See
 The footprint of a candidate DTCM tile (`DTCMFootprintModel` in
 [CoralNPUTileSizeSelectionFootprint.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionFootprint.cpp))
 is the sum of the DTCM buffers required by the root operation and the compute
-operations fused with it, with each buffer rounded up to **64 bytes**
-(`kBufferAlignmentBytes`, matching MLIR One-Shot Bufferization's default
-`alignment = 64` on `memref.alloc` when `LLVMCPUAssignWorkgroupLocalMemory`
-packs buffers sequentially; see §8.4 `TODOs` for lowering this to 16 B):
+operations fused with it, with each buffer rounded up to **16 bytes**
+(`kBufferAlignmentBytes` in
+[Utils.h](../../compiler/Target/Utils.h), matching CoralNPU's 128-bit =
+16-byte DTCM SRAM beat width and `kMinWorkgroupLocalAlignment = 16` in
+`LLVMCPUAssignWorkgroupLocalMemory` after `CoralNPUClampBufferAlignment` clamps
+One-Shot Bufferization's 64-byte default):
 
 - **Input slices**: the input tiles that the root and fused operations read from
   external memory, sized in their memory element types (for example, `i8` before
@@ -248,8 +251,10 @@ packs buffers sequentially; see §8.4 `TODOs` for lowering this to 16 B):
   accumulators for a fused consumer (detailed in **§7.3**).
 
 `CoralNPUTileSizeSelectionFootprint` estimates these buffers,
-`CoralNPUPromoteOperands` allocates the promoted operand buffers, and
-`CoralNPUMatrixCodegen` allocates the Zvt scratch tiles; keep all three in sync.
+`CoralNPUPromoteOperands` allocates the promoted operand buffers,
+`CoralNPUClampBufferAlignment` clamps buffer alignments to 16 bytes, and
+`CoralNPUMatrixCodegen` allocates the 16-byte-aligned Zvt scratch tiles; keep
+all four in sync.
 
 ### 4.4. Tile Search, Alignment, and Fallback (Level 2 $\to$ Levels 1 & 0)
 
@@ -467,6 +472,31 @@ representative IR before Level 2 register tiling and One-Shot Bufferization):
   when `rowLength` is dynamic or not a multiple of the vector step to keep ITCM
   code size small). `TODO(DMA)`: replace eligible row copies here with DMA
   transfers (see [dma.md](dma.md#72-dtcm-tile-promotion--workgroup-local-memory)).
+- **Buffer alignment clamping (`CoralNPUClampBufferAlignment`)**: Because
+  upstream One-Shot Bufferization and `IREEBufferizeConstantsPass` hardcode
+  `bufferAlignment = 64` (an x86 cache-line heuristic) and MLIR's
+  `VectorTransferFullPartialRewriter` hardcodes 32-byte alignment on temporary
+  stack `memref.alloca` buffers, `CoralNPUClampBufferAlignment`
+  ([CoralNPUClampBufferAlignment.cpp](../../compiler/Transforms/CoralNPUClampBufferAlignment.cpp))
+  clamps explicit `memref.alloc`, `memref.alloca`, and `constant`
+  `memref.global` / `llvm.mlir.global` byte alignments $> 16$ down to 16 bytes
+  (`kBufferAlignmentBytes` in [Utils.h](../../compiler/Target/Utils.h), matching
+  current `VLEN = 128` 128-bit `Sram_Nx128` beats and RISC-V `S128` stack
+  alignment). It skips `VectorType`-containing types, non-`constant`
+  `memref.global` / `llvm.mlir.global` ops, and `memref.alloc`/`memref.alloca`
+  ops with a direct `vector.type_cast` user (relying on CoralNPU's
+  `splitVectorTransfersTo != "vector-transfers"`, `enableFullUnroll()`,
+  `useVectorAlignment = false`, and `MemRefToLLVM` copying `memref.global`
+  alignment only onto `llvm.mlir.global` instead of transitive view/symbol or
+  `llvm.func` scans). It runs at the start of `beforeLowerToLLVMHook` (before
+  later CoralNPU hook passes that may intentionally allocate $\ge 32$-byte
+  buffers such as 32-byte DMA descriptors, and before
+  `LLVMCPUAssignWorkgroupLocalMemory` packs DTCM allocations) and again after
+  `buildLLVMCPUCodegenPassPipeline` (skipping `llvm.func` bodies to clamp
+  `constant` `.rodata` globals emitted by `IREEBufferizeConstantsPass`).
+  Downstream in LLVM, `InferAlignmentPass` (`runLLVMIRPasses`) and
+  `SelectionDAG::getConstantPool` (`runEmitObjFilePasses`) may still over-align
+  offset-0 or constant-pooled `LMUL > 1` `.rodata` vectors to 32–128 bytes.
 
 ---
 
@@ -554,7 +584,7 @@ When the root operation is a `linalg.pack` or `linalg.unpack` (which implement
 ([CoralNPUTileSizeSelectionFootprint.cpp](../../compiler/Transforms/CoralNPUTileSizeSelectionFootprint.cpp)):
 
 - **Operand slices**: Counts each shaped input operand (`* buffersPerInput`) and
-  `outs` init operand (each rounded up to 64 bytes), scaling outer tiled
+  `outs` init operand (each rounded up to 16 bytes), scaling outer tiled
   dimensions by the inner tile sizes (`getInnerTileSize`) when mapping between
   packed and unpacked layouts.
 - **`linalg.unpack` transpose temporaries (`estimateUnpackTemporariesFootprint`)**:
@@ -635,7 +665,7 @@ Zvt-shaped convolution with `+zvtbase`, Zvt-readable inputs, a zero or loaded
 initializer, un-split $K$, and at least one fused consumer has vector or peeled
 remainder tile shapes that `isZvtAccumulatorShape` accepts:
 
-- **Scratch buffer size**: One 64-byte-aligned buffer of
+- **Scratch buffer size**: One 16-byte-aligned buffer of
   `alignTo(M, 16) x N` accumulator elements (`f32` or `i32`) for each distinct
   `(M, N)` vector tile shape produced inside the DTCM tile, including peeled
   remainder tiles (`getVectorTileExtents`).
@@ -701,6 +731,14 @@ The root-level `iree-*.patch` files are applied by
   - [promote_operands_pipeline.mlir](../../tests/transforms/promote_operands_pipeline.mlir):
     end-to-end `workgroup_local_memory` size (including Zvt scratch tiles) and
     lowered vector copy loops after the full translation pipeline.
+  - [clamp_buffer_alignment.mlir](../../tests/transforms/clamp_buffer_alignment.mlir):
+    clamping of explicitly over-aligned (`> 16`-byte) scalar/complex
+    `memref.alloc`, `memref.alloca` (including nested `alloca`s), and `constant`
+    `memref.global` / `llvm.mlir.global` operations down to 16 bytes while
+    leaving unaligned, $\le 16$-byte, non-`constant` `memref.global` /
+    `llvm.mlir.global`, `VectorType`-containing, and direct
+    `vector.type_cast`-used `alloc`/`alloca` ops unchanged in
+    `CoralNPUClampBufferAlignment`.
   - [lower_dtcm_copies.mlir](../../tests/transforms/lower_dtcm_copies.mlir):
     row-vector copy lowering and masked tail handling in
     `CoralNPULowerDTCMCopies`.
@@ -814,11 +852,17 @@ The root-level `iree-*.patch` files are applied by
 - [ ] In `CoralNPUTileSizeSelectionFootprint.cpp`, account for multi-user
   producers when consumers read different slices (`FootprintWalker`) and include
   scalar operands of non-Linalg roots in `totalBytes` (`TODO(sflur)`).
-- [ ] Lower DTCM and stack buffer alignment from MLIR One-Shot Bufferization's
-  64-byte x86 cache-line default (`BufferizationOptions::bufferAlignment = 64`)
-  to CoralNPU's 16-byte (`VLEN / 8`) beat/ABI alignment in
-  `beforeLowerToLLVMHook`, `CoralNPUMatrixCodegen`, and
-  `kBufferAlignmentBytes` (`CoralNPUTileSizeSelectionFootprint.cpp`).
+- [ ] Upstream separated buffer, stack, and vector alignment controls across
+  IREE, MLIR, and LLVM so 16-byte alignment is emitted at creation time and
+  `CoralNPUClampBufferAlignment`
+  (`compiler/Transforms/CoralNPUClampBufferAlignment.cpp`) can be removed:
+  target-configurable memory/cache-line `bufferAlignment` in IREE's
+  `CPUCodegenOptions`, `IREEComprehensiveBufferizePass`, and
+  `IREEBufferizeConstantsPass`; ABI-bounded `stackAlignment` in
+  `cpuAllocationFn` (skipping `VectorType` elements) and MLIR's
+  `VectorTransferFullPartialRewriter` (`LinalgCopy` mode only, replacing its
+  hardcoded 32-byte default); and separate natural vector ABI/preferred
+  alignment (including LLVM `.rodata` control via `DataLayout` / `TTI`).
 - [ ] Remove unconditional per-dispatch zeroing of page-aligned
   `local_memory_size` (4 KB–24 KB, or up to 1,016 KB on `highmem`) in
   `iree_hal_simulator_issue_dispatch_inline`
@@ -834,5 +878,6 @@ The root-level `iree-*.patch` files are applied by
 | `promote_operands` extra config key       | `promote_operands` / `promotion_types` in `#iree_cpu.lowering_config`.                       |
 | `CoralNPUPromoteOperands` (hook 0014)     | `LLVMCPUPromoteOperandsPass` and a promotion attribute interface.                            |
 | `cpuAllocationFn` (patch 0013)            | Upstream bug fix for `workgroup_local` allocation in `LLVMCPU`.                              |
+| `CoralNPUClampBufferAlignment`            | Separated `bufferAlignment`, `stackAlignment`, and vector-split controls upstream.           |
 | `--coralnpu-dtcm-*-kb` budget flags       | Local memory size in the `#hal.executable.target` configuration dictionary.                  |
 | `CoralNPULowerDTCMCopies`                 | Vectorized memref copies in `LLVMCPU`, plus a `#coralnpu.dma` promotion attribute for DMA.   |
