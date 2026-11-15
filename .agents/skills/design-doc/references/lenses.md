@@ -58,8 +58,9 @@ Use this reference in two modes during [`../SKILL.md`](../SKILL.md):
         inversion)
       - `Performance` (solo)
       - `Skeptical` (solo)
-  - Pass each subagent the **Factual Context Pack**, `.agents/AGENTS.md`, and
-    its assigned lens row(s) from Section 1.
+  - Pass each subagent the **Factual Context Pack**,
+    [`../../../AGENTS.md`](../../../AGENTS.md), and its assigned lens row(s)
+    from Section 1.
   - **Subagent Mandate**: Operate read-only on the worktree (do not edit files
     or prompt the user directly), use local shell/git search (`git grep` /
     `rg`) and file reads to inspect `compiler/`, `runtime/`, and `third_party/`,
@@ -106,19 +107,33 @@ Before starting the interview in [`interview.md`](interview.md):
 ## 4. Adversarial Mode: Red-Teaming the Proposed Solution (`/design-doc challenge`)
 
 Unlike `/design-doc audit` (a single narrow-view Blind Reader restricted to
-cited files), `/design-doc challenge` spawns **4–6 parallel Adversarial Lens
-Subagents** (`1–2` non-opposing lenses each, per Section 2.2) that inherit local
-file-reading and shell/git search capabilities (`git grep` / `rg`) for **wide
-codebase search** (`compiler/`, `runtime/`, `third_party/`) to stress-test
-`changes/<change>.md`, `<component>.md`, and modified `.h`/`.td` interfaces:
+cited files), `/design-doc challenge` selects **2–3 highest-leverage lenses from
+Section 1** based on the proposal's actual risks and spawns **1 read-only
+Adversarial Lens Subagent per lens** (`2–3` parallel subagents total, preserving
+`[Lens: <Tag>]`) with local file-reading and shell/git search capabilities
+(`git grep` / `rg`, or strictly `rg` and file reads inside `<snapshot_dir>` per
+[`draft-from-commits.md`](draft-from-commits.md) §3.2) to stress-test
+`changes/<change>.md`, `<component>.md`, and modified `.h`/`.td` interfaces.
+Record a 1-line **`Lenses Run`** note in the final summary.
 
-- **1. Adversarial Subagent Mandate**:
-  - Read `### Alternatives Considered` and `Non-Goals` first. Do **not**
-    merely re-propose a rejected alternative unless you uncover a **concrete
-    flaw, unstated cost, broken invariant, unhandled edge case, or simpler
-    hybrid** that `<change>.md` failed to account for.
-  - Attack the proposed design strictly from each assigned lens (`[Lens:
-    <Tag>]`):
+- **1. Adversarial Subagent Mandate (Bounded & High-Signal)**:
+  - **Budget & Early Exit**: Cap repository exploration at **8–12 tool rounds**,
+    keeping searches targeted rather than issuing wide shotgun batches. Inspect
+    the proposal's core mechanism and report **at most 2–3 high-impact flaws**,
+    stopping once core risks are verified rather than digging to pad findings.
+    **Returning zero findings is a valid passing outcome**, not a failure to
+    work harder.
+  - **Concrete-Failure / YAGNI Gate**: Read `### Alternatives Considered` and
+    `Non-Goals` first. Do **not** re-propose a rejected alternative unless you
+    uncover a **concrete flaw, unstated cost, broken invariant, unhandled edge
+    case, or simpler hybrid** that `<change>.md` failed to account for. Any
+    finding proposing added machinery (a new pass, interface, abstraction,
+    config knob, or broader generality) must cite a real failure mode, existing
+    codebase workload/op, or broken invariant—never a speculative *"what if
+    later..."* scenario. Omit minor wording preferences, stylistic tweaks, and
+    speculative corner cases excluded by documented invariants.
+  - **Lens Focus (`[Lens: <Tag>]`)**: Attack the proposed design strictly from
+    your assigned lens:
     - **`Minimalist` / `Skeptical`**: What proposed `.h`/`.td` interfaces,
       pass logic, state, or scope can be deleted, merged, or solved outside
       the compiler/runtime?
@@ -129,7 +144,7 @@ codebase search** (`compiler/`, `runtime/`, `third_party/`) to stress-test
       `Incremental`**: Where does the proposal leak responsibilities across
       stages, rely on brittle special cases instead of a general invariant, or
       risk a hardware/performance cliff?
-- **2. Fact-Checking & Resolution**: Apply **Section 4.2** of
-  [`standards.md`](standards.md) (`[Verified]` vs. `[Refuted]`, preserving
-  `[Lens: ...]` tags, no automatic edits) and resolve resulting design choices
-  via [`interview.md`](interview.md).
+- **2. Verification & Two-Tier Resolution**: Apply **Section 4.2** of
+  [`standards.md`](standards.md) and [`interview.md`](interview.md) (preserving
+  `[Lens: ...]` tags, auto-applying clear-cut Tier 1 updates in the working
+  tree, and resolving open Tier 2 trade-offs interactively).

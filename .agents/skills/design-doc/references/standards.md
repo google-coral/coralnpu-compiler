@@ -172,38 +172,92 @@ modified `.h`/`.td` interfaces, and referenced files across three dimensions:
      new follow-up added prematurely to `<component>.md` instead of Section 4),
      and recommend Scope Right-Sizing (§1.2) if too large for a single CL.
 
-### 4.2 Shared Main-Agent Fact-Checking Protocol (`audit` & `challenge`)
+### 4.2 Shared Main-Agent Verification & Two-Tier Resolution Protocol
 
-When an isolated `audit` or `challenge` subagent finishes:
+Subagents remain strictly **read-only** (required for parallel runs and
+`<snapshot_dir>` isolation). After subagents finish, the main agent runs the
+skill-agnostic core protocol below paired with the active skill's scope block.
 
-1. **Do not modify any files automatically.**
-2. **Fact-check every finding against the codebase**: Discard low-signal
-   nitpicks, deduplicate overlapping points, and classify each claim as
-   **[Verified]** or **[Refuted by `<file>` (`<symbol>`)]** (preserving
-   `[Lens: ...]` tags when present).
-3. **Present findings in a clear, scannable layout**:
-   - **Blind Summary First (`audit` only)**: Present the 1-paragraph Blind
-     Summary prominently at the top.
-   - **Verified Findings (`#1`, `#2`, ...)**: Number only verified findings and
-     format each with three explicit fields so the proposed edit and
-     recommendation are immediately obvious:
+#### 4.2.1 Skill-Agnostic Core Protocol
 
-     ```markdown
-     ### #1: <Short Title> — [Verified] [Lens: <Tag>]
-     - **Issue**: 1–2 sentences stating the flaw, ambiguity, drift, or missed
-       simplification (with clickable file/symbol links).
-     - **Proposed Change**: The exact edit to make, naming the target file(s)
-       and section(s) (`<change>.md` §2, `<component>.md`, `<file>.h`, or
-       `<file>.cpp`).
-     - **Recommendation**: **<Apply | Defer to Section 4 | Skip | Decision Needed>** —
-       1-sentence rationale (or numbered options `1. (Recommended) ...`,
-       `2. ...` per [`interview.md`](interview.md) when `Decision Needed`).
-     ```
+Applies to `/design-doc challenge`, `/design-doc audit`, and `/implement-design
+audit`:
 
-   - **Refuted Findings (Separate Compact Footer)**: Group any refuted claims at
-     the bottom under **Refuted Findings (No Action Needed)** as 1-line bullets
-     (`- **[Refuted by <file> (<symbol>)]**: 1-line claim and why it already
-     holds`).
-   - **Next Step Prompt**: End by listing the recommended actions by number
-     (e.g., *"Reply to apply the recommended changes (`#1`, `#2`), override any
-     item by number, or choose an option for `#3`"*).
+1. **Codebase & Persisted-Decision Verification**:
+   - Fact-check every subagent claim against the codebase, silently drop minor
+     low-signal noise, and record refuted claims as `[Refuted by <file>
+     (<symbol>)]` for the compact footer.
+   - Check every verified finding against the active skill's **persisted
+     decision records first** (so anti-oscillation holds across fresh sessions
+     and `/compact`) and in-session chat history when present:
+     - *Re-litigated choice with no new technical evidence*: Skip it (note
+       briefly as `[Already Settled]` in the footer) rather than reversing an
+       agreed decision.
+     - *Prior-decision conflict backed by new evidence, or iterative
+       back-and-forth across passes*: Route to **Tier 2** (never auto-apply).
+2. **Partition Verified Findings: Tier 1 (Apply) vs. Tier 2 (Interview)**:
+   - **Tier 1 (Apply Directly in Working Tree)**: Edit files strictly within the
+     active skill's allowed boundary **only when the change is
+     complexity-neutral or simplifying** and preserves agreed goals, contracts,
+     and [`../../../AGENTS.md`](../../../AGENTS.md) hard gates.
+   - **Coupling Hold Rule**: Hold any Tier 1 edit targeting a section, helper,
+     or interface contested by a queued Tier 2 question until that question
+     resolves.
+   - **Tier 2 (Escalate via [`interview.md`](interview.md) §2)**: Hold file
+     edits for open architectural trade-offs, additive machinery, scope shifts,
+     contract changes, or prior-decision/oscillation conflicts, and resolve them
+     one question at a time.
+   - **Convergence / Diminishing-Returns Signal**: When verified findings across
+     repeat passes drop to zero—or consist solely of speculative/defensive
+     additions or already-settled trade-offs with no concrete invariant breaks,
+     correctness bugs, or meaningful simplifications—note convergence and
+     recommend advancing to the next workflow step.
+3. **Fixed Chat Output Layout**:
+   Present results in this order so Tier 2 options are never buried:
+   - **1. 1-Paragraph Blind Summary** (`/design-doc audit` and
+     `/implement-design audit`) or 1-line **`Lenses Run`** note (`/design-doc
+     challenge`).
+   - **2. Applied Updates** (omit if none): Compact bulleted summary of Tier 1
+     edits applied in the working tree, naming touched files/sections with
+     clickable file links and preserving any `[Lens: ...]` tags.
+   - **3. Refuted & Already-Settled** (omit if empty): Compact 1-line bullets
+     (`- **[Refuted by <file> (<symbol>)]**: ...` or `- **[Already Settled]**:
+     ...`).
+   - **4. Resolution or Next Step**:
+     - *If Tier 2 has `>= 1` items*: List the queued Tier 2 topics upfront (if
+       `>= 2`) and present **Question 1** per [`interview.md`](interview.md)
+       §2, **withholding** any terminal **`Next Step:`** prompt until the final
+       Tier 2 answer is applied.
+     - *If Tier 2 is empty (or after the final Tier 2 edit)*: State any
+       convergence note and end with a terminal **`Next Step:`** prompt
+       inviting `git diff` review (and overrides if needed) before advancing to
+       the next workflow step.
+
+#### 4.2.2 `/design-doc` Scope Block (`challenge` & `audit`)
+
+1. **Persisted Decision Records**: `### Alternatives Considered`, `Non-Goals`,
+   and documented invariants in `changes/<change>.md`.
+2. **Allowed Tier 1 Edits** (preserving the Design-Phase Boundary—never touch
+   `.cpp`/`.cc`/`.c`):
+   - Accuracy, clarity, and structural fixes in `changes/<change>.md` and
+     `<component>.md` (`+ INDEX.md`): broken file/symbol citations, C++-in-prose
+     rewrites, `<change>.md` vs. `<component>.md` deduplication, `- [x]` TODO
+     sync, and adding Section 3 test bullets covering already-specified
+     invariants.
+   - Simplifications: removing redundant prose/checks or swapping bespoke logic
+     for an **exact semantic drop-in** upstream MLIR/IREE utility (identical
+     preconditions, outputs, and fallback behavior; no new dependencies).
+   - Fail-closed guards **only** for inputs already outside `Goals` (or making
+     an already-documented fallback explicit), and appending verified
+     out-of-scope follow-ups to Section 4 while leaving `Goals` and Section 2
+     untouched.
+   - `.h` / `.td` edits **strictly** limited to doc comments, `#include`s,
+     typos, and syncing drift already agreed in `<change>.md`.
+3. **Mandatory Tier 2 Escalations**: Adding, deleting, or altering any
+   cross-file `.h`/`.td` declaration or option; adding a new pass, abstraction
+   layer, config knob, or broader generality; any fail-closed guard or Section 4
+   deferral that narrows a stated `Goal`; and any competing architectural
+   trade-off or prior-decision conflict.
+4. **`draft-from-commits` Override**: When `./agent-temp/<change>.commit`
+   exists, apply the dual-baseline tier restrictions in
+   [`draft-from-commits.md`](draft-from-commits.md) §3.3.

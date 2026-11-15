@@ -109,17 +109,42 @@ across four dimensions:
      anti-test-hacking, build, style, and comment rules in
      [`../../../AGENTS.md`](../../../AGENTS.md).
 
-### 2.2 Main-Agent Fact-Checking Protocol (No Automatic Edits)
+### 2.2 Main-Agent Verification & Two-Tier Resolution (`/implement-design audit`)
 
-Follow **Section 4.2** of
-[`../../design-doc/references/standards.md`](../../design-doc/references/standards.md):
-do not modify code or docs automatically; present the 1-paragraph Blind
-Implementation Summary first, then format each verified finding (`#1`, `#2`,
-...) with explicit **`Issue`**, **`Proposed Change`**, and **`Recommendation`**
-(`Apply`, `Defer to Section 4`, `Skip (Keep Current)`, or `Decision Needed` via
-[`../../design-doc/references/interview.md`](../../design-doc/references/interview.md))
-fields while grouping any `[Refuted by <file> (<symbol>)]` claims into a compact
-footer.
+Follow the skill-agnostic core protocol in **Section 4.2.1** of
+[`../../design-doc/references/standards.md`](../../design-doc/references/standards.md)
+(keeping the 1-paragraph Blind Summary first, preserving `[Lens: ...]` tags, and
+using
+[`../../design-doc/references/interview.md`](../../design-doc/references/interview.md)
+for Tier 2 escalations) with this `/implement-design` scope block:
+
+- **Persisted Decision Records**: **Implementation Notes & Adaptations**
+  (`<change>.md` §3) plus `### Alternatives Considered`, `Non-Goals`, and
+  documented invariants in `<change>.md`.
+- **Explicit Non-`HEAD` `<commits>` Range (Report-Only Override)**: When
+  `/implement-design audit` targets an explicit `<commits>` range whose tip is
+  not `HEAD`, do **not** edit working-tree files automatically—replace `Applied
+  Updates` and the edit-applying Tier 2 interview with a compact bulleted
+  **Verified Findings (Report-Only)** list preserving `[Lens: ...]` tags, target
+  files, and recommended actions, followed by the `Refuted & Already-Settled`
+  footer and a `Next Step:` prompt without `git diff`.
+- **Allowed Tier 1 Edits (Apply Directly & Verify)**: Apply clear-cut local
+  style fixes, dead-code removal, **exact semantic drop-in** upstream MLIR/IREE
+  utility swaps (identical preconditions, outputs, and fallbacks; no new
+  dependencies), unambiguous spec-compliance bugs, promised Section 3 test
+  coverage, and `<change>.md` / `<component>.md` / Section 3 checkbox sync while
+  enforcing all [`../../../AGENTS.md`](../../../AGENTS.md) hard gates (never
+  auto-edit `third_party/*` or `*.patch`, never weaken `CHECK` assertions or
+  disable tests, and never add `CMakeLists.txt` edits before final approval).
+- **Verification Cadence**: Run targeted `bazel test --config=dev ...` after
+  applying Tier 1 code/test edits **before** asking Tier 2 Question 1; if a Tier
+  1 edit fails tests, **revert that edit and escalate it to Tier 2**. After the
+  Tier 2 interview queue finishes, run targeted `bazel test --config=dev ...`
+  once if Tier 2 modified code or tests.
+- **Mandatory Tier 2 Escalations**: Any behavioral change beyond unambiguous
+  spec-compliance fixes, any architectural change or non-trivial refactor,
+  test-expectation changes, scope additions, `AGENTS.md` hard-gate changes, or
+  prior-decision/oscillation conflicts.
 
 ---
 

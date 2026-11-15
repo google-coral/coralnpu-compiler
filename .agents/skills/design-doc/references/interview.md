@@ -1,9 +1,10 @@
-# Context Priming & Multi-Turn Co-Design Interview (`draft`, `challenge` & `revise`)
+# Context Priming & Multi-Turn Co-Design Interview
 
 Use this reference during **Step 1 (`draft` and `draft-from-commits`)**, **Step
-2 (`challenge`)**, and **Step 4 (`revise`)** of [`../SKILL.md`](../SKILL.md) to
-give the developer self-contained codebase context and walk down the design
-decision tree before generating or updating design documents.
+2 (`challenge`)**, **Step 3 (`audit`)**, and **Step 4 (`revise`)** of
+[`../SKILL.md`](../SKILL.md)—as well as Tier 2 escalations in
+`/implement-design audit`—to give the developer self-contained codebase context
+and walk down open design decisions before writing or revising artifacts.
 
 ---
 
@@ -85,34 +86,69 @@ all load-bearing decisions are resolved:
      questions only for open forks, edge cases, or contradictions in the
      developer's outline (allowing the developer to defer any hard fork to
      targeted Design Lenses if needed).
-   - **During `challenge` or `revise`**: Use the same question format when
-     verified `challenge` findings, inline `A:` notes, or Gerrit comments open a
-     multi-branch design choice.
+   - **During `challenge`, `audit`, `revise`, or `/implement-design audit`**:
+     Use the same 1-at-a-time question format whenever Tier 2 findings, inline
+     `A:` notes, or Gerrit comments open a trade-off, scope/contract change, or
+     prior-decision conflict. When `>= 2` Tier 2 items are queued, list the
+     remaining topics in 1 line before asking Question 1, and apply each
+     resolved decision as it settles (following the active skill's verification
+     cadence).
 2. **Never Ask Codebase-Answerable Questions**: Every question must resolve a
    **design trade-off, scope boundary, or unwritten requirement/priority**,
    never a fact readable from the repository.
 3. **Question Format (Plain Markdown in Chat with Self-Contained Context)**:
    - Present each question as **plain Markdown text in chat** (never use
      `ask_question` UI modals, so the developer can reply with a number `1`, a
-     hybrid tweak, a free-form background question, or `Continue` after editing
-     `./agent-temp/<change>-draft-prep.md`).
-   - **2–3 Sentences of Self-Contained Context First**: Open every question by
-     briefly explaining the relevant codebase mechanism or hardware/pipeline
-     constraint so the developer never lacks background context.
-   - **Numbered Reply Options (`1..N`)**:
-     - **`1. (Recommended) <Option>`**: Recommended choice and its trade-off.
-     - **`2..k. <Alternative Option(s)>`**: Realistic alternatives and
-       trade-offs. **Strong Lens Evidence Only**: If a lens found strong
-       evidence for an option (e.g., *"IREE solves the same problem this way in
-       the GPU pipeline"* or *"a minor fix in a different pass bypasses the
-       problem"*), state it shortly and clearly in plain prose without
+     hybrid tweak, a free-form background question, or—during `draft`—`Continue`
+     after editing `./agent-temp/<change>-draft-prep.md`).
+   - **Example-First Self-Contained Context**: Open every question with a
+     scannable context block (never one dense paragraph cramming multiple
+     formulas, constraints, or unrelated sub-topics):
+     - **Anchor in today**: State what exists today (inputs, IR ops, parent
+       key/siblings, or current output) before stating the problem.
+     - **Show a worked example**: Illustrate schemas, IR, formulas, or failure
+       modes with a short snippet, 3–4 row table, or plugged-in numbers.
+     - **Plain English, one topic**: State the plain question each competing
+       rule answers (no jargon shorthand), and split unrelated sub-topics
+       across turns or separate bullets.
+     - **Prior-Decision & Multi-Pass Oscillation Context**: Whenever a surfaced
+       item reopens an earlier or persisted decision or reflects back-and-forth
+       oscillation across review rounds (for example, zero-history subagents
+       pulling pass placement, abstraction level, or detail back and forth),
+       state inside this context block: (1) what was decided earlier and why,
+       and (2) what new evidence challenges it—or what competing constraint is
+       driving the repeated oscillation.
+   - **Numbered Reply Options (`1..N`, with Explicit Pros, Cons & Trade-Offs)**:
+     - **`1. (Recommended) <Option>`**: Recommended choice with concise pros,
+       cons, and trade-offs.
+     - **`2..k. <Alternative Option(s)>`**: Realistic alternatives with pros,
+       cons, and trade-offs. **Strong Lens Evidence Only**: If a lens found
+       strong evidence for an option (e.g., *"IREE solves the same problem this
+       way in the GPU pipeline"* or *"a minor fix in a different pass bypasses
+       the problem"*), state it shortly and clearly in plain prose without
        `file:line` noise; omit it otherwise so options stay easy to read.
+     - **Simplicity & Tie-Breaker Default (Review / Audit Escalations)**:
+       Whenever a Tier 2 question proposes expanding scope, adding machinery, or
+       reopening an oscillating/settled choice, include an explicit option to
+       **keep the current simpler design** and persist a **1–2 line** rationale
+       (with no `[Lens: ...]` tags) in the active persisted decision record
+       (`### Alternatives Considered` / `Non-Goals`, or `Implementation Notes &
+       Adaptations`) so subsequent fresh-session passes stop reopening it. Make
+       that keep-current option **`1. (Recommended)`** for oscillation or
+       speculative-addition escalations unless concrete failure evidence
+       outweighs the added complexity.
      - **`<k+1>. Explain the background / current codebase flow or elaborate on
-       the options (or a filtered lens idea) before deciding`**: Always include
-       this option. If selected (or if the developer asks any background
-       question in chat), explain the surrounding code/pipeline flow and unpack
-       the trade-offs thoroughly, then re-present the decision question without
-       advancing prematurely.
-     - **`<k+2>. (Include once the core architecture is chosen) Use recommended
-       defaults for remaining details and draft the docs now`**: Exits the
-       interview and proceeds to authoring (`SKILL.md` Step 1.3).
+       the options before deciding`** *(during `draft`, include *"or a filtered
+       lens idea"*)*: Always include this option. If selected (or if the
+       developer asks any background question in chat), explain the surrounding
+       code/pipeline flow and unpack the trade-offs thoroughly, then re-present
+       the decision question without advancing prematurely.
+     - **`<k+2>.` Fast-Exit Option (Conditional)**:
+       - *During `draft` (once the core architecture is chosen)*: **`Use
+         recommended defaults for remaining details and draft the docs now`** —
+         exits the interview and proceeds to authoring (`SKILL.md` Step 1.3).
+       - *During review/audit steps (only when `>= 2` Tier 2 items remain; omit
+         when only 1 item remains)*: **`Apply recommended choices for this item
+         and all remaining queued items (#<i>–#<N>) now`** — applies `1.
+         (Recommended)` for the current question plus the rest of the queue and
+         finishes the step.

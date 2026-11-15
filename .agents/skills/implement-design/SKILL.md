@@ -103,8 +103,8 @@ review, the developer can ask the main agent in the current session).
     shell/git capabilities in read-only mode, reading **only**:
     - `./docs/design/changes/<change>.md` (or `archive/<change>.md`) and
       `./docs/design/<component>.md`
-    - `./.agents/skills/implement-design/references/standards.md` and
-      `./.agents/AGENTS.md`
+    - [`references/standards.md`](references/standards.md) and
+      [`../../AGENTS.md`](../../AGENTS.md)
     - The output of `<diff_cmd>`, the modified source/test files, any
       repository files explicitly referenced in `<change>.md` or
       `<component>.md`, and `#include`d MLIR/IREE `*Utils.h` / `*Interfaces.h`
@@ -112,11 +112,13 @@ review, the developer can ask the main agent in the current session).
       [`references/standards.md`](references/standards.md)
   - Instruct it to perform a read-only audit (no file edits) using **Section
     2.1** of [`references/standards.md`](references/standards.md).
-- **3. Fact-Check & Report Findings (No Automatic Edits)**:
+- **3. Verify, Apply Clear-Cut Fixes & Resolve Open Trade-Offs**:
   - Follow **Section 2.2** of
-    [`references/standards.md`](references/standards.md), then end with a
-    **`Next Step:`** prompt to specify which findings to fix or run
-    `/implement-design archive`.
+    [`references/standards.md`](references/standards.md) and
+    [`../design-doc/references/interview.md`](../design-doc/references/interview.md)
+    to fact-check findings, apply clear-cut fixes directly, resolve open
+    trade-offs interactively, and end with the conditional **`Next Step:`**
+    prompt (review `git diff`, or proceed to `/implement-design archive`).
 
 ---
 

@@ -108,18 +108,29 @@ When `./agent-temp/<change>.commit` exists during `/design-doc challenge` or
      `<abs_snapshot_dir>` as the repository root, read **only** files inside
      `<abs_snapshot_dir>/`, run **no** `git` commands, edit **no** files, and
      not be told that the change was already implemented.
-3. **Clean Up Snapshot & Dual-Baseline Fact-Check**:
-   - Remove only this run's snapshot (`rm -rf <snapshot_dir>`) and follow
-     **Section 4.2** of [`standards.md`](standards.md), labeling findings
-     against both `<base_sha>` and `<tip_sha>`:
+3. **Clean Up Snapshot & Dual-Baseline Tier Mapping**:
+   - Remove only this run's snapshot (`rm -rf <snapshot_dir>`) and apply
+     **Section 4.2** of [`standards.md`](standards.md) against both `<base_sha>`
+     and `<tip_sha>` with strict dual-baseline tier rules:
      - **[Verified — Hindsight Leak or Ambiguity]**: `<change>.md` cited a
        symbol/file added in `<base_sha>..<tip_sha>` as pre-existing at
        `<base_sha>`, or omitted context needed by a zero-context reader.
+       Eligible for **Tier 1** auto-apply **only** as doc-only edits to
+       `changes/<change>.md` and `<component>.md` (`+ INDEX.md`) that keep docs
+       truthful to `<base_sha>` / `<tip_sha>`.
      - **[Verified — Design/Code Improvement in `<base_sha>..<tip_sha>`]**:
        Exposed an edge case, fallback gap, `AGENTS.md` violation, or
        simplification/generalization opportunity in `<base_sha>..<tip_sha>`.
+       **Always route to Tier 2** (`interview.md`) so the developer decides
+       whether to adopt a design-vs-commit improvement (reconciled later in CL
+       2), defer it to Section 4, or keep docs aligned with `<tip_sha>`.
+     - **No Working-Tree `.h`/`.td` Edits**: Whenever
+       `./agent-temp/<change>.commit` exists, never edit `.h` or `.td` files in
+       the working tree during Tier 1 or Tier 2 (avoids breaking `<tip_sha>`
+       builds and §4.1 rebase stashing); update docs only and reconcile `.h`,
+       `.td`, and `.cpp` changes later in CL 2.
      - **[Refuted by `<file>` (`<symbol>`) at `<base_sha>`]**: Existing
-       guarantee at `<base_sha>`.
+       guarantee at `<base_sha>` (compact footer).
 
 ---
 

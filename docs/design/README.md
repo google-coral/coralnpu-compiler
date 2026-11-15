@@ -110,18 +110,18 @@ them as a **2-CL chain**:
 
 ### Command Reference
 
-| Command                                                     | What It Does                                                                                                                                      |
-| :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/design-doc draft [<change>] <description>`                | Co-designs the change, updates `<component>.md` + `.h`/`.td` interfaces, writes `changes/<change>.md`, and stops for your review.                 |
-| `/design-doc draft-from-commits [<commits>] [<change>]`     | Abstracts and critiques a pre-code design from existing commit(s) (`<commits>`, default `HEAD`), highlighting opportunities to simplify the code. |
-| `/design-doc challenge [<change>]`                          | Spawns parallel adversarial Design Lens subagents (with wide codebase search) to red-team the proposed solution without editing files.            |
-| `/design-doc audit [<change>]`                              | Spawns a zero-history narrow-view subagent returning a **Blind Comprehension Summary** and fact-checked findings without editing files.           |
-| `/design-doc revise [<change>] [<feedback>]`                | Updates `changes/<change>.md`, `<component>.md`, and `.h`/`.td` interfaces from inline `A:` comments or Gerrit review feedback.                   |
+| Command                                                     | What It Does                                                                                                                                                        |
+| :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/design-doc draft [<change>] <description>`                | Co-designs the change, updates `<component>.md` + `.h`/`.td` interfaces, writes `changes/<change>.md`, and stops for your review.                                   |
+| `/design-doc draft-from-commits [<commits>] [<change>]`     | Abstracts and critiques a pre-code design from existing commit(s) (`<commits>`, default `HEAD`), highlighting opportunities to simplify the code.                   |
+| `/design-doc challenge [<change>]`                          | Spawns 2–3 bounded adversarial Design Lens subagents (wide search), applies clear-cut fixes directly, and interviews on open trade-offs.                            |
+| `/design-doc audit [<change>]`                              | Spawns a zero-history narrow-view subagent for a **Blind Comprehension Summary**, applies clear-cut fixes directly, and interviews on open trade-offs.              |
+| `/design-doc revise [<change>] [<feedback>]`                | Updates `changes/<change>.md`, `<component>.md`, and `.h`/`.td` interfaces from inline `A:` comments or Gerrit review feedback.                                     |
 | `/design-doc commit [<change>]`                             | Commits `changes/<change>.md` as CL 1 and `<component>.md` + `.h`/`.td` as `[WIP]` CL 2 (`CL 2a..2n`), or offers to fold `<component>.md` for `draft-from-commits`. |
-| `/implement-design code [<change>]`                         | Implements Section 3 tasks on top of CL 2 (`CL 2a..2n`), keeping `<change>.md` and `<component>.md` synced as the code evolves.                   |
-| `/implement-design audit [<change>] [<commits>]`            | Spawns a zero-history subagent to audit the implementation diff for semantic/invariant alignment, test coverage, and `AGENTS.md` compliance.      |
-| `/implement-design archive [<change>]`                      | Runs a coherence pass and TODOs update on `<component>.md`, moves `changes/<change>.md` to `archive/` via `git mv`, and formats code.             |
-| `/implement-design file-followups [<change>]`               | Deduplicates and files remaining Buganizer-bound Section 4 follow-up items into component `2161972` after CL 2 receives `+2`.                     |
+| `/implement-design code [<change>]`                         | Implements Section 3 tasks on top of CL 2 (`CL 2a..2n`), keeping `<change>.md` and `<component>.md` synced as the code evolves.                                     |
+| `/implement-design audit [<change>] [<commits>]`            | Spawns a zero-history subagent to audit the implementation diff, applies clear-cut fixes directly, and interviews on open trade-offs.                               |
+| `/implement-design archive [<change>]`                      | Runs a coherence pass and TODOs update on `<component>.md`, moves `changes/<change>.md` to `archive/` via `git mv`, and formats code.                               |
+| `/implement-design file-followups [<change>]`               | Deduplicates and files remaining Buganizer-bound Section 4 follow-up items into component `2161972` after CL 2 receives `+2`.                                       |
 
 ### Key Usage Tips
 

@@ -39,7 +39,7 @@ headers and `.td` TableGen files).
 | :---------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
 | `/design-doc draft [<change>] ...`                          | Co-design via parallel lenses & interview, update `<component>.md` + `.h`/`.td`, write `changes/<change>.md`, stop for review. |
 | `/design-doc draft-from-commits [<commits>] [<change>] ...` | Abstract and critique pre-code `changes/<change>.md` + `<component>.md` updates from an existing commit range (`<commits>`).   |
-| `/design-doc challenge [<change>]`                          | Spawn parallel adversarial Design Lens subagents (with wide codebase search) to red-team the drafted proposal (repeatable).    |
+| `/design-doc challenge [<change>]`                          | Spawn 2–3 bounded adversarial Design Lens subagents (wide codebase search) to red-team the drafted proposal (repeatable).      |
 | `/design-doc audit [<change>]`                              | Spawn an isolated narrow-view subagent with zero chat history for blind comprehension and readability checks (repeatable).     |
 | `/design-doc revise [<change>] ...`                         | Update `changes/<change>.md`, `<component>.md`, and `.h`/`.td` interfaces from inline `A:` notes or Gerrit reviewer comments.  |
 | `/design-doc commit [<change>]`                             | Commit `changes/<change>.md` as CL 1 and `<component>.md` (+ `INDEX.md` and `.h`/`.td`) as chained `[WIP]` CL 2 (or amend).    |
@@ -108,12 +108,13 @@ or `commit` automatically during `draft`, `draft-from-commits`, or `revise`.
 Run **only when explicitly requested** (repeatable):
 
 1. Read and apply **Section 4 (`Adversarial Mode`)** of
-   [`references/lenses.md`](references/lenses.md) and
+   [`references/lenses.md`](references/lenses.md), **Section 4.2** of
+   [`references/standards.md`](references/standards.md), and
    [`references/interview.md`](references/interview.md) (plus **Section 3** of
    [`references/draft-from-commits.md`](references/draft-from-commits.md) if
-   `./agent-temp/<change>.commit` exists) to spawn 4–6 parallel adversarial
-   lens subagents with wide codebase search, fact-check findings (`[Verified]`
-   vs. `[Refuted]`), and walk through resulting choices via `interview.md`.
+   `./agent-temp/<change>.commit` exists) to spawn 2–3 bounded adversarial lens
+   subagents, apply clear-cut verified updates directly, and resolve open
+   trade-offs via `interview.md`.
 
 ---
 
@@ -128,13 +129,16 @@ Run **only when explicitly requested** (repeatable):
    shell/git capabilities in read-only mode, instructed to read **only**
    `./docs/design/changes/<change>.md`, modified `./docs/design/<component>.md`
    (`+ INDEX.md`), modified `.h`/`.td` interface files,
-   `./.agents/skills/design-doc/references/standards.md`, `./.agents/AGENTS.md`,
-   and repository files explicitly referenced in `<change>.md` or
-   `<component>.md`, and evaluate **Section 4.1** of
-   [`references/standards.md`](references/standards.md) without editing files.
+   [`references/standards.md`](references/standards.md),
+   [`../../AGENTS.md`](../../AGENTS.md), and repository files explicitly
+   referenced in `<change>.md` or `<component>.md`, and evaluate **Section 4.1**
+   of [`references/standards.md`](references/standards.md) without editing
+   files.
 3. Follow **Section 4.2** of
-   [`references/standards.md`](references/standards.md) to fact-check and report
-   findings, ending with a **`Next Step:`** prompt (`/design-doc revise` or
+   [`references/standards.md`](references/standards.md) and
+   [`references/interview.md`](references/interview.md) to fact-check findings,
+   apply clear-cut fixes directly, resolve open trade-offs interactively, and
+   end with the conditional **`Next Step:`** prompt (`/design-doc revise` or
    `/design-doc commit`).
 
 ---
