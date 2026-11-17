@@ -70,7 +70,8 @@ struct CoralNPUOptions {
   std::string targetABI = "ilp32";
   std::string targetCPUFeatures =
       "+m,+f,+zbb,+zvl128b,+zve32f,+zfbfmin,+zvfbfmin,+zvfbfwma,"
-      "+zvtbase,+zvt8e,+zvt16e,+zvti8i32mm,+zvtf16f32mm,+zvtf32f32mm";
+      "+zvtbase,+zvt8e,+zvt16e,+zvti8i32mm,+zvti16i32mm,+zvtf16f32mm,"
+      "+zvtf32f32mm";
   bool linkEmbedded = true;
   bool debugSymbols = false;
   bool keepLinkerArtifacts = false;

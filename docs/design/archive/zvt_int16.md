@@ -93,8 +93,25 @@ and [`compiler/Transforms/Passes.td`](../../../compiler/Transforms/Passes.td).
   scratch. In
   `third_party/iree/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp`
   (`iree-0006`), inspect both operands (including 1-channel convolution
-  extracts, without `arith.extui`) and verify matching narrow input and 32-bit
-  accumulator types before deferring contract lowering.
+  extracts, rejecting `arith.extui` and data-replicating `vector.broadcast`) and
+  verify matching narrow input and 32-bit accumulator types before deferring
+  contract lowering.
+- **Stream Passthrough Clone Preservation
+  (`iree-0016-stream-trace-tied-uses-through-passthrough.patch`)**: Step through
+  variadic `util.optimization_barrier` and `arith.select` passthroughs in
+  `third_party/iree/compiler/src/iree/compiler/Dialect/Stream/Analysis/ResourceUsage.cpp`
+  and
+  `third_party/iree/compiler/src/iree/compiler/Dialect/Stream/Transforms/ElideAsyncCopies.cpp`
+  so protective Stream clones of constant, borrowed, or pre-passthrough
+  resources (such as the seeded `linalg.mmt4d` accumulator in
+  `tests/{spike,verilator}/matmul_i16_i32_16_8-8_16.mlir`) are preserved rather
+  than elided.
+- **LLVM Assembler Feature (`llvm-project-0001-add-zvt-support.patch`,
+  `compiler/Target/CoralNPUTargetBackend.h`)**: Define `Zvti16i32mm` in
+  `third_party/llvm-project/llvm/lib/Target/RISCV/RISCVFeatures.td`, accept
+  `vtmms.tvv` and `vtmmu.tvv` under either `Zvti8i32mm` or `Zvti16i32mm` in
+  `third_party/llvm-project/llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td`, and
+  include `+zvti16i32mm` in `CoralNPUTargetBackend`'s default feature string.
 - **Roofline Placement (`compiler/Transforms/CoralNPUAffinityAnnotation.cpp`)**:
   Read pre-extension input bitwidths on Zvt roots via `getZvtLoadSource`,
   scoring full-tile `i16 -> i32` Zvt roots at `204.8 GOPS` (scaled by tile
@@ -106,33 +123,45 @@ and [`compiler/Transforms/Passes.td`](../../../compiler/Transforms/Passes.td).
 
 ### MPACT, Spike & Verilator RTL Enablement
 
-- **MPACT (`mpact-riscv-0005-zvt-i16-matmul.patch`, `MODULE.bazel`)**: Extend
+- **MPACT (`mpact-riscv-0004-zvt-i16-matmul.patch`, `MODULE.bazel`)**: Extend
   `vtmms.tvv` in `riscv/riscv_zvt_instructions.cc` (placed after `0001`/`0002`
   to cover both fast and generic loops) to accept `SEW = 16, TWIDEN = 2` with
   `uint32_t` modular accumulation matching RTL wraparound without signed UB.
-- **Spike (`riscv-isa-sim-0002-zvt-i16-matmul.patch`,
-  `build_tools/bazel/extensions.bzl`)**: Extend `riscv/insns/vtmms_tvv.h` and
-  `riscv/v_ext_macros.h` on `riscv_isa_sim` to accept `SEW = 16, TWIDEN = 2`
-  `vtmms.tvv` (`uint32_t` wraparound + `dot_product<int64_t>`) and `SEW = 16`
-  `altfmt = 1`.
+  `MODULE.bazel` also advances `mpact-sim` (`9436377658` to `de9982fbec`) and
+  `mpact-riscv` (`4262467a57` to `ef756043dc`, including out-of-range `vstart`
+  CSR write clamping).
+- **Spike (`build_tools/bazel/extensions.bzl`)**: Apply
+  `@coralnpu_hw//third_party/spike:0010-Add-Zvti16i32mm-support.patch` to
+  `riscv_isa_sim` (synced with `rules/repo_defs.bzl`,
+  `third_party/spike.BUILD`, and `sw/coralnpu_sim/spike_simulator.h` in
+  `third_party/coralnpu`) for `EXT_ZVTI16I32MM` (`SEW = 16, widen = 2`
+  `vtmmu.tvv`/`vtmms.tvv` with `uint32_t` wraparound, 4-register tile alignment,
+  and `SEW = 16` `altfmt = 1`).
 - **Verilator RTL & FPGA (`third_party/coralnpu`)**: Bump `third_party/coralnpu`
-  (`4d82d8701` to `1aeb3f46c`) so Verilator VME
+  (`4d82d8701` to `eea8019a8`) so Verilator VME
   (`hdl/chisel/src/coralnpu/{Core,rvv/RvvCore}.scala`,
   `hdl/chisel/src/coralnpu/flags.bzl`) and Nexus FPGA matrix builds
   (`fpga/{BUILD,chip_nexus.core}`) enable `ZVTI16I32MM_ON`, and RVV/scalar
   decode (`hdl/chisel/src/coralnpu/{rvv/RvvDecode,scalar/Decode}.scala`,
   `hdl/verilog/rvv/design/RvvFrontEnd.sv`) accepts `SEW = 16, LMUL = 2,
-  mtwiden = 2` integer `vtmm` ops (alongside cosim/UVM/AXI updates).
+  mtwiden = 2` integer `vtmm` ops with Slot-0 dynamic OP-VE traps (alongside
+  Spike `0010`, TileLink-UL banked TCMs + `hw_sim` AXI fixes, RVV
+  fault-only-first/interlock/mask-tail and float/LSU/ROB/branch decode fixes,
+  scalar stall fixes on vector/matrix ops, opt-in `CoreAxi` transpose-DMA and
+  memcopy bypass (`enableDma`, off by default), `CoreTlulCSR` multi-register
+  writes, 16-bit Wide-SPI Nexus FPGA host support, and CoralFlow/host-CPU Bazel
+  action bounds).
 
 ### Alternatives Considered
 
-- **Add a separate `+zvti16i32mm` LLVM target feature**: Rejected for this CL to
-  avoid patching
-  `third_party/llvm-project/llvm/lib/Target/RISCV/RISCVFeatures.td`, since
-  `vtmms.tvv` assembles under `+zvti8i32mm` and Verilator VME and Nexus FPGA
-  matrix builds enable `ZVTI16I32MM_ON` alongside `ZVT_ON`. RTL builds with
-  `+zvtbase` and `ZVTI16I32MM_ON` disabled trap at decode instead of falling
-  back in the compiler (§4).
+- **Gate compiler Zvt passes on `+zvti16i32mm`**: Deferred to §4. All four Zvt
+  precisions currently gate pre-HAL placement, tiling, scratch budgeting, and
+  microkernel codegen uniformly on `+zvtbase` (`matrix_codegen.md` §3), and
+  Verilator VME and Nexus FPGA matrix builds enable `ZVTI16I32MM_ON` alongside
+  `ZVT_ON`. Plumbing per-type sub-extension flags across those passes is tracked
+  together for all Zvt sub-extensions in §4; until then, RTL builds with
+  `+zvtbase` and `ZVTI16I32MM_ON` disabled trap at decode rather than falling
+  back in the compiler.
 - **Auto-promote non-widening `i16 -> i16` to `i32` (`i16 -> i32 -> i16`)**:
   Two's-complement `i32` accumulation plus narrowing `vncvt.x.x.w` truncation is
   bit-exact modulo $2^{16}$, but quantized ML models do not emit non-widening
@@ -152,27 +181,36 @@ and [`compiler/Transforms/Passes.td`](../../../compiler/Transforms/Passes.td).
 - [x] **Step 2 (`compiler/Transforms/CoralNPUMatrixCodegen.cpp`,
   `compiler/Transforms/Passes.td`)**: Emit 16-bit `vtmms.tvv`, tighten
   broadcast/extension/unfused guards, add `i32` transpose drains & `Passes.td`.
-- [x] **Step 3 (`iree-0006-llvmcpu-add-beforelowertollvmhook.patch`)**: Check
-  both operands (with 1-channel conv extracts, without `arith.extui`) and verify
-  narrow input + 32-bit accumulator types in `isZvtMatrixContraction`.
-- [x] **Step 4 (`mpact-riscv-0005-zvt-i16-matmul.patch`, `MODULE.bazel`)**:
+- [x] **Step 3 (`iree-0006-llvmcpu-add-beforelowertollvmhook.patch`,
+  `iree-0016-stream-trace-tied-uses-through-passthrough.patch`,
+  `llvm-project-0001-add-zvt-support.patch`,
+  `compiler/Target/CoralNPUTargetBackend.h`)**: Check both operands (with
+  1-channel conv extracts, rejecting `arith.extui` and data-replicating
+  broadcasts) and verify narrow input + 32-bit accumulator types in
+  `isZvtMatrixContraction`, preserve constant, borrowed, or pre-passthrough
+  Stream clones across `util.optimization_barrier` and `arith.select`, and
+  enable `+zvti16i32mm` in LLVM and `CoralNPUTargetBackend`.
+- [x] **Step 4 (`mpact-riscv-0004-zvt-i16-matmul.patch`, `MODULE.bazel`)**:
   Enable `SEW = 16, TWIDEN = 2` 16-bit integer lanes + `uint32_t` accumulation
-  after `0002`.
-- [x] **Step 5 (`riscv-isa-sim-0002-zvt-i16-matmul.patch`,
-  `build_tools/bazel/extensions.bzl`)**: Enable `SEW = 16, TWIDEN = 2`
-  (`uint32_t` + `dot_product<int64_t>`) and `SEW = 16` `altfmt` in Spike.
-- [x] **Step 6 (`third_party/coralnpu`)**: Bump submodule to `1aeb3f46c` for
-  `ZVTI16I32MM_ON` Verilator VME / Nexus FPGA matrix support and upstream
-  RTL/cosim updates (§2).
+  after `0002`, and bump `mpact-sim` and `mpact-riscv`.
+- [x] **Step 5 (`build_tools/bazel/extensions.bzl`)**: Register
+  `@coralnpu_hw//third_party/spike:0010-Add-Zvti16i32mm-support.patch` on
+  `riscv_isa_sim` for `EXT_ZVTI16I32MM` (`SEW = 16, widen = 2` `vtmms.tvv` and
+  `SEW = 16` `altfmt`).
+- [x] **Step 6 (`third_party/coralnpu`)**: Bump submodule to `eea8019a8` for
+  `ZVTI16I32MM_ON` Verilator VME / Nexus FPGA matrix support, Spike
+  `0010-Add-Zvti16i32mm-support.patch`, and upstream RTL/cosim/DMA updates (§2).
 - [x] **Step 7 (`examples/matmul-aot/`)**: Add `--int16` to `export_matmul.py`,
   `run_matmul.py`, and `test_matmul.sh` (MPACT and Verilator), plus
   `test_mmt4d.py`.
 - [x] **Tests (`tests/transforms/`, `tests/spike/`, `tests/verilator/`)**:
   Positive/negative `CHECK`/`NOVSET`/`GATE`/`SMALL` tests in
-  `matrix_codegen.mlir`, `tile_size_selection_{dtcm,footprint}.mlir`, and
-  `affinity_annotation.mlir`, plus Spike, MPACT, and Verilator runs of
+  `matrix_codegen.mlir`, `zvt_i16_assembler.mlir`,
+  `tile_size_selection_{dtcm,footprint}.mlir`, and `affinity_annotation.mlir`,
+  IREE Stream lit tests in `iree-0016`, plus Spike, MPACT, and Verilator runs of
   `matmul_i16_i32_16_8-8_16.mlir`.
-- [x] **Build, Doc & Archive Sync**: Register `matmul_i16_i32_16_8-8_16` in
+- [x] **Build, Doc & Archive Sync**: Register `zvt_i16_assembler.mlir` in
+  `tests/transforms/CMakeLists.txt` and `matmul_i16_i32_16_8-8_16` in
   `tests/spike/{BUILD.bazel,CMakeLists.txt}` (`mpact` outside
   `if(CORALNPU_ENABLE_SPIKE)`) and
   `tests/verilator/{BUILD.bazel,CMakeLists.txt}`, update
@@ -183,9 +221,7 @@ and [`compiler/Transforms/Passes.td`](../../../compiler/Transforms/Passes.td).
 
 ## 4. Follow-Up Items (For Reviewer Approval -> Buganizer component `2161972`)
 
-- [ ] **Add a dedicated `+zvti16i32mm` target feature** (`P3` |
-  `llvm-project-0001-add-zvt-support.patch`,
-  `compiler/Target/CoralNPUTargetBackend.h`,
+- [ ] **Gate compiler Zvt passes on `+zvti16i32mm`** (`P3` |
   `compiler/Transforms/CoralNPUTileSizeSelectionUtils.{h,cpp}`,
   `compiler/Transforms/CoralNPUTileSizeSelectionFootprint.cpp`,
   `compiler/Transforms/CoralNPUAffinityAnnotation.cpp`,

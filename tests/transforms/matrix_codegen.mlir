@@ -1641,10 +1641,12 @@ module {
     hal.executable.variant public @coralnpu_elf target(#target) {
       builtin.module {
         // CHECK-LABEL: func.func @matmul_i16_broadcast_operand(
+        // GATE-LABEL: func.func @matmul_i16_broadcast_operand(
         func.func @matmul_i16_broadcast_operand(%arg0: memref<1x8xi16>, %arg1: memref<8x16xi16>, %arg2: memref<16x16xi32>) {
           // CHECK-NOT: llvm.inline_asm
           // CHECK-NOT: memref.alloc
           // CHECK-NOT: vector.contract
+          // GATE-NOT: vector.contract
           %c0 = arith.constant 0 : index
           %c8 = arith.constant 8 : index
           %c1 = arith.constant 1 : index
@@ -1658,6 +1660,48 @@ module {
               indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d2)>, affine_map<(d0, d1, d2) -> (d2, d1)>, affine_map<(d0, d1, d2) -> (d0, d1)>],
               iterator_types = ["parallel", "parallel", "reduction"]
             } %lhs, %rhs, %acc : vector<16x1xi16>, vector<1x16xi16> into vector<16x16xi32>
+            %rhs_bcast = vector.broadcast %raw : vector<1x1xi16> to vector<1x16xi16>
+            %next2 = vector.contract {
+              indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d2)>, affine_map<(d0, d1, d2) -> (d2, d1)>, affine_map<(d0, d1, d2) -> (d0, d1)>],
+              iterator_types = ["parallel", "parallel", "reduction"]
+            } %lhs, %rhs_bcast, %next : vector<16x1xi16>, vector<1x16xi16> into vector<16x16xi32>
+            scf.yield %next2 : vector<16x16xi32>
+          }
+          vector.transfer_write %res, %arg2[%c0, %c0] {in_bounds = [true, true]} : vector<16x16xi32>, memref<16x16xi32>
+          // GATE: return
+          return
+        }
+      }
+    }
+  }
+
+  // Rank-only vector.broadcast (16 -> 1x16, adding a unit leading dim) is
+  // preserved by iree-0006 (GATE) and lowered to Zvt by CoralNPUMatrixCodegen.
+  // CHECK-LABEL: hal.executable private @matmul_i16_unit_dim_broadcast {
+  hal.executable private @matmul_i16_unit_dim_broadcast {
+    hal.executable.variant public @coralnpu_elf target(#target) {
+      builtin.module {
+        // CHECK-LABEL: func.func @matmul_i16_unit_dim_broadcast(
+        // GATE-LABEL: func.func @matmul_i16_unit_dim_broadcast(
+        func.func @matmul_i16_unit_dim_broadcast(%arg0: memref<16x8xi16>, %arg1: memref<8x16xi16>, %arg2: memref<16x16xi32>) {
+          // CHECK: llvm.inline_asm {{.*}}vtmms.tvv mt0
+          // GATE-NOT: func.func
+          // GATE: vector.contract
+          %c0 = arith.constant 0 : index
+          %c8 = arith.constant 8 : index
+          %c1 = arith.constant 1 : index
+          %cst_i16 = arith.constant 0 : i16
+          %acc_init = arith.constant dense<0> : vector<16x16xi32>
+          %res = scf.for %iv = %c0 to %c8 step %c1 iter_args(%acc = %acc_init) -> (vector<16x16xi32>) {
+            %lhs16 = vector.transfer_read %arg0[%c0, %iv], %cst_i16 : memref<16x8xi16>, vector<16x1xi16>
+            %lhs = arith.extsi %lhs16 : vector<16x1xi16> to vector<16x1xi32>
+            %rhs1d = vector.load %arg1[%iv, %c0] : memref<8x16xi16>, vector<16xi16>
+            %rhs16 = vector.broadcast %rhs1d : vector<16xi16> to vector<1x16xi16>
+            %rhs = arith.extsi %rhs16 : vector<1x16xi16> to vector<1x16xi32>
+            %next = vector.contract {
+              indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d2)>, affine_map<(d0, d1, d2) -> (d2, d1)>, affine_map<(d0, d1, d2) -> (d0, d1)>],
+              iterator_types = ["parallel", "parallel", "reduction"]
+            } %lhs, %rhs, %acc : vector<16x1xi32>, vector<1x16xi32> into vector<16x16xi32>
             scf.yield %next : vector<16x16xi32>
           }
           vector.transfer_write %res, %arg2[%c0, %c0] {in_bounds = [true, true]} : vector<16x16xi32>, memref<16x16xi32>

@@ -410,10 +410,11 @@ The LLVM RISC-V backend adds Zvt v0.4 support via
 `llvm-project-0001-add-zvt-support.patch`:
 
 - **Extension Features** (`RISCVFeatures.td`): Defines `Zvtbase`, `Zvt8e`,
-  `Zvt16e`, `Zvt64e`, `Zvti8i32mm`, `Zvtf8f32mm`, `Zvtf16f32mm`, and
-  `Zvtf32f32mm`. By default, `CoralNPUTargetBackend` enables
-  `+zvtbase,+zvt8e,+zvt16e,+zvti8i32mm,+zvtf16f32mm,+zvtf32f32mm`
-  (`vtfmm.alt.tvv` is gated by `Zvtf16f32mm` or `Zvtf8f32mm`).
+  `Zvt16e`, `Zvt64e`, `Zvti8i32mm`, `Zvti16i32mm`, `Zvtf8f32mm`, `Zvtf16f32mm`,
+  and `Zvtf32f32mm`. By default, `CoralNPUTargetBackend` enables
+  `+zvtbase,+zvt8e,+zvt16e,+zvti8i32mm,+zvti16i32mm,+zvtf16f32mm,+zvtf32f32mm`
+  (`vtfmm.alt.tvv` is gated by `Zvtf16f32mm` or `Zvtf8f32mm`, and `vtmms.tvv`
+  and `vtmmu.tvv` by `Zvti8i32mm` or `Zvti16i32mm`).
 - **Instruction Registration** (`RISCVInstrInfoZvt.td`): Registers encodings,
   pseudos, and assembler parsing for `vtfmm.tvv`, `vtfmm.alt.tvv`, `vtmms.tvv`,
   `vtmmu.tvv`, `vtzero`, `vtmv.v.t`, `vtmv.t.v`, `msetmtype`, `msetmtypei`,
@@ -434,19 +435,19 @@ The LLVM RISC-V backend adds Zvt v0.4 support via
 | :--------------------------------- | :---------------------------------------: | :------------------: | :----------------------------------------------: | :------------------------------------------: | :---------------------------------------------------------------: |
 | `matmul`, `batch_matmul`, `mmt4d`  | **FP32**                                  | **FP32**             | `+zvtf32f32mm`                                   | `vtfmm.tvv` (Zvt Hardware)                   | **Supported**                                                     |
 | `matmul`, `batch_matmul`, `mmt4d`  | **BF16**                                  | **FP32**             | `+zvtf16f32mm`                                   | `vtfmm.alt.tvv` (Zvt Hardware)               | **Supported**                                                     |
-| `matmul`, `batch_matmul`, `mmt4d`  | **INT16**                                 | **INT32**            | `+zvti8i32mm`                                    | `vtmms.tvv` (Zvt Hardware)                   | **Supported**                                                     |
+| `matmul`, `batch_matmul`, `mmt4d`  | **INT16**                                 | **INT32**            | `+zvti16i32mm`                                   | `vtmms.tvv` (Zvt Hardware)                   | **Supported**                                                     |
 | `matmul`, `batch_matmul`, `mmt4d`  | **INT8**                                  | **INT32**            | `+zvti8i32mm`                                    | `vtmms.tvv` (Zvt Hardware)                   | **Supported**                                                     |
 | `matmul`, `batch_matmul`, `mmt4d`  | **INT16**                                 | **INT16**            | `+m,+f,+zvl128b,+zve32f`                         | RVV Vector Path / Fallback                   | **Supported**                                                     |
 | `matmul`, `batch_matmul`, `mmt4d`  | **INT32**                                 | **INT32**            | `+m,+f,+zvl128b,+zve32f`                         | RVV Vector Path / Fallback                   | **Supported**                                                     |
-| `conv_2d_nhwc_hwcf` / spatial conv | **FP32** / **BF16** / **INT16** / **INT8** | **FP32** / **INT32** | `+zvtf32f32mm` / `+zvtf16f32mm` / `+zvti8i32mm`  | `vtfmm.tvv` / `vtfmm.alt.tvv` / `vtmms.tvv`  | **Supported** (direct multi-reduction loop chain; IGEMM see §2.0) |
+| `conv_2d_nhwc_hwcf` / spatial conv | **FP32** / **BF16** / **INT16** / **INT8** | **FP32** / **INT32** | `+zvtf32f32mm` / `+zvtf16f32mm` / `+zvti16i32mm` / `+zvti8i32mm` | `vtfmm.tvv` / `vtfmm.alt.tvv` / `vtmms.tvv`  | **Supported** (direct multi-reduction loop chain; IGEMM see §2.0) |
 
 Both compiler passes gate only on `+zvtbase`. The `Extension` column lists each
 multiply instruction's feature flag, though the assembler also accepts
-`vtfmm.tvv` under `+zvtf16f32mm` and `vtfmm.alt.tvv` under `+zvtf8f32mm`. If
-`+zvtbase` is enabled without an accepted multiply sub-extension, the inline
-assembler rejects the instruction rather than falling back. RTL gates `SEW=16`
-`vtmms.tvv` on `ZVTI16I32MM_ON` (enabled in Verilator VME and Nexus FPGA matrix
-builds), trapping when disabled.
+`vtfmm.tvv` under `+zvtf16f32mm`, `vtfmm.alt.tvv` under `+zvtf8f32mm`, and
+`vtmms.tvv` under either integer flag. If `+zvtbase` is enabled without an
+accepted multiply sub-extension, the inline assembler rejects the instruction
+rather than falling back. RTL gates `SEW=16` `vtmms.tvv` on `ZVTI16I32MM_ON`
+(enabled in Verilator VME and Nexus FPGA matrix builds), trapping when disabled.
 
 ### Fallback Behavior
 
@@ -510,11 +511,16 @@ Unit tests for the Zvt passes live in `tests/transforms/`:
     in `@vecmat_bf16_jammed`). A third (`GATE`) runs
     `LLVMCPUVirtualVectorLowering` to verify that `iree-0006` defers partial-$N$
     ($N \times K$ RHS), 1-channel integer convolution (`FromElementsOp` +
-    `ExtractOp`), and signed widening `i16 -> i32` / chained
-    `i8 -> i16 -> i32` contractions while lowering non-widening `i16 -> i16` and
-    mixed signed/unsigned `i16 x ui16 -> i32` contractions.
+    `ExtractOp`), rank-only unit-dim `vector.broadcast`, and signed widening
+    `i16 -> i32` / chained `i8 -> i16 -> i32` contractions while lowering
+    non-widening `i16 -> i16`, mixed signed/unsigned `i16 x ui16 -> i32`, and
+    data-replicating `vector.broadcast` contractions.
 - `convolution_to_igemm.mlir`: Tests affinity-aware `im2col` conversion in
   `ConvolutionToIGEMM`.
+- `zvt_i16_assembler.mlir`: Verifies that `CoralNPUTargetBackend` enables
+  `+zvti16i32mm` by default, compiles an `i16 -> i32` matmul to `vtmms.tvv`
+  with `+zvti16i32mm` alone (without `+zvti8i32mm`), and rejects `vtmms.tvv`
+  when `+zvtbase` is enabled without either integer multiply sub-extension.
 
 To run the transform test suite:
 
@@ -538,6 +544,24 @@ bazel test --config=dev --keep_going //tests:ci
 
 # Or using CTest (with matching CI label):
 ctest -L ci -j 64
+```
+
+`tests/{spike,verilator}/matmul_i16_i32_16_8-8_16.mlir` also run a $32 \times 32$
+`TK = 2` transposed `i16 -> i32` contraction, a `linalg.batch_matmul`, and a
+seeded $1 \times 4 \times 16 \times 1$ `linalg.mmt4d` (lowered via the §2.3
+generic RVV fallback) whose accumulator is a constant behind
+`util.optimization_barrier`. That seeded `mmt4d` relies on
+`iree-0016-stream-trace-tied-uses-through-passthrough.patch`, which preserves
+protective Stream clones of constant, borrowed, or pre-passthrough resources
+across `util.optimization_barrier` and `arith.select` passthroughs
+(`RefineUsage`, `ElideAsyncCopies`); without the patch the test fails. The IREE
+lit suites that cover `iree-0016` do not run as part of `//tests:ci`:
+
+```bash
+bazel test --config=dev \
+  @iree_core//compiler/src/iree/compiler/Dialect/Stream/Transforms/test:refine_usage.mlir.test \
+  @iree_core//compiler/src/iree/compiler/Dialect/Stream/Transforms/test:elide_async_copies.mlir.test \
+  @iree_core//compiler/src/iree/compiler/Dialect/Stream/Transforms/test:elide_async_copies_tensor_import_consume.mlir.test
 ```
 
 ### 4.3. AOT Matmul Harness (MPACT / Verilator)
@@ -616,3 +640,9 @@ python3 test_mmt4d.py --bazel
   affinity filter. Enabling implicit GEMM requires moving it after placement (or
   into target configuration) with an allowlist that excludes depthwise and
   dilated convolutions.
+- **Per-Precision Zvt Sub-Extension Gating (`TODO(zvt)`)**: Pre-HAL placement,
+  DTCM tiling/footprint estimation, `CoralNPUMatrixCodegen`, and `iree-0006`
+  currently gate only on `+zvtbase` (§3). Checking per-precision flags
+  (`+zvtf32f32mm`, `+zvtf16f32mm`, `+zvti16i32mm`, `+zvti8i32mm`) will let
+  partial-precision Zvt targets fall back to RVV in the compiler instead of
+  failing inline assembly or trapping at RTL decode.

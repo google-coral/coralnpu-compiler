@@ -168,21 +168,21 @@ git_override(
 bazel_dep(name = "mpact-sim", version = "1.0.2")
 git_override(
     module_name = "mpact-sim",
-    commit = "9436377658889cd678101931f62ddba8a4d17b6d",
+    commit = "de9982fbec0e116ccd4e9cd88f5dfddc7fcdebb3",
     remote = "https://github.com/google/mpact-sim.git",
 )
 
 bazel_dep(name = "mpact-riscv", version = "1.0.1")
 git_override(
     module_name = "mpact-riscv",
-    commit = "4262467a57837aa5de0a6283340868dd06d1dfe7",
+    commit = "ef756043dc7513f2208419e282ed54000b4b4d47",
     patch_strip = 1,
     patches = [
         # 0003 is written against upstream, so it precedes 0001.
         "//:mpact-riscv-0003-zvt-bf16-rounding.patch",
         "//:mpact-riscv-0001-speed-up-emulation.patch",
         "//:mpact-riscv-0002-round-vector-fp-to-int-converts.patch",
-        "//:mpact-riscv-0005-zvt-i16-matmul.patch",
+        "//:mpact-riscv-0004-zvt-i16-matmul.patch",
     ],
     remote = "https://github.com/google/mpact-riscv.git",
 )

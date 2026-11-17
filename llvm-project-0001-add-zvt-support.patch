@@ -10,7 +10,7 @@ tracked.
 
 Add:
 - Subtarget features Zvtbase, Zvt8e, Zvt16e, Zvt64e, Zvti8i32mm,
-  Zvtf8f32mm, Zvtf16f32mm and Zvtf32f32mm.
+  Zvti16i32mm, Zvtf8f32mm, Zvtf16f32mm and Zvtf32f32mm.
 - Zvt v0.4 instruction and encoding definitions in RISCVInstrInfoZvt.td
   for tile configuration (msetmtype, msetmtypei, msettm, msettn,
   msettk), tile load/store (vtle*, vtse*), tile move (vtmv.v.t,
@@ -23,14 +23,14 @@ Add:
 ---
  llvm/include/llvm/IR/IntrinsicsRISCV.td       |   1 +
  llvm/include/llvm/IR/IntrinsicsRISCVZvt.td    |  87 ++++
- llvm/lib/Target/RISCV/RISCVFeatures.td        |  68 +++
+ llvm/lib/Target/RISCV/RISCVFeatures.td        |  76 +++
  llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp   |  55 +++
  llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp  |  49 +-
  llvm/lib/Target/RISCV/RISCVInstrInfo.td       |   4 +
  .../Target/RISCV/RISCVInstrInfoVPseudos.td    |   2 +
  llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td    | 419 ++++++++++++++++++
  .../Target/RISCV/RISCVVSETVLIInfoAnalysis.cpp | 165 +++++++
- 9 files changed, 848 insertions(+), 2 deletions(-)
+ 9 files changed, 856 insertions(+), 2 deletions(-)
  create mode 100644 llvm/include/llvm/IR/IntrinsicsRISCVZvt.td
  create mode 100644 llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td
 
@@ -137,10 +137,10 @@ index 00000000000..c0a58794e96
 +
 +} // TargetPrefix = "riscv"
 diff --git a/llvm/lib/Target/RISCV/RISCVFeatures.td b/llvm/lib/Target/RISCV/RISCVFeatures.td
-index 786d77e0fe6..813de37b3d6 100644
+index 786d77e0fe6..4ce87d747ce 100644
 --- a/llvm/lib/Target/RISCV/RISCVFeatures.td
 +++ b/llvm/lib/Target/RISCV/RISCVFeatures.td
-@@ -786,6 +786,74 @@ def HasStdExtZvfbfminOrZvfofp8min
+@@ -786,6 +786,82 @@ def HasStdExtZvfbfminOrZvfofp8min
                           "'Zvfbfmin' (Vector BF16 Converts) or "
                           "'Zvfofp8min' (Vector OFP8 Converts)">;
  
@@ -183,6 +183,10 @@ index 786d77e0fe6..813de37b3d6 100644
 +                          AssemblerPredicate<(all_of FeatureStdExtZvti8i32mm),
 +                              "'Zvti8i32mm' (RISC-V Vector Matrix Extension Int8-Int32 Matrix Multiply)">;
 +
++def FeatureStdExtZvti16i32mm
++    : RISCVExtension<0, 4, "RISC-V Vector Matrix Extension Int16-Int32 Matrix Multiply",
++                     [FeatureStdExtZvtbase]>;
++
 +def FeatureStdExtZvtf8f32mm
 +    : RISCVExtension<0, 4, "RISC-V Vector Matrix Extension FP8-FP32 Matrix Multiply",
 +                     [FeatureStdExtZvtbase]>;
@@ -211,6 +215,10 @@ index 786d77e0fe6..813de37b3d6 100644
 +def HasZvtAltFMM : Predicate<"Subtarget->hasStdExtZvtf8f32mm() || Subtarget->hasStdExtZvtf16f32mm()">,
 +                   AssemblerPredicate<(any_of FeatureStdExtZvtf8f32mm, FeatureStdExtZvtf16f32mm),
 +                       "either 'Zvtf8f32mm' or 'Zvtf16f32mm'">;
++
++def HasZvtAnyIMM : Predicate<"Subtarget->hasStdExtZvti8i32mm() || Subtarget->hasStdExtZvti16i32mm()">,
++                   AssemblerPredicate<(any_of FeatureStdExtZvti8i32mm, FeatureStdExtZvti16i32mm),
++                       "either 'Zvti8i32mm' or 'Zvti16i32mm'">;
 +
  // Vector Cryptography and Bitmanip Extensions
  
@@ -385,7 +393,7 @@ index c6241f582de..eacd9078792 100644
                          ["FPR16", "F"],
 diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td b/llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td
 new file mode 100644
-index 00000000000..9dd36fdf3c2
+index 00000000000..f7266e8854c
 --- /dev/null
 +++ b/llvm/lib/Target/RISCV/RISCVInstrInfoZvt.td
 @@ -0,0 +1,419 @@
@@ -628,7 +636,7 @@ index 00000000000..9dd36fdf3c2
 +  def VTSE64 : ZvtTileStore<0b011, "vtse64">;
 +}
 +
-+let Predicates = [HasStdExtZvti8i32mm] in {
++let Predicates = [HasZvtAnyIMM] in {
 +  def VTMMU_TVV : ZvtMatmul<0b000, 0, VR, "vtmmu.tvv">;
 +  def VTMMS_TVV : ZvtMatmul<0b000, 1, VR, "vtmms.tvv">;
 +}
@@ -737,7 +745,7 @@ index 00000000000..9dd36fdf3c2
 +  def PseudoVTSE64 : VPseudoZvt_TileStore;
 +}
 +
-+let Predicates = [HasStdExtZvti8i32mm] in {
++let Predicates = [HasZvtAnyIMM] in {
 +  def PseudoVTMMU_TVV : VPseudoZvt_MatMul<TR, VR>;
 +  def PseudoVTMMS_TVV : VPseudoZvt_MatMul<TR, VR>;
 +}

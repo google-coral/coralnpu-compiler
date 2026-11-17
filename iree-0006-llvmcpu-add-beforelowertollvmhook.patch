@@ -1,4 +1,4 @@
-From 995ef0a6dbed408a409da8a8023e7a93a2092231 Mon Sep 17 00:00:00 2001
+From a1bb5c6f183e407b875f6abfe5e9aab2c25c0795 Mon Sep 17 00:00:00 2001
 From: Shaked Flur <sflur@google.com>
 Date: Sun, 12 Jul 2026 20:04:49 +0200
 Subject: [PATCH] [llvmcpu] add beforeLowerToLLVMHook
@@ -9,12 +9,12 @@ then lowers every contraction there), and add a
 createConvolutionToIGEMMPass(configFn, controlFn) factory that
 forwards both callbacks.
 ---
- .../Codegen/Common/ConvolutionToIGEMM.cpp     |  8 ++-
- .../iree/compiler/Codegen/Common/Transforms.h |  4 ++
- .../LLVMCPU/LLVMCPUVirtualVectorLowering.cpp  | 63 ++++++++++++++++++-
- .../iree/compiler/Codegen/LLVMCPU/Passes.cpp  | 11 +++-
- .../iree/compiler/Codegen/LLVMCPU/Passes.h    |  8 ++-
- 5 files changed, 83 insertions(+), 11 deletions(-)
+ .../Codegen/Common/ConvolutionToIGEMM.cpp     |  8 +-
+ .../iree/compiler/Codegen/Common/Transforms.h |  4 +
+ .../LLVMCPU/LLVMCPUVirtualVectorLowering.cpp  | 74 ++++++++++++++++++-
+ .../iree/compiler/Codegen/LLVMCPU/Passes.cpp  | 11 ++-
+ .../iree/compiler/Codegen/LLVMCPU/Passes.h    |  8 +-
+ 5 files changed, 94 insertions(+), 11 deletions(-)
 
 diff --git a/compiler/src/iree/compiler/Codegen/Common/ConvolutionToIGEMM.cpp b/compiler/src/iree/compiler/Codegen/Common/ConvolutionToIGEMM.cpp
 index 285b4980a..730dc6d8a 100644
@@ -53,10 +53,10 @@ index 91b0aede3..863517fee 100644
  LogicalResult eliminateEmptyTensors(
      RewriterBase &rewriter, Operation *op,
 diff --git a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp
-index 05140f19c..5b7ee94e9 100644
+index 05140f19c..f2271e1f7 100644
 --- a/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp
 +++ b/compiler/src/iree/compiler/Codegen/LLVMCPU/LLVMCPUVirtualVectorLowering.cpp
-@@ -144,6 +144,51 @@ struct ContiguousMemrefGather1DToConditionalLoads
+@@ -144,6 +144,62 @@ struct ContiguousMemrefGather1DToConditionalLoads
    }
  };
  
@@ -86,11 +86,20 @@ index 05140f19c..5b7ee94e9 100644
 +  if (isa<BlockArgument>(acc)) {
 +    return false;
 +  }
-+  auto stripZvtOperand = [](Value v) {
++  auto stripZvtOperand = [](Value v) -> Type {
 +    while (Operation *def = v.getDefiningOp()) {
-+      if (isa<arith::ExtFOp, arith::ExtSIOp, vector::BroadcastOp,
-+              vector::ShapeCastOp, vector::ExtractStridedSliceOp,
-+              vector::FromElementsOp, vector::ExtractOp>(def)) {
++      if (auto bc = dyn_cast<vector::BroadcastOp>(def)) {
++        // Reject broadcasts that replicate elements rather than adding unit
++        // dims.
++        auto srcVt = dyn_cast<VectorType>(bc.getSourceType());
++        if ((srcVt ? srcVt.getNumElements() : 1) !=
++            bc.getResultVectorType().getNumElements()) {
++          return {};
++        }
++        v = bc.getSource();
++      } else if (isa<arith::ExtFOp, arith::ExtSIOp, vector::ShapeCastOp,
++                     vector::ExtractStridedSliceOp, vector::FromElementsOp,
++                     vector::ExtractOp>(def)) {
 +        v = def->getOperand(0);
 +      } else {
 +        break;
@@ -99,7 +108,9 @@ index 05140f19c..5b7ee94e9 100644
 +    return getElementTypeOrSelf(v);
 +  };
 +  Type elTy = stripZvtOperand(op.getLhs());
-+  if (elTy != stripZvtOperand(op.getRhs())) return false;
++  if (!elTy || elTy != stripZvtOperand(op.getRhs())) {
++    return false;
++  }
 +  Type accElTy = accTy.getElementType();
 +  return (accElTy.isF32() && (elTy.isF32() || elTy.isBF16())) ||
 +         (accElTy.isInteger(32) && (elTy.isInteger(8) || elTy.isInteger(16)));
@@ -108,7 +119,7 @@ index 05140f19c..5b7ee94e9 100644
  class LLVMCPUVirtualVectorLoweringPass
      : public impl::LLVMCPUVirtualVectorLoweringPassBase<
            LLVMCPUVirtualVectorLoweringPass> {
-@@ -224,10 +269,20 @@ void LLVMCPUVirtualVectorLoweringPass::runOnOperation() {
+@@ -224,10 +280,20 @@ void LLVMCPUVirtualVectorLoweringPass::runOnOperation() {
                                                                 /*benefit=*/100);
      }
      vector::populateVectorGatherLoweringPatterns(patterns);
@@ -189,5 +200,5 @@ index e08c1a9d1..ff3c0221c 100644
  //----------------------------------------------------------------------------//
  // LLVMCPU Linking Passes and Pipelines
 -- 
-2.56.0.398.g882cbad275-goog
+2.56.0.679.gc527c65306-goog
 

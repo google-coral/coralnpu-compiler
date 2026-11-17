@@ -34,6 +34,7 @@ iree_lit_test_suite(
     "tile_size_selection_dtcm.mlir"
     "tile_size_selection_footprint.mlir"
     "tile_size_selection_vector.mlir"
+    "zvt_i16_assembler.mlir"
   TOOLS
     FileCheck
     iree-compile

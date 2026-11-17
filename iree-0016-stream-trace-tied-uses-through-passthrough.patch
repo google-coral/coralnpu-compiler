@@ -1,0 +1,926 @@
+From 0100ad59e3a091fab6425c7c9398204040e72200 Mon Sep 17 00:00:00 2001
+From: Lun Dong <lundong@google.com>
+Date: Tue, 17 Nov 2026 10:08:40 -0800
+Subject: [PATCH] [stream] Trace tied uses through passthroughs
+
+Trace transitive uses, borrowed storage, and pre-clone passthrough
+sources through variadic util.optimization_barrier and arith.select
+passthroughs in ResourceUsage and ElideAsyncCopies so protective Stream
+clones of constant, borrowed, or pre-passthrough resources are not
+refined to constant or elided.
+---
+ .../Dialect/Stream/Analysis/ResourceUsage.cpp | 125 ++++---
+ .../Stream/Transforms/ElideAsyncCopies.cpp    | 305 ++++++++++++++----
+ .../Transforms/test/elide_async_copies.mlir   | 144 +++++++++
+ ...de_async_copies_tensor_import_consume.mlir |  37 +++
+ .../Stream/Transforms/test/refine_usage.mlir  |  69 ++++
+ 5 files changed, 569 insertions(+), 111 deletions(-)
+
+diff --git a/compiler/src/iree/compiler/Dialect/Stream/Analysis/ResourceUsage.cpp b/compiler/src/iree/compiler/Dialect/Stream/Analysis/ResourceUsage.cpp
+index 74f8a1966..b7099c622 100644
+--- a/compiler/src/iree/compiler/Dialect/Stream/Analysis/ResourceUsage.cpp
++++ b/compiler/src/iree/compiler/Dialect/Stream/Analysis/ResourceUsage.cpp
+@@ -14,6 +14,7 @@
+ #include "iree/compiler/Dialect/Util/Analysis/DFX/State.h"
+ #include "iree/compiler/Dialect/Util/IR/UtilDialect.h"
+ #include "iree/compiler/Dialect/Util/IR/UtilOps.h"
++#include "llvm/ADT/SmallPtrSet.h"
+ #include "llvm/ADT/TypeSwitch.h"
+ #include "llvm/Support/Debug.h"
+ #include "mlir/Dialect/Arith/IR/Arith.h"
+@@ -37,57 +38,98 @@ namespace mlir::iree_compiler::IREE::Stream {
+ // as transients instead of straight-line escaping results.
+ static constexpr bool kFavorTransients = false;
+ 
+-// Returns true if |value| has any tied uses that mutate the resource. A tied
+-// operand-result pair may be either a genuine in-place mutation (dispatch,
+-// fill, copy) or a scheduling passthrough (barriers, timepoint ops). This
+-// function distinguishes the two using interface and trait queries rather than
+-// hardcoded op names.
++// Returns true if |root| has any transitive tied uses (across control flow,
++// calls, scheduling barriers, optimization_barrier, and arith.select) that
++// mutate the resource. A tied operand-result pair may be either a genuine
++// in-place mutation (dispatch, fill, copy) or a scheduling passthrough
++// (barriers, timepoint ops). This function distinguishes the two using
++// interface and trait queries rather than hardcoded op names.
+ //
+ // The detection strategy (in order):
++//  - Value passthroughs not walked by Explorer (util.optimization_barrier,
++//    arith.select): enqueue the corresponding result value.
+ //  - TiedResourcePassthrough trait: the op ties resources for scheduling
+ //    without accessing the data (timepoint.barrier, timepoint.await).
+ //  - StreamableOpInterface::isMetadata(): the op is a scheduling passthrough
+ //    within the async phase (async.barrier).
+ //  - AsyncAccessOpInterface: if the op reports access ranges, check whether
+ //    any range for this resource includes a write.
+-//  - Conservative fallback: unknown tied ops are assumed to mutate.
+-static bool hasMutatingTiedUses(Value value) {
+-  for (OpOperand &use : value.getUses()) {
+-    auto tiedOp = dyn_cast<IREE::Util::TiedOpInterface>(use.getOwner());
+-    if (!tiedOp || !tiedOp.isOperandTied(use.getOperandNumber())) {
+-      continue;
++//  - Conservative fallback: unknown tied ops, indirect global stores, or
++//    incomplete traversals are assumed to mutate.
++// Keep passthrough handling in sync with walkTransitiveUsesThroughPassthroughs
++// in ElideAsyncCopies.cpp.
++static bool hasMutatingTiedUses(Value root, Explorer &explorer) {
++  SmallVector<Value> worklist = {root};
++  SmallPtrSet<Value, 8> visited = {root};
++  auto enqueue = [&](Value v) {
++    if (visited.insert(v).second) {
++      worklist.push_back(v);
+     }
+-    Operation *owner = use.getOwner();
++  };
++  while (!worklist.empty()) {
++    Value value = worklist.pop_back_val();
++    bool hasMutation = false;
++    TraversalResult traversalResult =
++        explorer.walkTransitiveUses(value, [&](OpOperand &use) -> WalkResult {
++          Operation *owner = use.getOwner();
++          unsigned operandIdx = use.getOperandNumber();
++          if (isa<IREE::Util::OptimizationBarrierOp>(owner)) {
++            enqueue(owner->getResult(operandIdx));
++            return WalkResult::advance();
++          }
++          if (auto selectOp = dyn_cast<mlir::arith::SelectOp>(owner)) {
++            enqueue(selectOp.getResult());
++            return WalkResult::advance();
++          }
++          if (isa<IREE::Util::GlobalStoreIndirectOpInterface>(owner)) {
++            hasMutation = true;
++            return WalkResult::interrupt();
++          }
+ 
+-    // Ops that tie resources purely for scheduling/synchronization.
+-    if (owner->hasTrait<OpTrait::IREE::Stream::TiedResourcePassthrough>()) {
+-      continue;
+-    }
++          auto tiedOp = dyn_cast<IREE::Util::TiedOpInterface>(owner);
++          if (!tiedOp || !tiedOp.isOperandTied(operandIdx)) {
++            return WalkResult::advance();
++          }
+ 
+-    // Streamable metadata ops pass resources through unchanged.
+-    if (auto streamableOp =
+-            dyn_cast<IREE::Stream::StreamableOpInterface>(owner)) {
+-      if (streamableOp.isMetadata()) {
+-        continue;
+-      }
+-    }
++          // Ops that tie resources purely for scheduling/synchronization.
++          if (owner->hasTrait<
++                  OpTrait::IREE::Stream::TiedResourcePassthrough>()) {
++            return WalkResult::advance();
++          }
+ 
+-    // If the op reports explicit access ranges, check for writes on this
+-    // resource. No write → not a mutation.
+-    if (auto accessOp = dyn_cast<IREE::Stream::AsyncAccessOpInterface>(owner)) {
+-      SmallVector<AsyncAccessRange> ranges;
+-      accessOp.getAsyncAccessRanges(ranges);
+-      bool hasWrite = llvm::any_of(ranges, [&](const AsyncAccessRange &range) {
+-        return range.resource == use.get() && !range.isReadOnly();
+-      });
+-      if (hasWrite) {
+-        return true;
+-      }
+-      continue;
+-    }
++          // Streamable metadata ops pass resources through unchanged.
++          if (auto streamableOp =
++                  dyn_cast<IREE::Stream::StreamableOpInterface>(owner)) {
++            if (streamableOp.isMetadata()) {
++              return WalkResult::advance();
++            }
++          }
+ 
+-    // Unknown tied op: conservatively assume mutation.
+-    return true;
++          // If the op reports explicit access ranges, check for writes on this
++          // resource. No write -> let Explorer follow tied results in case a
++          // downstream op mutates them.
++          if (auto accessOp =
++                  dyn_cast<IREE::Stream::AsyncAccessOpInterface>(owner)) {
++            SmallVector<AsyncAccessRange> ranges;
++            accessOp.getAsyncAccessRanges(ranges);
++            bool hasWrite =
++                llvm::any_of(ranges, [&](const AsyncAccessRange &range) {
++                  return range.resource == use.get() && !range.isReadOnly();
++                });
++            if (hasWrite) {
++              hasMutation = true;
++              return WalkResult::interrupt();
++            }
++            return WalkResult::advance();
++          }
++
++          // Unknown tied op: conservatively assume mutation.
++          hasMutation = true;
++          return WalkResult::interrupt();
++        });
++    if (hasMutation || traversalResult == TraversalResult::INCOMPLETE) {
++      return true;
++    }
+   }
+   return false;
+ }
+@@ -335,7 +377,8 @@ private:
+         })
+         .Case([&](IREE::Util::OptimizationBarrierOp op) {
+           auto &sourceUsage = solver.getElementFor<ValueResourceUsage>(
+-              *this, Position::forValue(op.getOperand(0)),
++              *this,
++              Position::forValue(op.getOperand(result.getResultNumber())),
+               DFX::Resolution::REQUIRED);
+           getState() ^= sourceUsage.getState();
+         })
+@@ -424,7 +467,7 @@ private:
+           // Check if the clone result has any tied uses that actually mutate
+           // the resource. This is a static IR property, safe to query during
+           // DFX iteration.
+-          if (hasMutatingTiedUses(op.getResult())) {
++          if (hasMutatingTiedUses(op.getResult(), solver.getExplorer())) {
+             // Result is mutated: clone creates a fresh allocation whose
+             // lifetime is determined by how the clone result is used (backward
+             // propagation from uses), not by the source's lifetime. This
+@@ -768,7 +811,7 @@ private:
+         })
+         .Case([&](IREE::Util::OptimizationBarrierOp op) {
+           auto &resultUsage = solver.getElementFor<ValueResourceUsage>(
+-              *this, Position::forValue(op.getResult(0)),
++              *this, Position::forValue(op.getResult(operandIdx)),
+               DFX::Resolution::REQUIRED);
+           getState() ^= resultUsage.getState();
+         })
+diff --git a/compiler/src/iree/compiler/Dialect/Stream/Transforms/ElideAsyncCopies.cpp b/compiler/src/iree/compiler/Dialect/Stream/Transforms/ElideAsyncCopies.cpp
+index 7148dd7f1..93a64dc7c 100644
+--- a/compiler/src/iree/compiler/Dialect/Stream/Transforms/ElideAsyncCopies.cpp
++++ b/compiler/src/iree/compiler/Dialect/Stream/Transforms/ElideAsyncCopies.cpp
+@@ -16,8 +16,10 @@
+ #include "iree/compiler/Dialect/Util/Analysis/Explorer.h"
+ #include "iree/compiler/Dialect/Util/IR/UtilDialect.h"
+ #include "iree/compiler/Dialect/Util/IR/UtilOps.h"
++#include "llvm/ADT/SmallPtrSet.h"
+ #include "llvm/ADT/TypeSwitch.h"
+ #include "llvm/Support/Debug.h"
++#include "mlir/Dialect/Arith/IR/Arith.h"
+ #include "mlir/IR/AsmState.h"
+ #include "mlir/IR/Attributes.h"
+ #include "mlir/IR/Builders.h"
+@@ -143,8 +145,10 @@ static bool mightExecuteAfter(Operation *opA, Operation *opB) {
+ }
+ 
+ // Returns true if |candidate| is effectively the last user of |value|,
+-// accounting for region structure. Uses are projected to the value's defining
+-// region and compared with awareness of loops and exclusive branches.
++// accounting for region structure and value passthrough aliases
++// (util.optimization_barrier and arith.select). Uses are projected to the
++// value's defining region and compared with awareness of loops and exclusive
++// branches.
+ static bool isEffectivelyLastUser(Value value, Operation *candidate) {
+   Region *valueRegion = value.getParentRegion();
+   Operation *candidatePos = projectToRegion(candidate, valueRegion);
+@@ -152,34 +156,156 @@ static bool isEffectivelyLastUser(Value value, Operation *candidate) {
+     return false;
+   }
+ 
+-  for (Operation *user : value.getUsers()) {
+-    if (user == candidate) {
+-      continue;
++  SmallVector<Value, 4> worklist = {value};
++  SmallPtrSet<Value, 4> visited = {value};
++  auto enqueue = [&](Value v) {
++    if (visited.insert(v).second) {
++      worklist.push_back(v);
++    }
++  };
++  while (!worklist.empty()) {
++    Value cur = worklist.pop_back_val();
++    for (OpOperand &use : cur.getUses()) {
++      Operation *user = use.getOwner();
++      if (user == candidate) {
++        continue;
++      }
++      if (isa<IREE::Util::OptimizationBarrierOp>(user)) {
++        enqueue(user->getResult(use.getOperandNumber()));
++      } else if (auto selectOp = dyn_cast<mlir::arith::SelectOp>(user)) {
++        enqueue(selectOp.getResult());
++      }
++
++      Operation *userPos = projectToRegion(user, valueRegion);
++      if (!userPos) {
++        continue;
++      }
++
++      if (candidatePos == userPos) {
++        // Same container - check for hazards.
++        if (isa<LoopLikeOpInterface>(candidatePos)) {
++          // Loop: cross-iteration uses come after this one.
++          return false;
++        }
++        // Non-loop: check if uses are in mutually exclusive regions.
++        if (!areInExclusiveRegions(candidate, user, candidatePos)) {
++          return false;
++        }
++      } else {
++        // Different containers - check ordering.
++        if (mightExecuteAfter(userPos, candidatePos)) {
++          return false;
++        }
++      }
+     }
++  }
++  return true;
++}
++
++// Walks transitive uses of |root|, stepping through value passthroughs
++// (util.optimization_barrier and arith.select) that Explorer does not follow.
++// Keep passthrough handling in sync with hasMutatingTiedUses in
++// ResourceUsage.cpp.
++static TraversalResult walkTransitiveUsesThroughPassthroughs(
++    Value root, Explorer &explorer,
++    llvm::function_ref<WalkResult(OpOperand &)> fn) {
++  SmallVector<Value> worklist = {root};
++  SmallPtrSet<Value, 8> visited = {root};
++  auto enqueue = [&](Value v) {
++    if (visited.insert(v).second) {
++      worklist.push_back(v);
++    }
++  };
+ 
+-    Operation *userPos = projectToRegion(user, valueRegion);
+-    if (!userPos) {
++  auto traversalResult = TraversalResult::COMPLETE;
++  while (!worklist.empty()) {
++    Value cur = worklist.pop_back_val();
++    bool interrupted = false;
++    traversalResult |=
++        explorer.walkTransitiveUses(cur, [&](OpOperand &operand) -> WalkResult {
++          Operation *owner = operand.getOwner();
++          if (isa<IREE::Util::OptimizationBarrierOp>(owner)) {
++            enqueue(owner->getResult(operand.getOperandNumber()));
++            return WalkResult::advance();
++          }
++          if (auto selectOp = dyn_cast<mlir::arith::SelectOp>(owner)) {
++            enqueue(selectOp.getResult());
++            return WalkResult::advance();
++          }
++          if (isa<IREE::Util::GlobalStoreIndirectOpInterface>(owner)) {
++            traversalResult |= TraversalResult::INCOMPLETE;
++            interrupted = true;
++            return WalkResult::interrupt();
++          }
++          WalkResult result = fn(operand);
++          if (result.wasInterrupted()) {
++            interrupted = true;
++          }
++          return result;
++        });
++    if (interrupted) {
++      break;
++    }
++  }
++  return traversalResult;
++}
++
++// Collects the underlying non-passthrough values feeding |value| through
++// util.optimization_barrier and arith.select ops.
++static void collectPassthroughSources(Value value,
++                                      SmallVectorImpl<Value> &sources) {
++  SmallVector<Value, 4> worklist = {value};
++  SmallPtrSet<Value, 4> visited = {value};
++  auto enqueue = [&](Value v) {
++    if (visited.insert(v).second) {
++      worklist.push_back(v);
++    }
++  };
++  while (!worklist.empty()) {
++    Value cur = worklist.pop_back_val();
++    auto res = dyn_cast<OpResult>(cur);
++    if (!res) {
++      sources.push_back(cur);
+       continue;
+     }
++    Operation *op = res.getOwner();
++    if (isa<IREE::Util::OptimizationBarrierOp>(op)) {
++      enqueue(op->getOperand(res.getResultNumber()));
++      continue;
++    }
++    if (auto selectOp = dyn_cast<mlir::arith::SelectOp>(op)) {
++      enqueue(selectOp.getTrueValue());
++      enqueue(selectOp.getFalseValue());
++      continue;
++    }
++    sources.push_back(cur);
++  }
++}
+ 
+-    if (candidatePos == userPos) {
+-      // Same container - check for hazards.
+-      if (isa<LoopLikeOpInterface>(candidatePos)) {
+-        // Loop: cross-iteration uses come after this one.
+-        return false;
+-      }
+-      // Non-loop: check if uses are in mutually exclusive regions.
+-      if (!areInExclusiveRegions(candidate, user, candidatePos)) {
+-        return false;
+-      }
+-    } else {
+-      // Different containers - check ordering.
+-      if (mightExecuteAfter(userPos, candidatePos)) {
+-        return false;
++// Peels single-use, same-region util.optimization_barrier wrappers above |use|
++// to return the underlying root OpOperand, or nullptr if |use| crosses a
++// region, repeats a barrier operand, or passes through a multi-use barrier or
++// arith.select merge that cannot guarantee exclusive ownership.
++static OpOperand *unwrapExclusivePassthroughUse(OpOperand &use) {
++  OpOperand *cur = &use;
++  while (auto res = dyn_cast<OpResult>(cur->get())) {
++    Operation *op = res.getOwner();
++    if (isa<IREE::Util::OptimizationBarrierOp>(op)) {
++      Value src = op->getOperand(res.getResultNumber());
++      if (!cur->get().hasOneUse() ||
++          op->getParentRegion() != cur->getOwner()->getParentRegion() ||
++          llvm::count(op->getOperands(), src) > 1) {
++        return nullptr;
+       }
++      cur = &op->getOpOperand(res.getResultNumber());
++      continue;
++    }
++    if (isa<mlir::arith::SelectOp>(op)) {
++      return nullptr;
+     }
++    break;
+   }
+-  return true;
++  return cur;
+ }
+ 
+ // TODO(benvanik): change this to just be an AbstractState - there's no real
+@@ -315,9 +441,10 @@ private:
+     intersectAssumedBits(BEST_STATE);
+ 
+     // If any use is tied then we know we are mutated in-place.
+-    // Note that this walks into call targets and across branches.
+-    auto traversalResult = solver.getExplorer().walkTransitiveUses(
+-        value, [&](OpOperand &operand) -> WalkResult {
++    // Note that this walks into call targets, across branches, and through
++    // value passthroughs.
++    auto traversalResult = walkTransitiveUsesThroughPassthroughs(
++        value, solver.getExplorer(), [&](OpOperand &operand) -> WalkResult {
+           if (isTiedUse(operand)) {
+             // Mutated in-place; nothing more we need to do.
+             removeKnownBits(NOT_MUTATED);
+@@ -334,16 +461,26 @@ private:
+   // Updates the element state based on _a_ predecessor operand that is the
+   // source of the argument value. Will be called once per predecessors/caller.
+   void updateFromPredecessorUse(OpOperand &operand, DFX::Solver &solver) {
+-    // If the operand is a block argument then we need to ask for the argument
+-    // semantics first - if it's by reference then it's definitely not the last
+-    // use and we can short-circuit this.
+-    if (auto arg = dyn_cast<BlockArgument>(operand.get())) {
+-      auto &argumentSemantics = solver.getElementFor<ArgumentSemantics>(
+-          *this, Position::forValue(operand.get()), DFX::Resolution::REQUIRED);
+-      LLVM_DEBUG(llvm::dbgs()
+-                 << "  pred is arg; combining state: "
+-                 << argumentSemantics.getAsStr(solver.getAsmState()) << "\n");
+-      getState() ^= argumentSemantics.getState();
++    SmallVector<Value, 2> sources;
++    collectPassthroughSources(operand.get(), sources);
++    for (Value src : sources) {
++      // If a source is a block argument then combine its argument semantics -
++      // if it is by reference then this argument is not exclusively owned.
++      if (auto arg = dyn_cast<BlockArgument>(src)) {
++        auto &argumentSemantics = solver.getElementFor<ArgumentSemantics>(
++            *this, Position::forValue(src), DFX::Resolution::REQUIRED);
++        LLVM_DEBUG(llvm::dbgs()
++                   << "  pred is arg; combining state: "
++                   << argumentSemantics.getAsStr(solver.getAsmState()) << "\n");
++        getState() ^= argumentSemantics.getState();
++      }
++    }
++
++    OpOperand *rootUse = unwrapExclusivePassthroughUse(operand);
++    if (!rootUse) {
++      LLVM_DEBUG(llvm::dbgs() << "  shared/merged passthrough predecessor\n");
++      removeAssumedBits(NOT_BY_REFERENCE | NOT_MUTATED);
++      return;
+     }
+ 
+     // Check if the source is a stream.tensor.import with the consume attribute.
+@@ -352,7 +489,7 @@ private:
+     // We should probably make this part of an interface, but today the tensor
+     // import op is the only thing we support this on.
+     if (auto importOp =
+-            operand.get().getDefiningOp<IREE::Stream::TensorImportOp>()) {
++            rootUse->get().getDefiningOp<IREE::Stream::TensorImportOp>()) {
+       if (importOp.getConsume()) {
+         // Consume attribute present - value is owned by importer (by-value).
+         // Already in BEST_STATE (NOT_MUTATED | NOT_BY_REFERENCE).
+@@ -363,8 +500,8 @@ private:
+     }
+ 
+     auto &lastUsers = solver.getElementFor<LastUsers>(
+-        *this, Position::forValue(operand.get()), DFX::Resolution::REQUIRED);
+-    bool isLastUser = lastUsers.isAssumedLastUser(operand.getOwner());
++        *this, Position::forValue(rootUse->get()), DFX::Resolution::REQUIRED);
++    bool isLastUser = lastUsers.isAssumedLastUser(rootUse->getOwner());
+     if (!isLastUser) {
+       // Not the last user - value is passed in by reference.
+       LLVM_DEBUG(llvm::dbgs() << "  not the last user\n");
+@@ -510,16 +647,17 @@ private:
+   void analyzeMutation(Value value, DFX::Solver &solver) {
+     SmallVector<AsyncAccessRange> accessRanges;
+ 
+-    // Walk ALL transitive uses (crosses function boundaries).
+-    auto traversalResult = solver.getExplorer().walkTransitiveUses(
+-        value, [&](OpOperand &operand) -> WalkResult {
++    // Walk ALL transitive uses (crosses function boundaries and passthroughs).
++    auto traversalResult = walkTransitiveUsesThroughPassthroughs(
++        value, solver.getExplorer(), [&](OpOperand &operand) -> WalkResult {
++          Operation *owner = operand.getOwner();
++
+           // Check if tied (in-place mutation).
+-          if (auto tiedOp =
+-                  dyn_cast<IREE::Util::TiedOpInterface>(operand.getOwner())) {
++          if (auto tiedOp = dyn_cast<IREE::Util::TiedOpInterface>(owner)) {
+             if (tiedOp.isOperandTied(operand.getOperandNumber())) {
+               LLVM_DEBUG({
+                 llvm::dbgs() << "    found tied mutation at op: ";
+-                operand.getOwner()->print(llvm::dbgs(), solver.getAsmState());
++                owner->print(llvm::dbgs(), solver.getAsmState());
+                 llvm::dbgs() << "\n";
+               });
+               removeAssumedBits(NOT_MUTATED);
+@@ -528,15 +666,15 @@ private:
+           }
+ 
+           // Check AsyncAccessOpInterface for write access.
+-          if (auto accessOp = dyn_cast<IREE::Stream::AsyncAccessOpInterface>(
+-                  operand.getOwner())) {
++          if (auto accessOp =
++                  dyn_cast<IREE::Stream::AsyncAccessOpInterface>(owner)) {
+             accessRanges.clear();
+             accessOp.getAsyncAccessRanges(accessRanges);
+             for (auto &range : accessRanges) {
+-              if (range.resource == value && !range.isReadOnly()) {
++              if (range.resource == operand.get() && !range.isReadOnly()) {
+                 LLVM_DEBUG({
+                   llvm::dbgs() << "    found write access at op: ";
+-                  operand.getOwner()->print(llvm::dbgs(), solver.getAsmState());
++                  owner->print(llvm::dbgs(), solver.getAsmState());
+                   llvm::dbgs() << "\n";
+                 });
+                 removeAssumedBits(NOT_MUTATED);
+@@ -779,6 +917,8 @@ public:
+   }
+ 
+ private:
++  // Recursively walks defining ops of |value| to detect non-consuming imports,
++  // conservatively returning true on |visited| cycles or incomplete walks.
+   bool containsBorrowedStorage(Value value,
+                                llvm::SmallPtrSetImpl<Value> &visited) {
+     if (!visited.insert(value).second) {
+@@ -815,6 +955,22 @@ private:
+                                         : WalkResult::skip();
+           }
+ 
++          // Value passthroughs not followed by Explorer::walkDefiningOps
++          // preserve the source storage ownership.
++          if (isa<IREE::Util::OptimizationBarrierOp>(op)) {
++            foundBorrowedStorage = containsBorrowedStorage(
++                op->getOperand(result.getResultNumber()), visited);
++            return foundBorrowedStorage ? WalkResult::interrupt()
++                                        : WalkResult::skip();
++          }
++          if (auto selectOp = dyn_cast<mlir::arith::SelectOp>(op)) {
++            foundBorrowedStorage =
++                containsBorrowedStorage(selectOp.getTrueValue(), visited) ||
++                containsBorrowedStorage(selectOp.getFalseValue(), visited);
++            return foundBorrowedStorage ? WalkResult::interrupt()
++                                        : WalkResult::skip();
++          }
++
+           // Clones produce independent storage. If this clone remains, uses of
+           // its result do not mutate the original borrowed storage.
+           if (isa<IREE::Stream::AsyncCloneOp>(op)) {
+@@ -881,18 +1037,18 @@ static bool isSafeToElideCloneOp(IREE::Stream::AsyncCloneOp cloneOp,
+     return false;
+   }
+ 
++  SmallVector<Value, 2> sourceRoots;
++  collectPassthroughSources(cloneOp.getSource(), sourceRoots);
++  bool sourceSafe = llvm::all_of(
++      sourceRoots, [&](Value root) { return analysis.isNeverMutated(root); });
++  bool resultSafe = analysis.isNeverMutated(cloneOp.getResult());
++
+   // Constant-to-constant clones can be elided only if both source and result
+   // are never mutated anywhere in the program (interprocedural analysis).
+   // Constants are immutable after initialization, but during initialization
+   // they may be mutated.
+   if (sourceType.getLifetime() == IREE::Stream::Lifetime::Constant &&
+       targetType.getLifetime() == IREE::Stream::Lifetime::Constant) {
+-
+-    // Check if source constant is ever mutated anywhere (whole program).
+-    bool sourceSafe = analysis.isNeverMutated(cloneOp.getSource());
+-    // Check if clone result is ever mutated anywhere (whole program).
+-    bool resultSafe = analysis.isNeverMutated(cloneOp.getResult());
+-
+     if (!sourceSafe) {
+       LLVM_DEBUG(llvm::dbgs()
+                  << "  - source constant is mutated somewhere; cannot elide\n");
+@@ -910,25 +1066,26 @@ static bool isSafeToElideCloneOp(IREE::Stream::AsyncCloneOp cloneOp,
+     return true;
+   }
+ 
+-  // If the source is a block argument we have to look into the analysis cache
+-  // to see if it's been classified as a last use/by-value move. If it isn't
+-  // then we cannot mutate it in-place as it could be used by the caller/another
+-  // branch and we need to respect the forking of the value.
+-  if (auto arg = dyn_cast<BlockArgument>(cloneOp.getSource())) {
+-    if (!analysis.isArgMoved(arg)) {
++  // If any underlying source is a block argument we have to look into the
++  // analysis cache to see if it's been classified as a last use/by-value move.
++  // If it isn't then we cannot mutate it in-place as it could be used by the
++  // caller/another branch and we need to respect the forking of the value.
++  for (Value root : sourceRoots) {
++    if (auto arg = dyn_cast<BlockArgument>(root)) {
++      if (!analysis.isArgMoved(arg)) {
++        LLVM_DEBUG(llvm::dbgs()
++                   << "  - clone source is a by-ref arg; cannot elide\n");
++        return false;
++      }
+       LLVM_DEBUG(llvm::dbgs()
+-                 << "  - clone source is a by-ref arg; cannot elide\n");
+-      return false;
++                 << "  ? clone source is a by-value arg; may elide\n");
+     }
+-    LLVM_DEBUG(llvm::dbgs()
+-               << "  ? clone source is a by-value arg; may elide\n");
+   }
+ 
+   // A non-consuming import borrows caller-owned storage. If a clone of that
+   // storage is later mutated then the clone is semantically required even when
+   // the imported SSA value has no remaining local uses: without the clone, the
+   // mutation would be performed in-place on the caller's buffer.
+-  bool resultSafe = analysis.isNeverMutated(cloneOp.getResult());
+   if (analysis.containsBorrowedStorage(cloneOp.getSource()) && !resultSafe) {
+     LLVM_DEBUG(llvm::dbgs()
+                << "  - clone protects borrowed storage from mutation; cannot "
+@@ -940,25 +1097,33 @@ static bool isSafeToElideCloneOp(IREE::Stream::AsyncCloneOp cloneOp,
+   // we can safely elide the clone because sharing the underlying buffer has no
+   // observable effect. This extends the constant-to-constant analysis above to
+   // all lifetime types - if no writes occur, reads can safely share buffers.
+-  bool sourceSafe = analysis.isNeverMutated(cloneOp.getSource());
+   if (sourceSafe && resultSafe) {
+     LLVM_DEBUG(llvm::dbgs()
+                << "  + source and result never mutated; can elide\n");
+     return true;
+   }
+ 
++  OpOperand *rootUse =
++      unwrapExclusivePassthroughUse(cloneOp.getSourceMutable());
++  if (!rootUse) {
++    LLVM_DEBUG(llvm::dbgs()
++               << "  - clone source passthrough may share storage; cannot "
++                  "elide\n");
++    return false;
++  }
++
+   // If there's only one user of the source we know it's this clone and can
+   // bypass all the more expensive liveness analysis. This is safe even with
+   // mutation because no other code can observe the source.
+-  if (cloneOp.getSource().hasOneUse()) {
++  if (rootUse == &cloneOp.getSourceMutable() && rootUse->get().hasOneUse()) {
+     LLVM_DEBUG(llvm::dbgs()
+                << "  + clone source SSA value has one use; can elide\n");
+     return true;
+   }
+ 
+-  // If this is the last user of the source SSA value then we can elide the
+-  // clone knowing that any mutations won't impact the source.
+-  if (analysis.isLastUser(cloneOp.getSource(), cloneOp)) {
++  // If this is the last user of the underlying source SSA value then we can
++  // elide the clone knowing that any mutations won't impact the source.
++  if (analysis.isLastUser(rootUse->get(), rootUse->getOwner())) {
+     LLVM_DEBUG(llvm::dbgs() << "  + clone source use is the last; can elide\n");
+     return true;
+   }
+diff --git a/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/elide_async_copies.mlir b/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/elide_async_copies.mlir
+index fc3c2d61d..5e5d1871d 100644
+--- a/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/elide_async_copies.mlir
++++ b/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/elide_async_copies.mlir
+@@ -1728,3 +1728,147 @@ util.func public @crossLifetimeClonePreserved_multipleReadOnly(%input: !stream.r
+   // CHECK: util.return
+   util.return %d0, %d1 : !stream.resource<*>, !stream.resource<*>
+ }
++
++// -----
++
++// Tests that same-lifetime clones mutated behind util.optimization_barrier or
++// arith.select are preserved rather than elided.
++
++stream.executable private @dispatch_ex {
++  stream.executable.export public @dispatch
++  builtin.module {
++    func.func @dispatch(%binding: !stream.binding) {
++      return
++    }
++  }
++}
++
++// CHECK-LABEL: util.func private @passthrough_mutating_callee
++util.func private @passthrough_mutating_callee(
++    %arg: !stream.resource<constant>, %size: index) -> !stream.resource<constant> {
++  %c0 = arith.constant 0 : index
++  %bar = util.optimization_barrier %arg : !stream.resource<constant>
++  %d = stream.async.dispatch @dispatch_ex::@dispatch(%bar[%c0 to %size for %size])
++      : (!stream.resource<constant>{%size}) -> %bar{%size}
++  util.return %d : !stream.resource<constant>
++}
++
++// CHECK-LABEL: @clonePreserved_passthroughMutations
++util.func private @clonePreserved_passthroughMutations(
++    %const: !stream.resource<constant>, %other: !stream.resource<constant>,
++    %size: index, %cond: i1) -> (!stream.resource<constant>, !stream.resource<constant>, !stream.resource<constant>) {
++  %c0 = arith.constant 0 : index
++  // CHECK: %[[CLONE0:.+]] = stream.async.clone %arg0 : !stream.resource<constant>{%arg2} -> !stream.resource<constant>{%arg2}
++  %clone0 = stream.async.clone %const : !stream.resource<constant>{%size} -> !stream.resource<constant>{%size}
++  // CHECK: %[[BAR0:.+]]:2 = util.optimization_barrier %arg0, %[[CLONE0]] : !stream.resource<constant>, !stream.resource<constant>
++  %bar0:2 = util.optimization_barrier %const, %clone0 : !stream.resource<constant>, !stream.resource<constant>
++  %d0 = stream.async.dispatch @dispatch_ex::@dispatch(%bar0#1[%c0 to %size for %size])
++      : (!stream.resource<constant>{%size}) -> %bar0#1{%size}
++  %keep0 = util.optimization_barrier %d0 : !stream.resource<constant>
++
++  // CHECK: %[[CLONE1:.+]] = stream.async.clone %arg0 : !stream.resource<constant>{%arg2} -> !stream.resource<constant>{%arg2}
++  %clone1 = stream.async.clone %const : !stream.resource<constant>{%size} -> !stream.resource<constant>{%size}
++  %sel = arith.select %cond, %clone1, %other : !stream.resource<constant>
++  %d1 = stream.async.dispatch @dispatch_ex::@dispatch(%sel[%c0 to %size for %size])
++      : (!stream.resource<constant>{%size}) -> %sel{%size}
++
++  // CHECK: %[[CLONE2:.+]] = stream.async.clone %arg0 : !stream.resource<constant>{%arg2} -> !stream.resource<constant>{%arg2}
++  %clone2 = stream.async.clone %const : !stream.resource<constant>{%size} -> !stream.resource<constant>{%size}
++  %d2 = util.call @passthrough_mutating_callee(%clone2, %size)
++      : (!stream.resource<constant>, index) -> !stream.resource<constant>
++  util.return %bar0#0, %d1, %d2 : !stream.resource<constant>, !stream.resource<constant>, !stream.resource<constant>
++}
++
++// -----
++
++// Tests that mutating clones of non-constant resources are preserved when the
++// clone source or post-clone reader aliases through util.optimization_barrier
++// or arith.select.
++
++stream.executable private @dispatch_ex {
++  stream.executable.export public @dispatch
++  builtin.module {
++    func.func @dispatch(%binding: !stream.binding) {
++      return
++    }
++  }
++}
++
++// CHECK-LABEL: util.func private @pre_clone_passthrough_callee
++util.func private @pre_clone_passthrough_callee(
++    %arg: !stream.resource<transient>, %size: index) -> !stream.resource<transient> {
++  %c0 = arith.constant 0 : index
++  %bar = util.optimization_barrier %arg : !stream.resource<transient>
++  // CHECK: stream.async.clone
++  %clone = stream.async.clone %bar : !stream.resource<transient>{%size} -> !stream.resource<transient>{%size}
++  %d = stream.async.dispatch @dispatch_ex::@dispatch(%clone[%c0 to %size for %size])
++      : (!stream.resource<transient>{%size}) -> %clone{%size}
++  util.return %d : !stream.resource<transient>
++}
++
++// CHECK-LABEL: @clonePreserved_preClonePassthroughs
++util.func public @clonePreserved_preClonePassthroughs(
++    %size: index, %cond: i1)
++    -> (!stream.resource<transient>, !stream.resource<transient>,
++        !stream.resource<transient>, !stream.resource<transient>,
++        !stream.resource<transient>, !stream.resource<transient>,
++        !stream.resource<transient>, !stream.resource<transient>,
++        !stream.resource<transient>) {
++  %c0 = arith.constant 0 : index
++  %c1 = arith.constant 1 : index
++  %c2 = arith.constant 2 : index
++  %c1_i32 = arith.constant 1 : i32
++
++  %s0 = stream.async.splat %c1_i32 : i32 -> !stream.resource<transient>{%size}
++  %b0 = util.optimization_barrier %s0 : !stream.resource<transient>
++  // CHECK: stream.async.clone
++  %c_b0 = stream.async.clone %b0 : !stream.resource<transient>{%size} -> !stream.resource<transient>{%size}
++  %d0 = stream.async.dispatch @dispatch_ex::@dispatch(%c_b0[%c0 to %size for %size])
++      : (!stream.resource<transient>{%size}) -> %c_b0{%size}
++
++  %s1 = stream.async.splat %c1_i32 : i32 -> !stream.resource<transient>{%size}
++  %b1 = util.optimization_barrier %s1 : !stream.resource<transient>
++  // CHECK: stream.async.clone
++  %c_s1 = stream.async.clone %s1 : !stream.resource<transient>{%size} -> !stream.resource<transient>{%size}
++  %d1 = stream.async.dispatch @dispatch_ex::@dispatch(%c_s1[%c0 to %size for %size])
++      : (!stream.resource<transient>{%size}) -> %c_s1{%size}
++  %r1 = stream.async.dispatch @dispatch_ex::@dispatch(%b1[%c0 to %size for %size])
++      : (!stream.resource<transient>{%size}) -> !stream.resource<transient>{%size}
++
++  %s2a = stream.async.splat %c1_i32 : i32 -> !stream.resource<transient>{%size}
++  %s2b = stream.async.splat %c1_i32 : i32 -> !stream.resource<transient>{%size}
++  %sel = arith.select %cond, %s2a, %s2b : !stream.resource<transient>
++  // CHECK: stream.async.clone
++  %c_sel = stream.async.clone %sel : !stream.resource<transient>{%size} -> !stream.resource<transient>{%size}
++  %d2 = stream.async.dispatch @dispatch_ex::@dispatch(%c_sel[%c0 to %size for %size])
++      : (!stream.resource<transient>{%size}) -> %c_sel{%size}
++
++  %s3 = stream.async.splat %c1_i32 : i32 -> !stream.resource<transient>{%size}
++  %b3 = util.optimization_barrier %s3 : !stream.resource<transient>
++  %d3 = util.call @pre_clone_passthrough_callee(%b3, %size)
++      : (!stream.resource<transient>, index) -> !stream.resource<transient>
++
++  %s4 = stream.async.splat %c1_i32 : i32 -> !stream.resource<transient>{%size}
++  %b4:2 = util.optimization_barrier %s4, %s4 : !stream.resource<transient>, !stream.resource<transient>
++  // CHECK: stream.async.clone
++  %c_b4 = stream.async.clone %b4#0 : !stream.resource<transient>{%size} -> !stream.resource<transient>{%size}
++  %d4 = stream.async.dispatch @dispatch_ex::@dispatch(%c_b4[%c0 to %size for %size])
++      : (!stream.resource<transient>{%size}) -> %c_b4{%size}
++
++  %s5 = stream.async.splat %c1_i32 : i32 -> !stream.resource<transient>{%size}
++  %b5 = util.optimization_barrier %s5 : !stream.resource<transient>
++  %d5 = scf.for %iv = %c0 to %c2 step %c1 iter_args(%acc = %s5) -> (!stream.resource<transient>) {
++    // CHECK: stream.async.clone
++    %c_b5 = stream.async.clone %b5 : !stream.resource<transient>{%size} -> !stream.resource<transient>{%size}
++    %m5 = stream.async.dispatch @dispatch_ex::@dispatch(%c_b5[%c0 to %size for %size])
++        : (!stream.resource<transient>{%size}) -> %c_b5{%size}
++    scf.yield %m5 : !stream.resource<transient>
++  }
++
++  util.return %s0, %d0, %d1, %r1, %d2, %s3, %d4, %b4#1, %d5
++      : !stream.resource<transient>, !stream.resource<transient>,
++        !stream.resource<transient>, !stream.resource<transient>,
++        !stream.resource<transient>, !stream.resource<transient>,
++        !stream.resource<transient>, !stream.resource<transient>,
++        !stream.resource<transient>
++}
+diff --git a/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/elide_async_copies_tensor_import_consume.mlir b/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/elide_async_copies_tensor_import_consume.mlir
+index b341e5fb6..0103cbb2c 100644
+--- a/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/elide_async_copies_tensor_import_consume.mlir
++++ b/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/elide_async_copies_tensor_import_consume.mlir
+@@ -382,3 +382,40 @@ util.func public @borrowed_import_transfer_preserves_mutating_clone(%arg0: !util
+ }
+ 
+ } // module
++
++// -----
++
++// Tests that borrowed storage remains borrowed across variadic
++// util.optimization_barrier and arith.select value passthroughs.
++
++// CHECK-LABEL: @borrowed_import_passthrough_preserves_mutating_clone
++// CHECK-SAME: (%[[BUFFER0:[^:]+]]: !util.buffer, %[[BUFFER1:[^:]+]]: !util.buffer, %[[COND:[^:]+]]: i1)
++util.func public @borrowed_import_passthrough_preserves_mutating_clone(
++    %arg0: !util.buffer, %arg1: !util.buffer, %cond: i1)
++    -> (!stream.resource<external>, !stream.resource<external>, !stream.resource<external>) {
++  %c0 = arith.constant 0 : index
++  %c100 = arith.constant 100 : index
++  %c123_i32 = arith.constant 123 : i32
++  %consumed0 = stream.tensor.import consume %arg0 : !util.buffer -> tensor<f32> in !stream.resource<external>{%c100}
++  %borrowed = stream.tensor.import %arg1 : !util.buffer -> tensor<f32> in !stream.resource<external>{%c100}
++  %bar:2 = util.optimization_barrier %consumed0, %borrowed : !stream.resource<external>, !stream.resource<external>
++  // CHECK: %[[CLONE0:.+]] = stream.async.clone
++  %clone0 = stream.async.clone %bar#1 : !stream.resource<external>{%c100} -> !stream.resource<external>{%c100}
++  %fill0 = stream.async.fill %c123_i32, %clone0[%c0 to %c100 for %c100] : i32 -> %clone0 as !stream.resource<external>{%c100}
++
++  %consumed1 = stream.tensor.import consume %arg0 : !util.buffer -> tensor<f32> in !stream.resource<external>{%c100}
++  %borrowed1 = stream.tensor.import %arg1 : !util.buffer -> tensor<f32> in !stream.resource<external>{%c100}
++  %sel_true = arith.select %cond, %borrowed1, %consumed1 : !stream.resource<external>
++  // CHECK: %[[CLONE1:.+]] = stream.async.clone
++  %clone1 = stream.async.clone %sel_true : !stream.resource<external>{%c100} -> !stream.resource<external>{%c100}
++  %fill1 = stream.async.fill %c123_i32, %clone1[%c0 to %c100 for %c100] : i32 -> %clone1 as !stream.resource<external>{%c100}
++
++  %consumed2 = stream.tensor.import consume %arg0 : !util.buffer -> tensor<f32> in !stream.resource<external>{%c100}
++  %borrowed2 = stream.tensor.import %arg1 : !util.buffer -> tensor<f32> in !stream.resource<external>{%c100}
++  %sel_false = arith.select %cond, %consumed2, %borrowed2 : !stream.resource<external>
++  // CHECK: %[[CLONE2:.+]] = stream.async.clone
++  %clone2 = stream.async.clone %sel_false : !stream.resource<external>{%c100} -> !stream.resource<external>{%c100}
++  %fill2 = stream.async.fill %c123_i32, %clone2[%c0 to %c100 for %c100] : i32 -> %clone2 as !stream.resource<external>{%c100}
++
++  util.return %fill0, %fill1, %fill2 : !stream.resource<external>, !stream.resource<external>, !stream.resource<external>
++}
+diff --git a/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/refine_usage.mlir b/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/refine_usage.mlir
+index b015a22bf..d054237ec 100644
+--- a/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/refine_usage.mlir
++++ b/compiler/src/iree/compiler/Dialect/Stream/Transforms/test/refine_usage.mlir
+@@ -791,3 +791,72 @@ util.func public @asyncCastConcreteMismatchTransfers(%source: !stream.resource<c
+   // CHECK: util.return %[[TRANSFER]] : !stream.resource<external>
+   util.return %cast : !stream.resource<external>
+ }
++
++// -----
++
++// Tests that clones of a constant resource mutated across passthroughs
++// (variadic util.optimization_barrier, arith.select, or scheduling barriers +
++// branches) are refined to transient rather than constant.
++
++// CHECK-LABEL: @clone_constant_passthrough_mutated_becomes_transient
++util.func private @clone_constant_passthrough_mutated_becomes_transient(
++    %const: !stream.resource<constant>, %ext: !stream.resource<external>,
++    %size: index, %tp: !stream.timepoint, %cond: i1) -> !stream.resource<external> {
++  %c0 = arith.constant 0 : index
++  %c1 = arith.constant 1 : index
++  %c0_i32 = arith.constant 0 : i32
++  // CHECK: %[[CLONE0:.+]] = stream.async.clone %arg0 : !stream.resource<constant>{%arg2} -> !stream.resource<transient>{%arg2}
++  %clone0 = stream.async.clone %const : !stream.resource<constant>{%size} -> !stream.resource<*>{%size}
++  // CHECK: %[[BAR:.+]]:2 = util.optimization_barrier %arg1, %[[CLONE0]] : !stream.resource<external>, !stream.resource<transient>
++  %bar:2 = util.optimization_barrier %ext, %clone0 : !stream.resource<external>, !stream.resource<*>
++  // CHECK: %[[DISP0:.+]] = stream.async.dispatch @ex::@entry[%c1](%[[BAR]]#1[%c0 to %arg2 for %arg2]) : (!stream.resource<transient>{%arg2}) -> %[[BAR]]#1{%arg2}
++  %disp0 = stream.async.dispatch @ex::@entry[%c1](%bar#1[%c0 to %size for %size]) : (!stream.resource<*>{%size}) -> %bar#1{%size}
++  %keep0 = util.optimization_barrier %disp0 : !stream.resource<*>
++
++  // CHECK: %[[CLONE1:.+]] = stream.async.clone %arg0 : !stream.resource<constant>{%arg2} -> !stream.resource<transient>{%arg2}
++  %clone1 = stream.async.clone %const : !stream.resource<constant>{%size} -> !stream.resource<*>{%size}
++  %other1 = stream.async.splat %c0_i32 : i32 -> !stream.resource<*>{%size}
++  // CHECK: %[[SEL:.+]] = arith.select %arg4, %[[CLONE1]], %{{.+}} : !stream.resource<transient>
++  %sel = arith.select %cond, %clone1, %other1 : !stream.resource<*>
++  %disp1 = stream.async.dispatch @ex::@entry[%c1](%sel[%c0 to %size for %size]) : (!stream.resource<*>{%size}) -> %sel{%size}
++  %keep1 = util.optimization_barrier %disp1 : !stream.resource<*>
++
++  // CHECK: %[[CLONE2:.+]] = stream.async.clone %arg0 : !stream.resource<constant>{%arg2} -> !stream.resource<transient>{%arg2}
++  %clone2 = stream.async.clone %const : !stream.resource<constant>{%size} -> !stream.resource<*>{%size}
++  %awaited = stream.timepoint.await %tp => %clone2 : !stream.resource<*>{%size}
++  %abar = stream.async.barrier %awaited : !stream.resource<*>{%size}
++  cf.cond_br %cond, ^bb1(%abar : !stream.resource<*>), ^bb1(%other1 : !stream.resource<*>)
++^bb1(%bbarg: !stream.resource<*>):
++  // CHECK: ^bb1(%[[BBARG:.+]]: !stream.resource<transient>):
++  %disp2 = stream.async.dispatch @ex::@entry[%c1](%bbarg[%c0 to %size for %size]) : (!stream.resource<*>{%size}) -> %bbarg{%size}
++  %keep2 = util.optimization_barrier %disp2 : !stream.resource<*>
++  // CHECK: util.return %[[BAR]]#0 : !stream.resource<external>
++  util.return %bar#0 : !stream.resource<external>
++}
++
++// -----
++
++// Tests that clones of a constant global whose transitive uses are incomplete
++// (stored to an address-taken global) or indirect (util.global.store.indirect)
++// are refined to external rather than constant.
++util.global private mutable @indirect_global : !stream.resource<external>
++util.global private @const_global : !stream.resource<constant>
++
++// CHECK-LABEL: @clone_constant_incomplete_uses_not_constant
++util.func private @clone_constant_incomplete_uses_not_constant(
++    %size: index, %arg_ptr: !util.ptr<!stream.resource<external>>) {
++  %ptr = util.global.address @indirect_global : !util.ptr<!stream.resource<external>>
++  %keep_ptr = util.optimization_barrier %ptr : !util.ptr<!stream.resource<external>>
++  %const = util.global.load @const_global : !stream.resource<constant>
++  // CHECK: stream.async.clone %{{.+}} : !stream.resource<constant>{%arg0} -> !stream.resource<external>{%arg0}
++  // CHECK-NOT: stream.async.transfer
++  %clone0 = stream.async.clone %const : !stream.resource<constant>{%size} -> !stream.resource<*>{%size}
++  %cast0 = stream.async.cast %clone0 : !stream.resource<*>{%size} -> !stream.resource<external>{%size}
++  util.global.store %cast0, @indirect_global : !stream.resource<external>
++  // CHECK: stream.async.clone %{{.+}} : !stream.resource<constant>{%arg0} -> !stream.resource<external>{%arg0}
++  // CHECK-NOT: stream.async.transfer
++  %clone1 = stream.async.clone %const : !stream.resource<constant>{%size} -> !stream.resource<*>{%size}
++  %cast1 = stream.async.cast %clone1 : !stream.resource<*>{%size} -> !stream.resource<external>{%size}
++  util.global.store.indirect %cast1, %arg_ptr : !stream.resource<external> -> !util.ptr<!stream.resource<external>>
++  util.return
++}
+-- 
+2.56.1.703.gf848ed807c-goog
+
