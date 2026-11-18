@@ -29,9 +29,17 @@ void coralnpu_simulator_read_mem(coralnpu_simulator_t* sim, uint32_t addr,
   sim->ReadMem(addr, size, static_cast<char*>(data));
 }
 
+namespace {
+
+// Cycle budget per dispatch for backends that honor WaitForTermination's step
+// limit (Verilator); large model dispatches exceed 1M RTL cycles.
+constexpr int kMaxDispatchCycles = 100000000;
+
+}  // namespace
+
 bool coralnpu_simulator_run(coralnpu_simulator_t* sim, uint32_t start_pc) {
   sim->Run(start_pc);
-  return sim->WaitForTermination(1000000);
+  return sim->WaitForTermination(kMaxDispatchCycles);
 }
 
 uint64_t coralnpu_simulator_get_cycle_count(coralnpu_simulator_t* sim) {

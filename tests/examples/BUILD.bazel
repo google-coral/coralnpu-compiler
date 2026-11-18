@@ -73,6 +73,25 @@ coralnpu_example_test(
 
 # Compilation takes too long for CI.
 coralnpu_example_test(
+    name = "mobilenetv1_tflite_test",
+    export_tool = "//examples/mobilenetv1-tflite-aot:export_mobilenetv1",
+    reference = "//examples/mobilenetv1-tflite-aot:reference.npy",
+    runner_tool = "//examples/mobilenetv1-tflite-aot:classify_mobilenetv1",
+    tags = ["ci"],
+)
+
+coralnpu_example_test(
+    name = "mobilenetv1_tflite_verilator_test",
+    timeout = "eternal",
+    export_tool = "//examples/mobilenetv1-tflite-aot:export_mobilenetv1",
+    reference = "//examples/mobilenetv1-tflite-aot:reference.npy",
+    runner_tool = "//examples/mobilenetv1-tflite-aot:classify_mobilenetv1",
+    simulator = "verilator",
+    # Too slow for CI
+    tags = ["manual"],
+)
+
+coralnpu_example_test(
     name = "efficientnet_test",
     timeout = "long",
     export_tool = "//examples/efficientnet-jax-aot:export_efficientnet",

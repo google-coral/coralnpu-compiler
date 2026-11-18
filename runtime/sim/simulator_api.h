@@ -43,7 +43,8 @@ void coralnpu_simulator_write_mem(coralnpu_simulator_t *sim, uint32_t addr,
                                   const void *data, size_t size);
 void coralnpu_simulator_read_mem(coralnpu_simulator_t *sim, uint32_t addr,
                                  void *data, size_t size);
-// Returns false if the core did not halt.
+// Runs the core from |start_pc| until it halts (or hits the step timeout on
+// cycle-stepped RTL backends). Returns false if the core did not halt.
 bool coralnpu_simulator_run(coralnpu_simulator_t *sim, uint32_t start_pc);
 uint64_t coralnpu_simulator_get_cycle_count(coralnpu_simulator_t *sim);
 
