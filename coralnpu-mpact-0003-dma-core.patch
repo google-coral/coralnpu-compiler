@@ -1,0 +1,490 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lun Dong <lundong@google.com>
+Date: Thu, 19 Nov 2026 00:00:00 -0800
+Subject: [PATCH] [sim] Emulate core-local DmaCore in hw_sim
+
+Replace the legacy SoC DmaEngine descriptor-chain emulation at
+0x40050000 in DmaMemoryWrapper with core-local dma.DmaCore
+register-programmed emulation at 0x00032000 (default) and 0x00202000
+(highmem, matching CoreAxi with enableDma = true). Support memcopy tail
+masking, n_areas strided de-interleave, sticky align/cfg/xfer errors,
+invalid-offset (and sub-word/misaligned) access faults, and per-run
+CSR/layout reset matching DmaCsr.scala and CoreAxi.scala.
+---
+diff --git a/sim/hw_sim/mpact_simulator.cc b/sim/hw_sim/mpact_simulator.cc
+index 2910f96..339adef 100644
+--- a/sim/hw_sim/mpact_simulator.cc
++++ b/sim/hw_sim/mpact_simulator.cc
+@@ -51,26 +51,34 @@ const uint32_t kAddrMailbox = 0x401fc000;  // user-configurable
+ // raises on ebreak.
+ constexpr uint32_t kMcauseUsageFault = 25;
+ 
+-// DMA Controller Constants
+-constexpr uint32_t kDmaBase = 0x40050000;
+-constexpr uint32_t kDmaRegsSize = 0x14;  // 5 registers, 4 bytes each
++// DmaCore MMIO Constants (Parameters.scala, DmaCsr.scala)
++constexpr uint32_t kDmaDefaultBase = 0x00032000;
++constexpr uint32_t kDmaHighmemBase = 0x00202000;
++constexpr uint32_t kDmaApertureSize = 0x00001000;
++constexpr uint32_t kDmaRegsEnd = 0x20;
++constexpr uint32_t kDmaBeatBytes = 16;
+ 
+ // Register Offsets
+ constexpr uint32_t kDmaCtrlOffset = 0x00;
+ constexpr uint32_t kDmaStatusOffset = 0x04;
+-constexpr uint32_t kDmaDescAddrOffset = 0x08;
+-constexpr uint32_t kDmaCurDescOffset = 0x0c;
+-constexpr uint32_t kDmaXferRemainOffset = 0x10;
++constexpr uint32_t kDmaSrcAddrOffset = 0x08;
++constexpr uint32_t kDmaDstAddrOffset = 0x0c;
++constexpr uint32_t kDmaLenFlagsOffset = 0x10;
++constexpr uint32_t kDmaXferCfgOffset = 0x14;
++constexpr uint32_t kDmaAreaSizeOffset = 0x18;
++constexpr uint32_t kDmaPassRemOffset = 0x1c;
+ 
+ // Control Register Bits
+ constexpr uint32_t kDmaCtrlEnable = 0x1;
+ constexpr uint32_t kDmaCtrlStart = 0x2;
+-[[maybe_unused]] constexpr uint32_t kDmaCtrlAbort = 0x4;
++constexpr uint32_t kDmaCtrlClearError = 0x8;
+ 
+ // Status Register Bits
+-constexpr uint32_t kDmaStatusBusy = 0x1;
+ constexpr uint32_t kDmaStatusDone = 0x2;
+-[[maybe_unused]] constexpr uint32_t kDmaStatusError = 0x4;
++constexpr uint32_t kDmaStatusError = 0x4;
++constexpr uint32_t kDmaStatusAlignError = 0x8;
++constexpr uint32_t kDmaStatusCfgError = 0x10;
++constexpr uint32_t kDmaStatusXferError = 0x20;
+ 
+ // The callbacks set with SetTraceCallback and SetMemoryAccessCallback.
+ struct ObserverState {
+@@ -97,25 +105,64 @@ class DmaMemoryWrapper : public ::mpact::sim::util::MemoryInterface {
+ 
+   ~DmaMemoryWrapper() override = default;
+ 
++  // Attaches the RISC-V state used to raise access-fault traps.
++  void set_rv_state(::coralnpu::sim::CoralNPUM4State* rv_state) {
++    rv_state_ = rv_state;
++  }
++
++  // Resets software-visible DmaCore CSRs to hardware reset defaults
++  // (DmaCsr.scala) and selects the active layout's MMIO aperture.
++  void Reset(bool highmem) {
++    highmem_ = highmem;
++    dma_enable_ = false;
++    dma_done_ = false;
++    dma_align_err_ = false;
++    dma_cfg_err_ = false;
++    dma_xfer_err_ = false;
++    dma_src_addr_ = 0;
++    dma_dst_addr_ = 0;
++    dma_len_flags_ = 0;
++    dma_xfer_cfg_ = 1;  // n_areas = 1 out of reset (DmaCsr.scala)
++    dma_area_size_ = 0;
++  }
++
+   void Load(uint64_t address, ::mpact::sim::generic::DataBuffer* db,
+             ::mpact::sim::generic::Instruction* inst,
+             ::mpact::sim::generic::ReferenceCount* context) override {
+-    Report(address, db->size<uint8_t>(), /*is_store=*/false);
+-    if (IsDmaAddress(address)) {
+-      HandleDmaRead(address, db);
+-      if (inst != nullptr) {
+-        inst->Execute(context);
++    size_t size = db->size<uint8_t>();
++    Report(address, size, /*is_store=*/false);
++    if (observer_state_->core_running && !observer_state_->decoding) {
++      // Stop subsequent beats of a multi-beat instruction after the first trap.
++      if (rv_state_->branch()) return;
++      if (OverlapsDmaAperture(address, size)) {
++        if (!IsValidDmaCsrAccess(address, size)) {
++          RaiseAccessFault(address, /*is_store=*/false);
++          return;
++        }
++        HandleDmaRead(address, db);
++        if (inst != nullptr) {
++          inst->Execute(context);
++        }
++        return;
+       }
+-      return;
+     }
+     parent_->Load(address, db, inst, context);
+   }
+ 
+   void Store(uint64_t address, ::mpact::sim::generic::DataBuffer* db) override {
+-    Report(address, db->size<uint8_t>(), /*is_store=*/true);
+-    if (IsDmaAddress(address)) {
+-      HandleDmaWrite(address, db);
+-      return;
++    size_t size = db->size<uint8_t>();
++    Report(address, size, /*is_store=*/true);
++    if (observer_state_->core_running) {
++      // Stop subsequent beats of a multi-beat instruction after the first trap.
++      if (rv_state_->branch()) return;
++      if (OverlapsDmaAperture(address, size)) {
++        if (!IsValidDmaCsrAccess(address, size)) {
++          RaiseAccessFault(address, /*is_store=*/true);
++          return;
++        }
++        HandleDmaWrite(address, db);
++        return;
++      }
+     }
+     parent_->Store(address, db);
+   }
+@@ -159,101 +206,224 @@ class DmaMemoryWrapper : public ::mpact::sim::util::MemoryInterface {
+     }
+   }
+ 
+-  bool IsDmaAddress(uint64_t addr) {
+-    return addr >= kDmaBase && addr < kDmaBase + kDmaRegsSize;
++  // Returns the active DmaCore MMIO base address.
++  uint32_t DmaBase() const {
++    return highmem_ ? kDmaHighmemBase : kDmaDefaultBase;
++  }
++
++  // Returns true when [addr, addr + size) overlaps DmaCore's 4 KB aperture.
++  bool OverlapsDmaAperture(uint64_t addr, size_t size) const {
++    if (size == 0) return false;
++    uint64_t base = DmaBase();
++    return addr < base + kDmaApertureSize && addr + size > base;
++  }
++
++  // DmaCsr.scala sets d_error_reg := !addrValid outside offsets 0x00..0x1c;
++  // MPACT also faults on sub-word or misaligned accesses (README §2.3).
++  bool IsValidDmaCsrAccess(uint64_t addr, size_t size) const {
++    if (size != 4) return false;
++    uint64_t offset = addr - DmaBase();
++    return offset < kDmaRegsEnd && (offset & 0x3u) == 0u;
+   }
+ 
++  // Raises a RISC-V load or store access fault on invalid DmaCore CSR access.
++  void RaiseAccessFault(uint64_t address, bool is_store) {
++    auto code = is_store ? ::mpact::sim::riscv::ExceptionCode::kStoreAccessFault
++                         : ::mpact::sim::riscv::ExceptionCode::kLoadAccessFault;
++    uint64_t epc = rv_state_->pc_operand()->AsUint64(0);
++    rv_state_->Trap(/*is_interrupt=*/false, /*trap_value=*/address,
++                    static_cast<uint64_t>(code), epc, /*inst=*/nullptr);
++  }
++
++  // Matches CoreAxi.scala dmaRouteFn: ITCM, Core CSR, and DMA CSR return a
++  // TileLink error on DmaCore's tl_host port (32-bit address space).
++  bool IsDmaBusErrorBeat(uint32_t beat_addr) const {
++    uint32_t itcm_size = highmem_ ? 0x00100000u : 0x00002000u;
++    uint32_t csr_base = highmem_ ? 0x00200000u : 0x00030000u;
++    uint32_t dma_base = DmaBase();
++    return beat_addr < itcm_size ||
++           (beat_addr >= csr_base && beat_addr < csr_base + 0x00001000u) ||
++           (beat_addr >= dma_base && beat_addr < dma_base + kDmaApertureSize);
++  }
++
++  // Services a validated 32-bit CSR read from DmaCore.
+   void HandleDmaRead(uint64_t address, ::mpact::sim::generic::DataBuffer* db) {
+-    uint32_t offset = address - kDmaBase;
++    uint32_t offset = static_cast<uint32_t>(address - DmaBase());
+     uint32_t val = 0;
+     switch (offset) {
+       case kDmaCtrlOffset:
+-        val = dma_ctrl_;
++        val = dma_enable_ ? kDmaCtrlEnable : 0u;
+         break;
+-      case kDmaStatusOffset:
+-        val = dma_status_;
++      case kDmaStatusOffset: {
++        bool error_any = dma_align_err_ || dma_cfg_err_ || dma_xfer_err_;
++        if (dma_done_) val |= kDmaStatusDone;
++        if (error_any) val |= kDmaStatusError;
++        if (dma_align_err_) val |= kDmaStatusAlignError;
++        if (dma_cfg_err_) val |= kDmaStatusCfgError;
++        if (dma_xfer_err_) val |= kDmaStatusXferError;
+         break;
+-      case kDmaDescAddrOffset:
+-        val = dma_desc_addr_;
++      }
++      case kDmaSrcAddrOffset:
++        val = dma_src_addr_;
+         break;
+-      case kDmaCurDescOffset:
+-        val = dma_cur_desc_;
++      case kDmaDstAddrOffset:
++        val = dma_dst_addr_;
+         break;
+-      case kDmaXferRemainOffset:
+-        val = dma_xfer_remain_;
++      case kDmaLenFlagsOffset:
++        val = dma_len_flags_;
++        break;
++      case kDmaXferCfgOffset:
++        val = dma_xfer_cfg_;
++        break;
++      case kDmaAreaSizeOffset:
++        val = dma_area_size_;
++        break;
++      case kDmaPassRemOffset:
++        val = 0u;
+         break;
+     }
+-    if (db->size<uint8_t>() == 4) {
+-      db->Set<uint32_t>(0, val);
+-    }
++    db->Set<uint32_t>(0, val);
+   }
+ 
++  // Services a validated 32-bit CSR write to DmaCore.
+   void HandleDmaWrite(uint64_t address, ::mpact::sim::generic::DataBuffer* db) {
+-    uint32_t offset = address - kDmaBase;
+-    uint32_t val = 0;
+-    if (db->size<uint8_t>() == 4) {
+-      val = db->Get<uint32_t>(0);
+-    } else {
+-      return;
+-    }
++    uint32_t offset = static_cast<uint32_t>(address - DmaBase());
++    uint32_t val = db->Get<uint32_t>(0);
+ 
+     switch (offset) {
+-      case kDmaCtrlOffset:
+-        dma_ctrl_ = val;
+-        if ((dma_ctrl_ & (kDmaCtrlEnable | kDmaCtrlStart)) ==
+-            (kDmaCtrlEnable | kDmaCtrlStart)) {
+-          RunDma();
++      case kDmaCtrlOffset: {
++        dma_enable_ = (val & kDmaCtrlEnable) != 0;
++        bool start_req = dma_enable_ && ((val & kDmaCtrlStart) != 0);
++        if ((val & kDmaCtrlClearError) != 0) {
++          dma_align_err_ = false;
++          dma_cfg_err_ = false;
++          dma_xfer_err_ = false;
++        }
++        if (start_req) {
++          StartDma();
+         }
+         break;
+-      case kDmaDescAddrOffset:
+-        dma_desc_addr_ = val;
++      }
++      case kDmaSrcAddrOffset:
++        dma_src_addr_ = val;
++        break;
++      case kDmaDstAddrOffset:
++        dma_dst_addr_ = val;
++        break;
++      case kDmaLenFlagsOffset:
++        dma_len_flags_ = val;
++        break;
++      case kDmaXferCfgOffset:
++        dma_xfer_cfg_ = val;
++        break;
++      case kDmaAreaSizeOffset:
++        dma_area_size_ = val & 0x00FFFFFFu;
+         break;
+     }
+   }
+ 
+-  void RunDma() {
+-    dma_status_ |= kDmaStatusBusy;
+-    dma_status_ &= ~kDmaStatusDone;
++  // Validates DmaCore CSRs on CTRL.START (DmaCsr.scala) and runs valid jobs.
++  void StartDma() {
++    dma_done_ = false;
++    bool error_eff = dma_align_err_ || dma_cfg_err_ || dma_xfer_err_;
++
++    bool align_error = ((dma_src_addr_ | dma_dst_addr_) & 0xFu) != 0u;
++    uint32_t len = dma_len_flags_ & 0x00FFFFFFu;
++    uint32_t xfer_width = (dma_len_flags_ >> 24) & 0x7u;
++    bool bad_mode = ((dma_len_flags_ >> 27) & 0x7u) != 0u;
++    bool bad_elem_size = xfer_width > 4u;
++    uint32_t n_areas = dma_xfer_cfg_ & 0xFFu;
++    bool strided = n_areas > 1u;
++    bool bad_length = (len == 0u) || (strided && dma_area_size_ == 0u);
++    bool bad_areas = (n_areas == 0u) || (n_areas > kDmaBeatBytes);
++    bool cfg_error = bad_mode || bad_elem_size || bad_length || bad_areas;
++
++    if (align_error) dma_align_err_ = true;
++    if (cfg_error) dma_cfg_err_ = true;
++    if (align_error || cfg_error || error_eff) return;
++
++    RunDma(len, xfer_width, n_areas);
++  }
+ 
+-    uint32_t desc_addr = dma_desc_addr_;
++  // Executes a validated memcopy (n_areas == 1) or strided de-interleave job.
++  void RunDma(uint32_t len, uint32_t xfer_width, uint32_t n_areas) {
+     ::mpact::sim::generic::DataBufferFactory db_factory;
+-
+-    while (desc_addr != 0) {
+-      dma_cur_desc_ = desc_addr;
+-
+-      // Read descriptor (32 bytes)
+-      auto* desc_db = db_factory.Allocate(32);
+-      parent_->Load(desc_addr, desc_db, nullptr, nullptr);
+-
+-      uint32_t src_addr = desc_db->Get<uint32_t>(0);
+-      uint32_t dst_addr = desc_db->Get<uint32_t>(1);
+-      uint32_t len_flags = desc_db->Get<uint32_t>(2);
+-      uint32_t next_desc = desc_db->Get<uint32_t>(3);
+-
+-      uint32_t xfer_len = len_flags & 0x00FFFFFFu;
+-
+-      if (xfer_len > 0) {
+-        auto* data_db = db_factory.Allocate(xfer_len);
+-        parent_->Load(src_addr, data_db, nullptr, nullptr);
+-        parent_->Store(dst_addr, data_db);
+-        data_db->DecRef();
++    auto* beat_db = db_factory.Allocate(kDmaBeatBytes);
++
++    // DmaCsr.scala: memcopy uses area_size = len and forces logElemSize = 4.
++    uint32_t area_size = (n_areas == 1u) ? len : dma_area_size_;
++    uint32_t eff_width = (n_areas == 1u) ? 4u : xfer_width;
++    uint32_t passes = (area_size + kDmaBeatBytes - 1u) / kDmaBeatBytes;
++    uint32_t tail_bytes = area_size & (kDmaBeatBytes - 1u);
++    uint32_t row_pitch = passes * kDmaBeatBytes;
++    uint32_t elem_bytes = 1u << eff_width;
++    uint32_t elems_per_beat = kDmaBeatBytes >> eff_width;
++    uint8_t pass_src[kDmaBeatBytes * kDmaBeatBytes];
++
++    for (uint32_t pass = 0; pass < passes; ++pass) {
++      uint32_t src_pass_base = dma_src_addr_ + pass * n_areas * kDmaBeatBytes;
++      for (uint32_t r = 0; r < n_areas; ++r) {
++        uint32_t src_addr = src_pass_base + r * kDmaBeatBytes;
++        if (IsDmaBusErrorBeat(src_addr)) {
++          dma_xfer_err_ = true;
++          beat_db->DecRef();
++          return;
++        }
++        parent_->Load(src_addr, beat_db, /*inst=*/nullptr,
++                      /*context=*/nullptr);
++        for (uint32_t b = 0; b < kDmaBeatBytes; ++b) {
++          pass_src[r * kDmaBeatBytes + b] = beat_db->Get<uint8_t>(b);
++        }
+       }
+ 
+-      desc_db->DecRef();
+-      desc_addr = next_desc;
++      uint32_t write_bytes = (pass + 1u == passes && tail_bytes != 0u)
++                                 ? tail_bytes
++                                 : kDmaBeatBytes;
++      auto* out_db = (write_bytes == kDmaBeatBytes)
++                         ? beat_db
++                         : db_factory.Allocate(write_bytes);
++      for (uint32_t plane = 0; plane < n_areas; ++plane) {
++        uint32_t dst_addr =
++            dma_dst_addr_ + plane * row_pitch + pass * kDmaBeatBytes;
++        if (IsDmaBusErrorBeat(dst_addr)) {
++          dma_xfer_err_ = true;
++          if (out_db != beat_db) out_db->DecRef();
++          beat_db->DecRef();
++          return;
++        }
++        uint8_t gathered[kDmaBeatBytes];
++        for (uint32_t k = 0; k < elems_per_beat; ++k) {
++          uint32_t src_off = (k * n_areas + plane) * elem_bytes;
++          for (uint32_t b = 0; b < elem_bytes; ++b) {
++            gathered[k * elem_bytes + b] = pass_src[src_off + b];
++          }
++        }
++        for (uint32_t b = 0; b < write_bytes; ++b) {
++          out_db->Set<uint8_t>(b, gathered[b]);
++        }
++        parent_->Store(dst_addr, out_db);
++      }
++      if (out_db != beat_db) out_db->DecRef();
+     }
+ 
+-    dma_status_ &= ~kDmaStatusBusy;
+-    dma_status_ |= kDmaStatusDone;
++    beat_db->DecRef();
++    dma_done_ = true;
+   }
+ 
+   ::mpact::sim::util::MemoryInterface* parent_;
+   const ObserverState* observer_state_;
+-  uint32_t dma_ctrl_ = 0;
+-  uint32_t dma_status_ = 0;
+-  uint32_t dma_desc_addr_ = 0;
+-  uint32_t dma_cur_desc_ = 0;
+-  uint32_t dma_xfer_remain_ = 0;
++  ::coralnpu::sim::CoralNPUM4State* rv_state_ = nullptr;
++  bool highmem_ = false;
++  bool dma_enable_ = false;
++  bool dma_done_ = false;
++  bool dma_align_err_ = false;
++  bool dma_cfg_err_ = false;
++  bool dma_xfer_err_ = false;
++  uint32_t dma_src_addr_ = 0;
++  uint32_t dma_dst_addr_ = 0;
++  uint32_t dma_len_flags_ = 0;
++  uint32_t dma_xfer_cfg_ = 1;  // n_areas = 1 out of reset (DmaCsr.scala)
++  uint32_t dma_area_size_ = 0;
+ };
+ 
+ // Wraps a decoded instruction to call the trace callback before executing it.
+@@ -352,6 +522,7 @@ class MpactSimulator final : public CoralNPUSimulator {
+         rv_decoder_(&rv_state_, &dma_memory_),
+         observing_decoder_(&rv_decoder_, &memory_, &observer_state_),
+         rv_top_("CoralNPUPlaceholder", &rv_state_, &observing_decoder_) {
++    dma_memory_.set_rv_state(&rv_state_);
+     // Make sure the architectural and abi register aliases are added.
+     std::string reg_name;
+     for (int i = 0; i < 32; i++) {
+@@ -504,6 +675,10 @@ class MpactSimulator final : public CoralNPUSimulator {
+   bool fault_ = false;
+   // Whether the last run failed, so that the state of the core is unknown.
+   bool run_failed_ = false;
++  // Active TCM layout latched at Run() from host writes since the prior Run().
++  bool highmem_layout_ = false;
++  bool saw_tcm_write_ = false;
++  bool saw_highmem_write_ = false;
+ };
+ 
+ void MpactSimulator::ReadMem(uint32_t addr, size_t size, char* data) {
+@@ -525,6 +700,16 @@ const CoralNPUMailbox& MpactSimulator::ReadMailbox() {
+ }
+ 
+ void MpactSimulator::WriteMem(uint32_t addr, size_t size, const char* data) {
++  if (size > 0 && addr < 0x00200000u) {
++    uint64_t end = static_cast<uint64_t>(addr) + size;
++    saw_tcm_write_ = true;
++    // Default layout maps only [0, 0x2000) ITCM and [0x10000, 0x18000) DTCM
++    // below 0x200000; any write outside those ranges belongs to 1 MB highmem
++    // ITCM or [0x100000, 0x200000) highmem DTCM.
++    if ((addr < 0x00010000u && end > 0x00002000u) || end > 0x00018000u) {
++      saw_highmem_write_ = true;
++    }
++  }
+   auto result = rv_top_.WriteMemory(addr, data, size);
+   if (!result.ok()) {
+     std::cerr << "Error: " << result.status() << std::endl;
+@@ -542,10 +727,16 @@ void MpactSimulator::WriteMailbox(const CoralNPUMailbox& mailbox) {
+ }
+ 
+ void MpactSimulator::Run(uint32_t start_addr) {
+-  // The core status of the previous run doesn't apply to this one.
++  // The core and DmaCore CSR state of the previous run don't apply to this one.
+   halted_ = false;
+   fault_ = false;
+   run_failed_ = false;
++  if (saw_tcm_write_) {
++    highmem_layout_ = saw_highmem_write_;
++    saw_tcm_write_ = false;
++    saw_highmem_write_ = false;
++  }
++  dma_memory_.Reset(highmem_layout_);
+   absl::Status pc_write = rv_top_.WriteRegister("pc", start_addr);
+   assert(pc_write.ok());
+ }
+@@ -559,9 +750,9 @@ bool MpactSimulator::WaitForTermination(int timeout) {
+     if (!status.ok() || !reason.ok()) {
+       observer_state_.core_running = false;
+       run_failed_ = true;
+-      LOG(ERROR) << "Simulator run failed: "
+-                 << (!status.ok() ? status.status() : reason.status())
+-                        .message();
++      LOG(ERROR)
++          << "Simulator run failed: "
++          << (!status.ok() ? status.status() : reason.status()).message();
+       return false;
+     }
+     if (*reason !=

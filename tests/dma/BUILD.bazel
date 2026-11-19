@@ -28,7 +28,6 @@ package(
 )
 
 GUEST_TESTS = [
-    "dma_runtime_test",
     "dma_runtime_nowait_test",
     "dma_chain_test",
     "dma_double_buffer_test",
@@ -46,6 +45,37 @@ GUEST_TESTS = [
     for name in GUEST_TESTS
 ]
 
+coralnpu_rv32_elf(
+    name = "dma_runtime_test_elf",
+    src = "dma_runtime_test.c",
+    hdrs = [
+        "dma_test_common.h",
+        "//crt:coralnpu_dma.h",
+    ],
+    copts = ["-DEXPECTED_DMA_BASE=0x00032000u"],
+)
+
+coralnpu_rv32_elf(
+    name = "dma_runtime_highmem_test_elf",
+    src = "dma_runtime_test.c",
+    hdrs = [
+        "dma_test_common.h",
+        "//crt:coralnpu_dma.h",
+    ],
+    copts = ["-DEXPECTED_DMA_BASE=0x00202000u"],
+    linker_script = "//crt:coralnpu_tcm_highmem_ld",
+)
+
+coralnpu_rv32_elf(
+    name = "dma_timeout_test_elf",
+    src = "dma_timeout_test.c",
+    hdrs = [
+        "dma_test_common.h",
+        "//crt:coralnpu_dma.h",
+    ],
+    ldflags = ["--defsym=__dma_base=0x20001000"],
+)
+
 RUNNER_DEPS = [
     "//crt:coralnpu_dispatch_hdrs",
     "//runtime/sim:simulator",
@@ -59,7 +89,7 @@ RUNNER_TAGS = [
     "target=coralnpu",
 ]
 
-# Both directions, the busy guard, and the shape checks.
+# Both directions, tail masking, busy/shape guards, and sticky error recovery.
 cc_test(
     name = "dma_runtime_test",
     srcs = [
@@ -72,6 +102,24 @@ cc_test(
         "D11A0000",
     ],
     data = [":dma_runtime_test.elf"],
+    linkstatic = True,
+    tags = RUNNER_TAGS,
+    deps = RUNNER_DEPS,
+)
+
+# Highmem layout: verifies __dma_base and MPACT DmaCore mapping at 0x00202000.
+cc_test(
+    name = "dma_runtime_highmem_test",
+    srcs = [
+        "dma_sim_runner.cc",
+        "dma_test_common.h",
+    ],
+    args = [
+        "$(rootpath :dma_runtime_highmem_test.elf)",
+        "--expect",
+        "D11A0000",
+    ],
+    data = [":dma_runtime_highmem_test.elf"],
     linkstatic = True,
     tags = RUNNER_TAGS,
     deps = RUNNER_DEPS,
@@ -96,7 +144,7 @@ cc_test(
     deps = RUNNER_DEPS,
 )
 
-# Gathers a strided 2D tile using one chained descriptor per row.
+# Gathers a strided 2D tile row by row and exercises hardware de-interleave.
 cc_test(
     name = "dma_chain_test",
     srcs = [
@@ -134,6 +182,25 @@ cc_test(
     deps = RUNNER_DEPS,
 )
 
+# Overrides __dma_base to EXTMEM SRAM to test beat-scaled ETIMEOUT and retry
+# wait_done() without re-issuing CTRL.START.
+cc_test(
+    name = "dma_timeout_test",
+    srcs = [
+        "dma_sim_runner.cc",
+        "dma_test_common.h",
+    ],
+    args = [
+        "$(rootpath :dma_timeout_test.elf)",
+        "--expect",
+        "D11F0000",
+    ],
+    data = [":dma_timeout_test.elf"],
+    linkstatic = True,
+    tags = RUNNER_TAGS,
+    deps = RUNNER_DEPS,
+)
+
 # Dispatch firmware, linked like compiler/Target/CoralNPULinkerTool.cpp does.
 coralnpu_rv32_elf(
     name = "dma_dispatch_test_elf",
@@ -142,12 +209,27 @@ coralnpu_rv32_elf(
     dispatch = True,
 )
 
-# Large HAL bindings and the DMA trace do not overlap.
+coralnpu_rv32_elf(
+    name = "dma_dispatch_highmem_test_elf",
+    src = "dma_dispatch_test.c",
+    hdrs = ["//crt:coralnpu_dma.h"],
+    dispatch = True,
+    linker_script = "//crt:coralnpu_tcm_highmem_ld",
+)
+
+# Large HAL bindings, DMA trace reset, per-dispatch CSR reset, and highmem<->default
+# layout switching on one reused simulator.
 cc_test(
     name = "dma_dispatch_test",
     srcs = ["dma_dispatch_runner.cc"],
-    args = ["$(rootpath :dma_dispatch_test.elf)"],
-    data = [":dma_dispatch_test.elf"],
+    args = [
+        "$(rootpath :dma_dispatch_test.elf)",
+        "$(rootpath :dma_dispatch_highmem_test.elf)",
+    ],
+    data = [
+        ":dma_dispatch_highmem_test.elf",
+        ":dma_dispatch_test.elf",
+    ],
     linkstatic = True,
     tags = RUNNER_TAGS,
     deps = RUNNER_DEPS + [

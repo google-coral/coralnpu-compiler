@@ -33,6 +33,8 @@ def coralnpu_rv32_elf(
         src,
         out = None,
         hdrs = [],
+        copts = [],
+        ldflags = [],
         dispatch = False,
         linker_script = "//crt:coralnpu_tcm_ld",
         tags = [],
@@ -44,6 +46,8 @@ def coralnpu_rv32_elf(
       src: C source file to compile.
       out: Output ELF filename (defaults to `<name without _elf>.elf`).
       hdrs: Additional header targets needed in the sandbox.
+      copts: Additional C compiler flags for `src`.
+      ldflags: Additional linker flags appended to `RV32_LDFLAGS`.
       dispatch: If True, includes IREE's `executable_library.h` and links
         `libcoralnpu_iree` + `libcoralnpu_crt` like `CoralNPULinkerTool.cpp`;
         otherwise links `libcoralnpu_crt` alone.
@@ -62,6 +66,8 @@ def coralnpu_rv32_elf(
     ]
     extra_srcs = [RV32_IREE_EXECUTABLE_LIBRARY_HDR] if dispatch else []
     extra_inc = (" -I" + RV32_IREE_INC) if dispatch else ""
+    extra_copts = (" " + " ".join(copts)) if copts else ""
+    extra_ldflags = (" " + " ".join(ldflags)) if ldflags else ""
 
     all_tags = list(tags)
     if "target=coralnpu" not in all_tags:
@@ -78,15 +84,17 @@ def coralnpu_rv32_elf(
         ] + hdrs + extra_srcs + archives,
         outs = [out],
         cmd = """
-            {clang} {clang_flags} {copts}{extra_inc} -c $(execpath {src}) -o $(@D)/{name}.o
-            {ld} -o $@ {ldflags} -T $(execpath {linker_script}) $(@D)/{name}.o \\
+            {clang} {clang_flags} {copts}{extra_copts}{extra_inc} -c $(execpath {src}) -o $(@D)/{name}.o
+            {ld} -o $@ {ldflags}{extra_ldflags} -T $(execpath {linker_script}) $(@D)/{name}.o \\
                 --whole-archive {archive_paths} --no-whole-archive
         """.format(
             archive_paths = " ".join(["$(execpath %s)" % a for a in archives]),
             clang = "$(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-clang)",
             clang_flags = RV32_CLANG_FLAGS,
             copts = RV32_COPTS,
+            extra_copts = extra_copts,
             extra_inc = extra_inc,
+            extra_ldflags = extra_ldflags,
             ld = "$(execpath @rv32_toolchain//:bin/riscv32-unknown-elf-ld)",
             ldflags = RV32_LDFLAGS,
             linker_script = linker_script,

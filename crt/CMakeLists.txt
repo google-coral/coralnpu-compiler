@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.20)
 project(coralnpu_crt LANGUAGES C CXX ASM)
 
 # Generate linker scripts without modifying the upstream template.
-function(generate_coralnpu_linker_script out_file itcm_length dtcm_origin dtcm_length)
+function(generate_coralnpu_linker_script out_file itcm_length dtcm_origin dtcm_length csr_origin)
   file(READ
     "${CMAKE_CURRENT_LIST_DIR}/../third_party/coralnpu/toolchain/coralnpu_tcm.ld.tpl"
     script
@@ -34,14 +34,14 @@ function(generate_coralnpu_linker_script out_file itcm_length dtcm_origin dtcm_l
   string(REPLACE "@@STACK_START_SPEC@@" "" script "${script}")
 
   string(APPEND script
-    "\n__itcm_start = ORIGIN(ITCM);\n__itcm_size = LENGTH(ITCM);\n__dtcm_start = ORIGIN(DTCM);\n__dtcm_size = LENGTH(DTCM);\n"
+    "\n__itcm_start = ORIGIN(ITCM);\n__itcm_size = LENGTH(ITCM);\n__dtcm_start = ORIGIN(DTCM);\n__dtcm_size = LENGTH(DTCM);\n__dma_base = DEFINED(__dma_base) ? __dma_base : ${csr_origin} + 0x2000;\n"
   )
 
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${out_file}" "${script}")
 endfunction()
 
-generate_coralnpu_linker_script("coralnpu_tcm.ld" "8" "0x00010000" "32")
-generate_coralnpu_linker_script("coralnpu_tcm_highmem.ld" "1024" "0x00100000" "1024")
+generate_coralnpu_linker_script("coralnpu_tcm.ld" "8" "0x00010000" "32" "0x00030000")
+generate_coralnpu_linker_script("coralnpu_tcm_highmem.ld" "1024" "0x00100000" "1024" "0x00200000")
 
 add_library(coralnpu_crt STATIC
   "${CMAKE_CURRENT_LIST_DIR}/../third_party/coralnpu/toolchain/crt/crt.S"

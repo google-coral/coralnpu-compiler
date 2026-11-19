@@ -12,24 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Software contract for the CoralNPU DMA engine.
+// Software contract for the CoralNPU core-local DMA engine (dma.DmaCore).
 //
-// The register map and descriptor layout below are taken from the hardware
-// specification (third_party/coralnpu/doc/peripherals/dma.md) and its
-// implementation (third_party/coralnpu/hdl/chisel/src/bus/DmaEngine.scala).
-// Hardware properties that callers (and later, compiler codegen) must respect:
+// The register map and transfer geometry below match the RTL specification
+// (third_party/coralnpu/hdl/chisel/src/dma/README.md) and implementation
+// (DmaCore.scala, DmaCsr.scala, CoreAxi.scala, Parameters.scala).
+// Hardware properties that callers (and compiler codegen) must respect:
 //
-//   1. Descriptors are 32 bytes and 32-byte aligned; the engine fetches them
-//      as two 128-bit beats.
-//   2. xfer_len must be an exact multiple of the beat size and both addresses
-//      must be beat-aligned, otherwise the engine's 24-bit remaining counter
-//      underflows and it transfers ~16 MB.
-//   3. A descriptor chain must not be modified while it is in flight.
-//   4. There is one channel and one outstanding transaction; concurrent
-//      transfers must be issued as one chain or serialised by the caller.
-//   5. STATUS.done is level-triggered: it stays set until the next start from
-//      idle, so always pair a start with exactly one wait.
-//   6. poll_en requires poll_addr != 0.
+//   1. SRC_ADDR and DST_ADDR must be 16-byte aligned (align_error otherwise).
+//      Byte length need not be a multiple of 16; hardware masks the tail beat.
+//   2. 0 < len <= 0x00FFFFFF. In strided de-interleave mode (n_areas = 2..16),
+//      len must be a multiple of (n_areas << elem_width_log2) and AREA_SIZE is
+//      set to len / n_areas.
+//   3. elem_width_log2 <= 4, 1 <= n_areas <= 16, and LEN_FLAGS[31:27] == 0
+//      (cfg_error otherwise, except reserved LEN_FLAGS[31:30]).
+//   4. In strided mode, source must remain readable up to ceil(area_size / 16)
+//      * n_areas * 16 bytes (over-read up to 240 bytes; contents ignored).
+//   5. In strided mode, destination must hold n_areas * row_pitch bytes, where
+//      row_pitch is ceil(area_size / 16) * 16.
+//   6. DmaCore's host port reaches banked DTCM and external AXI (EXTMEM/DDR);
+//      ITCM (including .rodata) and core/DMA CSRs return xfer_error.
+//   7. STATUS error bits are sticky until cleared by CTRL.CLEAR_ERROR (blocking
+//      subsequent starts), STATUS.done rises only on clean completion, and each
+//      start must be paired with one wait_done() (single transfer in flight).
 
 #ifndef CRT_CORALNPU_DMA_H_
 #define CRT_CORALNPU_DMA_H_
@@ -40,123 +45,98 @@
 extern "C" {
 #endif  // __cplusplus
 
-// MMIO base address and register offsets.
-#define CORALNPU_DMA_BASE 0x40050000u
-#define CORALNPU_DMA_CTRL (CORALNPU_DMA_BASE + 0x00u)
-#define CORALNPU_DMA_STATUS (CORALNPU_DMA_BASE + 0x04u)
-#define CORALNPU_DMA_DESC_ADDR (CORALNPU_DMA_BASE + 0x08u)
-#define CORALNPU_DMA_CUR_DESC (CORALNPU_DMA_BASE + 0x0Cu)
-#define CORALNPU_DMA_XFER_REMAIN (CORALNPU_DMA_BASE + 0x10u)
+// MMIO base addresses (Parameters.scala: csrRegion.memStart + 0x2000).
+#define CORALNPU_DMA_DEFAULT_BASE 0x00032000u
+#define CORALNPU_DMA_HIGHMEM_BASE 0x00202000u
 
-// CTRL register bits.
+// Returns the DmaCore MMIO base address for the linked memory layout
+// (0x00032000 on default 32 KB DTCM, 0x00202000 on 1 MB highmem).
+#if defined(__riscv)
+extern char __dma_base[];
+static inline uint32_t coralnpu_dma_base(void) {
+  return (uint32_t)(uintptr_t)__dma_base;
+}
+#else
+static inline uint32_t coralnpu_dma_base(void) {
+  return CORALNPU_DMA_DEFAULT_BASE;
+}
+#endif  // __riscv
+
+// Register offsets from coralnpu_dma_base() (DmaCsr.scala).
+#define CORALNPU_DMA_CTRL_OFFSET 0x00u
+#define CORALNPU_DMA_STATUS_OFFSET 0x04u
+#define CORALNPU_DMA_SRC_ADDR_OFFSET 0x08u
+#define CORALNPU_DMA_DST_ADDR_OFFSET 0x0Cu
+#define CORALNPU_DMA_LEN_FLAGS_OFFSET 0x10u
+#define CORALNPU_DMA_XFER_CFG_OFFSET 0x14u
+#define CORALNPU_DMA_AREA_SIZE_OFFSET 0x18u
+#define CORALNPU_DMA_PASS_REM_OFFSET 0x1Cu
+
+// Absolute MMIO register addresses for the active memory layout.
+#define CORALNPU_DMA_CTRL (coralnpu_dma_base() + CORALNPU_DMA_CTRL_OFFSET)
+#define CORALNPU_DMA_STATUS (coralnpu_dma_base() + CORALNPU_DMA_STATUS_OFFSET)
+#define CORALNPU_DMA_SRC_ADDR \
+  (coralnpu_dma_base() + CORALNPU_DMA_SRC_ADDR_OFFSET)
+#define CORALNPU_DMA_DST_ADDR \
+  (coralnpu_dma_base() + CORALNPU_DMA_DST_ADDR_OFFSET)
+#define CORALNPU_DMA_LEN_FLAGS \
+  (coralnpu_dma_base() + CORALNPU_DMA_LEN_FLAGS_OFFSET)
+#define CORALNPU_DMA_XFER_CFG \
+  (coralnpu_dma_base() + CORALNPU_DMA_XFER_CFG_OFFSET)
+#define CORALNPU_DMA_AREA_SIZE \
+  (coralnpu_dma_base() + CORALNPU_DMA_AREA_SIZE_OFFSET)
+#define CORALNPU_DMA_PASS_REM \
+  (coralnpu_dma_base() + CORALNPU_DMA_PASS_REM_OFFSET)
+
+// CTRL register bits (reads return ENABLE only; CTRL[2] abort is reserved).
 #define CORALNPU_DMA_CTRL_ENABLE (1u << 0)
-#define CORALNPU_DMA_CTRL_START (1u << 1)  // W1S, self-clearing
-#define CORALNPU_DMA_CTRL_ABORT (1u << 2)
+#define CORALNPU_DMA_CTRL_START (1u << 1)        // self-clearing from idle
+#define CORALNPU_DMA_CTRL_CLEAR_ERROR (1u << 3)  // clears sticky error flags
 
 // STATUS register bits.
 #define CORALNPU_DMA_STATUS_BUSY (1u << 0)
 #define CORALNPU_DMA_STATUS_DONE (1u << 1)
 #define CORALNPU_DMA_STATUS_ERROR (1u << 2)
-// STATUS[7:4] holds the error code; shift then mask to extract it.
-#define CORALNPU_DMA_STATUS_ERROR_CODE_SHIFT 4u
-#define CORALNPU_DMA_STATUS_ERROR_CODE_MASK 0xFu
+#define CORALNPU_DMA_STATUS_ALIGN_ERROR (1u << 3)
+#define CORALNPU_DMA_STATUS_CFG_ERROR (1u << 4)
+#define CORALNPU_DMA_STATUS_XFER_ERROR (1u << 5)
+#define CORALNPU_DMA_STATUS_ERROR_FLAGS_MASK                         \
+  (CORALNPU_DMA_STATUS_ALIGN_ERROR | CORALNPU_DMA_STATUS_CFG_ERROR | \
+   CORALNPU_DMA_STATUS_XFER_ERROR)
 
-// Error codes reported in STATUS[7:4] (DmaEngine.scala status update).
-#define CORALNPU_DMA_ERR_NONE 0u
-#define CORALNPU_DMA_ERR_DESC_FETCH 1u  // sFetchDesc0Resp / sFetchDesc1Resp
-#define CORALNPU_DMA_ERR_POLL 2u        // sPollResp
-#define CORALNPU_DMA_ERR_READ 3u        // sXferReadResp
-#define CORALNPU_DMA_ERR_WRITE 4u       // sXferWriteResp
-#define CORALNPU_DMA_ERR_ABORT 5u       // CTRL.abort
-
-// Descriptor flag bits within the packed len_flags word.
+// Bus beat geometry and LEN_FLAGS / XFER_CFG limits (DLENB = 16 bytes).
+#define CORALNPU_DMA_BEAT_BYTES 16u
+#define CORALNPU_DMA_ALIGN_MASK (CORALNPU_DMA_BEAT_BYTES - 1u)
 #define CORALNPU_DMA_LEN_MASK 0x00FFFFFFu
 #define CORALNPU_DMA_WIDTH_SHIFT 24u
 #define CORALNPU_DMA_WIDTH_MASK 0x7u
-#define CORALNPU_DMA_FLAG_SRC_FIXED (1u << 27)
-#define CORALNPU_DMA_FLAG_DST_FIXED (1u << 28)
-#define CORALNPU_DMA_FLAG_POLL_EN (1u << 29)
-#define CORALNPU_DMA_FLAGS_MASK                                    \
-  (CORALNPU_DMA_FLAG_SRC_FIXED | CORALNPU_DMA_FLAG_DST_FIXED | \
-   CORALNPU_DMA_FLAG_POLL_EN)
-
-// Beat size is log2(bytes); the 128-bit host port caps it at 4 (16 bytes).
 #define CORALNPU_DMA_MAX_WIDTH_LOG2 4u
-// Narrowest beat the contract accepts, as log2(bytes). Each beat costs a bus
-// read/write round trip, so a 1-byte beat is ~16x slower than a 16-byte one for
-// the same payload. Compiler-generated tiles are element-aligned (4 bytes or
-// wider), so needing a narrower beat means the caller computed a bad address or
-// length -- reject it rather than silently degrade.
-#define CORALNPU_DMA_MIN_WIDTH_LOG2 2u
-// Returned by coralnpu_dma_choose_width() when no accepted beat size fits.
-#define CORALNPU_DMA_WIDTH_INVALID 0xFFFFFFFFu
+#define CORALNPU_DMA_MAX_AREAS 16u
 
-// Return codes for the CRT helpers (distinct from hardware error codes).
+// Return codes for the CRT helpers.
 #define CORALNPU_DMA_OK 0
 #define CORALNPU_DMA_EBUSY (-1)
 #define CORALNPU_DMA_EINVAL (-2)
 #define CORALNPU_DMA_ETIMEOUT (-3)
 #define CORALNPU_DMA_EHARDWARE (-4)
 
-// 32-byte DMA descriptor; must be 32-byte aligned in memory.
-typedef struct __attribute__((packed, aligned(32))) coralnpu_dma_descriptor_t {
-  uint32_t src_addr;
-  uint32_t dst_addr;
-  uint32_t len_flags;  // [23:0] len, [26:24] log2(beat bytes), [27] src_fixed,
-                       // [28] dst_fixed, [29] poll_en
-  uint32_t next_desc;  // address of next descriptor, or 0 for end of chain
-  uint32_t poll_addr;  // status register polled before every beat (0 = none)
-  uint32_t poll_mask;
-  uint32_t poll_value;
-  uint32_t reserved;
-} coralnpu_dma_descriptor_t;
-
-
-// The length of the DMA descriptor needs to be 32 bytes:
-// Ref: third_party/coralnpu/doc/peripherals/dma.md
-#if defined(__cplusplus)
-static_assert(sizeof(coralnpu_dma_descriptor_t) == 32,
-              "DMA descriptor must be exactly 32 bytes");
-#else
-_Static_assert(sizeof(coralnpu_dma_descriptor_t) == 32,
-               "DMA descriptor must be exactly 32 bytes");
-#endif
-
-// Constructs the packed len_flags field. |flags| is a bitwise OR of the
-// CORALNPU_DMA_FLAG_* values.
+// Packs LEN_FLAGS ([23:0] xfer_len, [26:24] xfer_width; [31:27] must be 0).
 static inline uint32_t coralnpu_dma_make_len_flags(uint32_t len,
-                                                   uint32_t width_log2,
-                                                   uint32_t flags) {
+                                                   uint32_t elem_width_log2) {
   return (len & CORALNPU_DMA_LEN_MASK) |
-         ((width_log2 & CORALNPU_DMA_WIDTH_MASK) << CORALNPU_DMA_WIDTH_SHIFT) |
-         (flags & CORALNPU_DMA_FLAGS_MASK);
+         ((elem_width_log2 & CORALNPU_DMA_WIDTH_MASK)
+          << CORALNPU_DMA_WIDTH_SHIFT);
 }
 
-// Largest accepted beat size (as log2 bytes) for a transfer, or
-// CORALNPU_DMA_WIDTH_INVALID if none fits. The engine decrements its
-// remaining-length counter by exactly one beat per iteration and stops only
-// when the counter reaches zero, so the beat size MUST divide the length;
-// addresses must be beat-aligned for the same reason. Searching stops at
-// CORALNPU_DMA_MIN_WIDTH_LOG2 rather than falling through to a 1-byte beat, so
-// a badly shaped transfer fails loudly instead of running 16x slow.
-// TODO: should we fail or continue with a slow transfer?
-static inline uint32_t coralnpu_dma_choose_width(uint32_t len, uint32_t src,
-                                                 uint32_t dst) {
-  uint32_t w = CORALNPU_DMA_MAX_WIDTH_LOG2 + 1u;
-  while (w-- > CORALNPU_DMA_MIN_WIDTH_LOG2) {
-    uint32_t beat = 1u << w;
-    if ((len % beat) == 0u && (src % beat) == 0u && (dst % beat) == 0u) {
-      return w;
-    }
-  }
-  return CORALNPU_DMA_WIDTH_INVALID;
+// Returns the byte stride between output planes in strided de-interleave mode:
+// ceil(area_size / 16) * 16.
+static inline uint32_t coralnpu_dma_row_pitch(uint32_t area_size) {
+  return (area_size + CORALNPU_DMA_ALIGN_MASK) & ~CORALNPU_DMA_ALIGN_MASK;
 }
 
-// Compiler + hardware barrier, used at two points that need different
-// orderings: before CTRL.start, the descriptor's ordinary memory stores must be
-// visible before the device store (w -> o); after STATUS.done is observed, the
-// device load must precede the caller's loads of the destination (i -> r). A
-// full fence covers both and is accepted by every RISC-V assembler.
+// Compiler + hardware barrier: orders normal memory stores before the MMIO
+// CTRL.START store (w -> o), and orders the MMIO STATUS load before subsequent
+// reads of the destination buffer (i -> r).
 static inline void coralnpu_dma_fence(void) {
 #if defined(__riscv)
   __asm__ volatile("fence iorw, iorw" ::: "memory");
@@ -165,10 +145,11 @@ static inline void coralnpu_dma_fence(void) {
 #endif  // __riscv
 }
 
-// Issue mode. Deferred issue models transfer latency without simulator
-// support: start() only records the chain and wait_done() issues it after a
-// modelled delay. Immediate issue is the hardware behaviour. The API and the
-// generated call sequence are identical in both modes.
+// Issue mode. Deferred issue models transfer latency when the functional
+// simulator completes transfers synchronously inside CTRL.START: start calls
+// only record the job and wait_done() issues it after a modelled delay so
+// premature reads of the destination remain observable. Immediate issue writes
+// the MMIO registers on start.
 #define CORALNPU_DMA_ISSUE_IMMEDIATE 0
 #define CORALNPU_DMA_ISSUE_DEFERRED 1
 #ifndef CORALNPU_DMA_ISSUE_MODE
@@ -180,7 +161,7 @@ static inline void coralnpu_dma_fence(void) {
 typedef struct coralnpu_dma_trace_t {
   uint32_t seq;    // transfer sequence number
   uint32_t phase;  // CORALNPU_DMA_EVENT_*
-  uint32_t bytes;  // total chain payload bytes
+  uint32_t bytes;  // total transfer payload bytes
   uint32_t stamp;  // cycle counter, or 0 when unavailable
 } coralnpu_dma_trace_t;
 
@@ -230,33 +211,38 @@ static inline uint32_t coralnpu_dma_stamp(void) {
 #endif  // __riscv && CORALNPU_DMA_HAVE_RDCYCLE
 }
 
-// True while a chain is outstanding. Consults software state under deferred
-// issue and STATUS.busy under immediate issue.
+// Returns nonzero while a transfer is outstanding (awaiting wait_done() or
+// still active in STATUS.busy).
 int coralnpu_dma_busy(void);
 
-// Reads STATUS and extracts the hardware error code (0 when no error).
-uint32_t coralnpu_dma_error_code(void);
+// Reads STATUS and returns the sticky error flag bits
+// (CORALNPU_DMA_STATUS_{ALIGN,CFG,XFER}_ERROR; 0 when no error).
+uint32_t coralnpu_dma_error_flags(void);
 
-// Kicks off a descriptor chain. Returns CORALNPU_DMA_OK, or CORALNPU_DMA_EBUSY,
-// if a previous chain is still in flight (or CORALNPU_DMA_EINVAL if the chain
-// walk fails). The engine latches a start written while busy and re-fires it
-// on its next return to idle, so skipping this check would silently run a second
-// transfer of whatever DESC_ADDR holds then.
-int coralnpu_dma_start(const coralnpu_dma_descriptor_t *desc);
+// Clears sticky STATUS error flags via CTRL.CLEAR_ERROR while preserving
+// CTRL.ENABLE.
+void coralnpu_dma_clear_error(void);
 
-// Polling barrier. Returns CORALNPU_DMA_OK on clean completion,
-// CORALNPU_DMA_EHARDWARE if STATUS.error is set (query the code with
-// coralnpu_dma_error_code()), or CORALNPU_DMA_ETIMEOUT.
+// Starts an asynchronous transfer of |size_bytes| from |src| to |dst|,
+// optionally de-interleaving elements of size (1 << elem_width_log2) bytes
+// across |n_areas| output planes (1 = contiguous memcopy, 2..16 = strided
+// de-interleave with plane pitch coralnpu_dma_row_pitch(size_bytes / n_areas)).
+// Returns CORALNPU_DMA_EINVAL on invalid alignment/shape, CORALNPU_DMA_EBUSY
+// if a previous transfer has not been awaited, or CORALNPU_DMA_OK.
+int coralnpu_dma_deinterleave_async(uint32_t dst, uint32_t src,
+                                    uint32_t size_bytes,
+                                    uint32_t elem_width_log2, uint32_t n_areas);
+
+// Starts an asynchronous contiguous 1D memory copy of |size_bytes| from |src|
+// to |dst|. Both addresses must be 16-byte aligned; |size_bytes| may be any
+// value in 1..CORALNPU_DMA_LEN_MASK.
+int coralnpu_dma_copy_async(uint32_t dst, uint32_t src, uint32_t size_bytes);
+
+// Waits for the outstanding transfer to finish. Returns CORALNPU_DMA_OK (also
+// when idle), CORALNPU_DMA_EHARDWARE if STATUS.error is set (inspect flags via
+// coralnpu_dma_error_flags() and clear via coralnpu_dma_clear_error() before
+// starting another transfer), or CORALNPU_DMA_ETIMEOUT.
 int coralnpu_dma_wait_done(void);
-
-// Aborts an in-flight chain and returns the engine to idle.
-void coralnpu_dma_abort(void);
-
-// Single non-blocking mem-to-mem transfer. Selects the beat size, validates
-// it, fills |desc|, and starts the engine. Returns CORALNPU_DMA_EINVAL if the
-// transfer cannot be expressed, otherwise the result of coralnpu_dma_start().
-int coralnpu_dma_copy_async(uint32_t dst, uint32_t src, uint32_t size_bytes,
-                            coralnpu_dma_descriptor_t *desc);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -720,7 +720,7 @@ The root-level `iree-*.patch` files are applied by
   `CoralNPUPromoteOperands`, and `CoralNPULowerDTCMCopies` (`TODO(DMA)`).
 - [ ] **With DMA**: Lower eligible DTCM tile copies in `CoralNPULowerDTCMCopies`
   to asynchronous DMA transfers, collapsing contiguous trailing dimensions into
-  single 1D transfers and using 2D/strided DMA descriptors for strided-row tiles
+  single 1D transfers and using per-row 1D DMA transfers for strided-row tiles
   (`TODO(DMA)`).
 - [ ] **Without DMA**: Stage non-DMA promoted copies through tensor-level
   `linalg.copy` + `iree_codegen.fusion_barrier` (or a copy `lowering_config`) so

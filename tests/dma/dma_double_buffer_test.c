@@ -20,11 +20,11 @@
 // Finally, `dtcm_accum` is DMA-copied back to DDR.
 //
 // In simulation (deferred issue), data only moves inside `wait_done()`, so
-// this test checks the ping-pong schedule (buffer indexing, descriptor reuse,
-// and start/wait pairing) rather than true hardware overlap. For the same
-// reason it cannot catch a prefetch that overwrites the buffer still being
-// read: deferred issue delays that write until after the compute, whereas on
-// hardware it would race the engine.
+// this test checks the ping-pong schedule (buffer indexing and start/wait
+// pairing) rather than true hardware overlap. For the same reason it cannot
+// catch a prefetch that overwrites the buffer still being read: deferred issue
+// delays that write until after the compute, whereas on hardware it would race
+// the engine.
 //
 // Writes RESULT_TAG_DOUBLE_BUF on success, or sets the low 16 bits to the
 // failing step number.
@@ -40,7 +40,6 @@
 
 static uint32_t dtcm_buf[2][TILE_WORDS] __attribute__((aligned(64)));
 static uint32_t dtcm_accum[TILE_WORDS] __attribute__((aligned(64)));
-static coralnpu_dma_descriptor_t desc[2];
 
 static volatile uint32_t *const ddr_src = (volatile uint32_t *)DDR_SRC;
 static volatile uint32_t *const ddr_dst = (volatile uint32_t *)DDR_DST;
@@ -64,7 +63,7 @@ static int run(void) {
 
   // Prologue: start fetching tile 0 into buffer 0.
   if (coralnpu_dma_copy_async((uint32_t)(uintptr_t)dtcm_buf[0], DDR_SRC,
-                              TILE_BYTES, &desc[0]) != CORALNPU_DMA_OK) {
+                              TILE_BYTES) != CORALNPU_DMA_OK) {
     return 1;
   }
 
@@ -74,7 +73,7 @@ static int run(void) {
 
     // 1. Wait for dtcm_buf[curr].
     if (coralnpu_dma_wait_done() != CORALNPU_DMA_OK) {
-      dma_test_result[1] = coralnpu_dma_error_code();
+      dma_test_result[1] = coralnpu_dma_error_flags();
       return 2;
     }
 
@@ -82,7 +81,7 @@ static int run(void) {
     if (t + 1u < NUM_TILES) {
       uint32_t next_src = DDR_SRC + (t + 1u) * TILE_BYTES;
       if (coralnpu_dma_copy_async((uint32_t)(uintptr_t)dtcm_buf[next], next_src,
-                                  TILE_BYTES, &desc[next]) != CORALNPU_DMA_OK) {
+                                  TILE_BYTES) != CORALNPU_DMA_OK) {
         return 3;
       }
     }
@@ -96,11 +95,11 @@ static int run(void) {
 
   // Epilogue: copy dtcm_accum back to DDR_DST.
   if (coralnpu_dma_copy_async(DDR_DST, (uint32_t)(uintptr_t)dtcm_accum,
-                              TILE_BYTES, &desc[0]) != CORALNPU_DMA_OK) {
+                              TILE_BYTES) != CORALNPU_DMA_OK) {
     return 5;
   }
   if (coralnpu_dma_wait_done() != CORALNPU_DMA_OK) {
-    dma_test_result[1] = coralnpu_dma_error_code();
+    dma_test_result[1] = coralnpu_dma_error_flags();
     return 6;
   }
 

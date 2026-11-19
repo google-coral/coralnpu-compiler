@@ -28,9 +28,8 @@
 // TODO(DMA): this pass is the place where the copies between memory and DTCM
 // must become DMA transfers. Each copy here moves one tile (the rows of a slice
 // of a binding) between memory and DTCM. With DMA:
-// - Make one 1D DMA descriptor for each row (the DMA is 1D). Descriptors are
-//   32-byte aligned, beats are at most 16 bytes, and the length must be a
-//   multiple of the beat.
+// - Issue one 1D DMA transfer per row (or one transfer when contiguous). Both
+//   addresses must be 16-byte aligned (DmaCore masks partial final beats).
 // - Start the transfer of an input tile before the computation, and wait for
 //   it (coralnpu_dma_wait_done) before the first read of the DTCM buffer. With
 //   double buffering, start the transfer of the next tile (e.g. the next K

@@ -12,60 +12,64 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// CoralNPU DMA driver.
+// CoralNPU core-local DMA (dma.DmaCore) driver.
 //
 // Under CORALNPU_DMA_ISSUE_DEFERRED (the default, used in simulation) the
-// asynchrony of the engine is modelled here rather than in the simulator: the
-// MPACT emulation completes a whole chain synchronously inside the CTRL write,
-// which would make a missing coralnpu_dma_wait_done() unobservable. So
-// coralnpu_dma_start() only records the chain, and coralnpu_dma_wait_done()
-// spins out a modelled transfer latency and *then* writes DESC_ADDR / CTRL.
+// asynchrony of the engine is modelled here rather than in MPACT, which
+// executes the whole transfer synchronously inside the CTRL.START write.
+// Starting a transfer only records its configuration, and
+// coralnpu_dma_wait_done spins out a modelled beat delay before programming the
+// CSRs so premature destination reads observe stale data.
 //
-// Between start and wait the destination holds entirely stale data, whereas on
-// hardware it would hold partially transferred data. Deferred issue is the more
-// pessimistic model for that hazard, and only that one: nothing reads the
-// source until wait_done() writes CTRL, so overwriting the source buffer or
-// mutating the descriptor between the two calls is silently accepted here while
-// racing the engine on hardware.
-//
-// Under CORALNPU_DMA_ISSUE_IMMEDIATE (real hardware) start() writes the CSRs
-// directly. The API and the generated call sequence are identical in both.
+// Under CORALNPU_DMA_ISSUE_IMMEDIATE (CoreAxi hardware elaborated with
+// Parameters.enableDma = true; default Verilator hw_sim and FPGA builds leave
+// enableDma = false, where 0x00032000 is unmapped on-core) start calls program
+// the CSRs directly. Both modes enforce single-flight start/wait pairing.
 
 #include "crt/coralnpu_dma.h"
 
 #define REG32(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
 
-// Upper bound on STATUS polls in coralnpu_dma_wait_done().
+// Base STATUS poll floor plus per-16B-beat allowance in
+// coralnpu_dma_wait_done(), sized so a 16 MiB (1,048,576-beat) DDR transfer
+// has ample headroom before returning CORALNPU_DMA_ETIMEOUT.
 #ifndef CORALNPU_DMA_POLL_LIMIT
-#define CORALNPU_DMA_POLL_LIMIT 1000000
+#define CORALNPU_DMA_POLL_LIMIT 1000000u
 #endif  // CORALNPU_DMA_POLL_LIMIT
+#ifndef CORALNPU_DMA_POLLS_PER_BEAT
+#define CORALNPU_DMA_POLLS_PER_BEAT 64u
+#endif  // CORALNPU_DMA_POLLS_PER_BEAT
+_Static_assert((uint64_t)CORALNPU_DMA_POLL_LIMIT +
+                       1048600ull * (uint64_t)CORALNPU_DMA_POLLS_PER_BEAT <=
+                   UINT32_MAX,
+               "DMA poll budget overflows uint32_t");
 
-// Modelled costs, derived from the engine's FSM: two 128-bit descriptor
-// fetches per descriptor, then one read and one write per beat with a single
-// outstanding transaction. Overridable at build time so later phases can
-// sensitivity-test their numbers; these defaults are a starting point, not a
-// calibrated model.
-#ifndef CORALNPU_DMA_FETCH_CYCLES
-#define CORALNPU_DMA_FETCH_CYCLES 4u
-#endif  // CORALNPU_DMA_FETCH_CYCLES
+// Modelled cycles per 16-byte beat in deferred issue mode.
 #ifndef CORALNPU_DMA_BEAT_CYCLES
 #define CORALNPU_DMA_BEAT_CYCLES 4u
 #endif  // CORALNPU_DMA_BEAT_CYCLES
 
-// Longest chain the driver will walk. A chain longer than this means either a
-// cycle in the next_desc pointers or a chain too long to account for; either
-// way it is rejected rather than truncated, because the driver hands the chain
-// to the engine afterwards and the engine has no guard of its own.
-// MPACT's RunDma() walks it with a bare `while (desc_addr != 0)`, so a cycle
-// reaching the engine hangs the simulator process, not just the guest.
-// TODO: Do extensive test with chains.
-#define CORALNPU_DMA_MAX_CHAIN 4096u
+enum {
+  DMA_STATE_IDLE = 0u,
+  DMA_STATE_DEFERRED = 1u,
+  DMA_STATE_ISSUED = 2u,
+};
+
+typedef struct {
+  uint32_t src_addr;
+  uint32_t dst_addr;
+  uint32_t len_flags;
+  uint32_t n_areas;
+  uint32_t area_size;
+} coralnpu_dma_job_t;
 
 static struct {
-  const coralnpu_dma_descriptor_t *pending;  // deferred issue only
-  uint32_t pending_cycles;                   // deferred issue only
+  coralnpu_dma_job_t pending_job;
+  uint32_t pending_cycles;
+  uint32_t state;
   uint32_t seq;
   uint32_t bytes;
+  uint32_t beats;
 } g_dma;
 
 // Appends one record to the trace region (see coralnpu_dma.h). The runner
@@ -88,35 +92,6 @@ static void coralnpu_dma_event(uint32_t phase, uint32_t bytes) {
   #endif
 }
 
-// Walks the chain once, writing the total payload bytes to |out_bytes| and the
-// modelled transfer cost to |out_cycles|. One walk rather than two so the trace
-// and the latency model can never disagree about what the chain holds.
-//
-// Returns CORALNPU_DMA_OK or CORALNPU_DMA_EINVAL if the chain exceeds
-// CORALNPU_DMA_MAX_CHAIN, in which case neither output is written. Rejecting
-// rather than truncating: a truncated walk under-counts both the traced byte
-// total and the modelled latency, and the chain is not supposed to reach the engine.
-static int coralnpu_dma_walk_chain(const coralnpu_dma_descriptor_t *d,
-                                    uint32_t *out_bytes, uint32_t *out_cycles) {
-  if(d == 0) return CORALNPU_DMA_EINVAL;
-  uint32_t bytes = 0;
-  uint32_t cycles = 0;
-  uint32_t guard = 0;
-  while (d) {
-    if (++guard > CORALNPU_DMA_MAX_CHAIN) return CORALNPU_DMA_EINVAL;
-    uint32_t len = d->len_flags & CORALNPU_DMA_LEN_MASK;
-    uint32_t beat = 1u << ((d->len_flags >> CORALNPU_DMA_WIDTH_SHIFT) &
-                           CORALNPU_DMA_WIDTH_MASK);
-    bytes += len;
-    cycles += 2u * CORALNPU_DMA_FETCH_CYCLES +
-              (len / beat) * CORALNPU_DMA_BEAT_CYCLES;
-    d = (const coralnpu_dma_descriptor_t *)(uintptr_t)d->next_desc;
-  }
-  if (out_bytes != 0) *out_bytes = bytes;
-  if (out_cycles != 0) *out_cycles = cycles;
-  return CORALNPU_DMA_OK;
-}
-
 #if CORALNPU_DMA_ISSUE_MODE == CORALNPU_DMA_ISSUE_DEFERRED
 // Deterministic delay that needs no CSR support.
 static void coralnpu_dma_spin(uint32_t cycles) {
@@ -124,74 +99,126 @@ static void coralnpu_dma_spin(uint32_t cycles) {
 }
 #endif  // CORALNPU_DMA_ISSUE_MODE
 
-static void coralnpu_dma_issue(const coralnpu_dma_descriptor_t *desc) {
-  REG32(CORALNPU_DMA_DESC_ADDR) = (uint32_t)(uintptr_t)desc;
-  REG32(CORALNPU_DMA_CTRL) = CORALNPU_DMA_CTRL_ENABLE | CORALNPU_DMA_CTRL_START;
+// Programs DmaCore CSRs and triggers START without clearing prior sticky
+// errors, preserving RTL Requirement 8 until coralnpu_dma_clear_error().
+static void coralnpu_dma_issue(const coralnpu_dma_job_t *job) {
+  uint32_t base = coralnpu_dma_base();
+  REG32(base + CORALNPU_DMA_SRC_ADDR_OFFSET) = job->src_addr;
+  REG32(base + CORALNPU_DMA_DST_ADDR_OFFSET) = job->dst_addr;
+  REG32(base + CORALNPU_DMA_LEN_FLAGS_OFFSET) = job->len_flags;
+  REG32(base + CORALNPU_DMA_XFER_CFG_OFFSET) = job->n_areas;
+  if (job->n_areas > 1u) {
+    REG32(base + CORALNPU_DMA_AREA_SIZE_OFFSET) = job->area_size;
+  }
+  REG32(base + CORALNPU_DMA_CTRL_OFFSET) =
+      CORALNPU_DMA_CTRL_ENABLE | CORALNPU_DMA_CTRL_START;
 }
 
 int coralnpu_dma_busy(void) {
-#if CORALNPU_DMA_ISSUE_MODE == CORALNPU_DMA_ISSUE_DEFERRED
-  return g_dma.pending != 0;
-#else
-  return (REG32(CORALNPU_DMA_STATUS) & CORALNPU_DMA_STATUS_BUSY) != 0;
-#endif  // CORALNPU_DMA_ISSUE_MODE
+  if (g_dma.state != DMA_STATE_IDLE) return 1;
+  return (REG32(CORALNPU_DMA_STATUS) & CORALNPU_DMA_STATUS_BUSY) != 0u;
 }
 
-uint32_t coralnpu_dma_error_code(void) {
-  uint32_t status = REG32(CORALNPU_DMA_STATUS);
-  return (status >> CORALNPU_DMA_STATUS_ERROR_CODE_SHIFT) &
-         CORALNPU_DMA_STATUS_ERROR_CODE_MASK;
+uint32_t coralnpu_dma_error_flags(void) {
+  return REG32(CORALNPU_DMA_STATUS) & CORALNPU_DMA_STATUS_ERROR_FLAGS_MASK;
 }
 
-int coralnpu_dma_start(const coralnpu_dma_descriptor_t *desc) {
-  // The engine clears CTRL.start only from idle, so a start written while busy
-  // stays latched and re-fires when the current chain completes; the caller's
-  // wait would then observe the first transfer is done while a second one runs
-  // unpaired. Refuse in both modes.
+void coralnpu_dma_clear_error(void) {
+  uint32_t base = coralnpu_dma_base();
+  uint32_t enable =
+      REG32(base + CORALNPU_DMA_CTRL_OFFSET) & CORALNPU_DMA_CTRL_ENABLE;
+  REG32(base + CORALNPU_DMA_CTRL_OFFSET) =
+      enable | CORALNPU_DMA_CTRL_CLEAR_ERROR;
+  coralnpu_dma_fence();
+}
+
+int coralnpu_dma_deinterleave_async(uint32_t dst, uint32_t src,
+                                    uint32_t size_bytes,
+                                    uint32_t elem_width_log2,
+                                    uint32_t n_areas) {
+  // DmaCore reads and writes aligned 16-byte beats and drops bits above [23:0].
+  if (((src | dst) & CORALNPU_DMA_ALIGN_MASK) != 0u) {
+    return CORALNPU_DMA_EINVAL;
+  }
+  if (size_bytes == 0u || size_bytes > CORALNPU_DMA_LEN_MASK) {
+    return CORALNPU_DMA_EINVAL;
+  }
+  if (elem_width_log2 > CORALNPU_DMA_MAX_WIDTH_LOG2 || n_areas == 0u ||
+      n_areas > CORALNPU_DMA_MAX_AREAS) {
+    return CORALNPU_DMA_EINVAL;
+  }
+
+  uint32_t area_size = size_bytes;
+  if (n_areas > 1u) {
+    // Strided mode splits interleaved groups of n_areas elements evenly across
+    // planes without a hardware divider, so size_bytes must divide cleanly.
+    uint32_t group_bytes = n_areas << elem_width_log2;
+    if ((size_bytes % group_bytes) != 0u) return CORALNPU_DMA_EINVAL;
+    area_size = size_bytes / n_areas;
+  }
+
+  // Configuration registers freeze while running and STATUS.done is
+  // level-triggered, so refuse overlapping or un-awaited transfers.
   if (coralnpu_dma_busy()) return CORALNPU_DMA_EBUSY;
 
-  // Validate the chain before anything is published or recorded: a cyclic or
-  // over-long chain must not reach the engine, and must not burn a sequence
-  // number or emit a START record on its way to being refused.
-  uint32_t bytes = 0;
-  uint32_t modelled_cycles = 0;
-  int status = coralnpu_dma_walk_chain(desc, &bytes, &modelled_cycles);
-  if (status != CORALNPU_DMA_OK) return status;
+  coralnpu_dma_job_t job;
+  job.src_addr = src;
+  job.dst_addr = dst;
+  job.len_flags = coralnpu_dma_make_len_flags(size_bytes, elem_width_log2);
+  job.n_areas = n_areas;
+  job.area_size = area_size;
 
-  // Publish the descriptor stores before the engine can fetch them.
+  // Publish caller stores to source memory before the DMA engine can read it.
   coralnpu_dma_fence();
 
+  uint32_t passes =
+      (area_size + CORALNPU_DMA_ALIGN_MASK) / CORALNPU_DMA_BEAT_BYTES;
+  uint32_t beats = passes * n_areas;
   ++g_dma.seq;
-  g_dma.bytes = bytes;
+  g_dma.bytes = size_bytes;
+  g_dma.beats = beats;
   coralnpu_dma_event(CORALNPU_DMA_EVENT_START, g_dma.bytes);
 
 #if CORALNPU_DMA_ISSUE_MODE == CORALNPU_DMA_ISSUE_DEFERRED
-  // Record only. No CSR write, so no data moves until the wait -- this is what
-  // makes a missing wait observable.
-  g_dma.pending = desc;
-  g_dma.pending_cycles = modelled_cycles;
+  g_dma.pending_job = job;
+  g_dma.pending_cycles = beats * CORALNPU_DMA_BEAT_CYCLES;
+  g_dma.state = DMA_STATE_DEFERRED;
 #else
-  (void)modelled_cycles;  // nothing to model when the engine starts for real
-  coralnpu_dma_issue(desc);
+  g_dma.state = DMA_STATE_ISSUED;
+  coralnpu_dma_issue(&job);
 #endif  // CORALNPU_DMA_ISSUE_MODE
   return CORALNPU_DMA_OK;
 }
 
-int coralnpu_dma_wait_done(void) {
-#if CORALNPU_DMA_ISSUE_MODE == CORALNPU_DMA_ISSUE_DEFERRED
-  if (g_dma.pending == 0) return CORALNPU_DMA_OK;  // nothing outstanding
+int coralnpu_dma_copy_async(uint32_t dst, uint32_t src, uint32_t size_bytes) {
+  return coralnpu_dma_deinterleave_async(
+      dst, src, size_bytes, /*elem_width_log2=*/0u, /*n_areas=*/1u);
+}
 
-  // Pay the modelled transfer latency, then issue for real.
-  coralnpu_dma_spin(g_dma.pending_cycles);
-  coralnpu_dma_fence();
-  coralnpu_dma_issue(g_dma.pending);
-  g_dma.pending = 0;
+int coralnpu_dma_wait_done(void) {
+  if (g_dma.state == DMA_STATE_IDLE) return CORALNPU_DMA_OK;
+
+#if CORALNPU_DMA_ISSUE_MODE == CORALNPU_DMA_ISSUE_DEFERRED
+  if (g_dma.state == DMA_STATE_DEFERRED) {
+    coralnpu_dma_spin(g_dma.pending_cycles);
+    coralnpu_dma_fence();
+    g_dma.state = DMA_STATE_ISSUED;
+    coralnpu_dma_issue(&g_dma.pending_job);
+  }
 #endif  // CORALNPU_DMA_ISSUE_MODE
 
-  for (int i = 0; i < CORALNPU_DMA_POLL_LIMIT; ++i) {
-    uint32_t status = REG32(CORALNPU_DMA_STATUS);
-    if (status & CORALNPU_DMA_STATUS_DONE) {
-      // Make the engine's writes visible before the caller reads them.
+  // Wait until the engine returns to idle (BUSY == 0) with either DONE or
+  // ERROR set; on xfer_error, ERROR rises before in-flight bus beats finish
+  // draining (DmaCsr.scala).
+  uint32_t poll_limit =
+      CORALNPU_DMA_POLL_LIMIT + g_dma.beats * CORALNPU_DMA_POLLS_PER_BEAT;
+  uint32_t status_addr = CORALNPU_DMA_STATUS;
+  for (uint32_t i = 0; i < poll_limit; ++i) {
+    uint32_t status = REG32(status_addr);
+    if ((status & CORALNPU_DMA_STATUS_BUSY) == 0u &&
+        (status & (CORALNPU_DMA_STATUS_DONE | CORALNPU_DMA_STATUS_ERROR)) !=
+            0u) {
+      g_dma.state = DMA_STATE_IDLE;
       coralnpu_dma_fence();
       coralnpu_dma_event(CORALNPU_DMA_EVENT_DONE, g_dma.bytes);
       return (status & CORALNPU_DMA_STATUS_ERROR) ? CORALNPU_DMA_EHARDWARE
@@ -199,45 +226,4 @@ int coralnpu_dma_wait_done(void) {
     }
   }
   return CORALNPU_DMA_ETIMEOUT;
-}
-
-void coralnpu_dma_abort(void) {
-#if CORALNPU_DMA_ISSUE_MODE == CORALNPU_DMA_ISSUE_DEFERRED
-  g_dma.pending = 0;  // never issued; nothing in the engine to abort
-#endif  // CORALNPU_DMA_ISSUE_MODE
-  REG32(CORALNPU_DMA_CTRL) = CORALNPU_DMA_CTRL_ABORT;
-  coralnpu_dma_fence();
-}
-
-int coralnpu_dma_copy_async(uint32_t dst, uint32_t src, uint32_t size_bytes,
-                            coralnpu_dma_descriptor_t *desc) {
-  if (size_bytes == 0u || size_bytes > CORALNPU_DMA_LEN_MASK) {
-    return CORALNPU_DMA_EINVAL;
-  }
-  // Checked here as well as in start(): |desc| may be the descriptor of the
-  // chain still in flight, and a chain must not be modified while the engine
-  // can fetch it.
-  if (coralnpu_dma_busy()) return CORALNPU_DMA_EBUSY;
-
-  // The beat size must divide the length exactly or the engine's 24-bit
-  // remaining counter underflows. The emulation ignores xfer_width entirely,
-  // so this check is the ONLY thing standing between a bad descriptor and a
-  // runaway transfer on real hardware; it must never be compiled out.
-  // choose_width guarantees divisibility and alignment for any width it
-  // returns, and refuses rather than falling back to a 1-byte beat.
-  uint32_t width_log2 = coralnpu_dma_choose_width(size_bytes, src, dst);
-  if (width_log2 == CORALNPU_DMA_WIDTH_INVALID) {
-    return CORALNPU_DMA_EINVAL;
-  }
-
-  desc->src_addr = src;
-  desc->dst_addr = dst;
-  desc->len_flags = coralnpu_dma_make_len_flags(size_bytes, width_log2, 0u);
-  desc->next_desc = 0u;
-  desc->poll_addr = 0u;
-  desc->poll_mask = 0u;
-  desc->poll_value = 0u;
-  desc->reserved = 0u;
-
-  return coralnpu_dma_start(desc);
 }

@@ -13,13 +13,19 @@
 // limitations under the License.
 
 // Runs dma_dispatch_test through iree_hal_simulator_issue_dispatch_inline with
-// a 16 KB writeable binding, more than the 12 KB below the DMA trace, and
-// checks the output and the trace. Against the old layout the copy overwrites
-// the trace count, so the trace check is what catches a collision. Runs twice
-// on one simulator to check the trace reset.
+// a 16 KB writeable binding (more than the 12 KB below the DMA trace) across
+// four dispatches on one reused MPACT simulator:
+//   0: default layout (leaves sticky ALIGN_ERROR + XFER_CFG=3 at exit)
+//   1: default layout (verifies per-dispatch DmaCore CSR reset and trace reset)
+//   2: highmem layout with an extra host write in [0x10000, 0x18000) and a
+//      sentinel in highmem ITCM at 0x00032000 (verifies highmem detection is
+//      not flipped back to default by >64 KB ITCM writes and does not swallow
+//      highmem ITCM at 0x00032000)
+//   3: default layout again (verifies highmem -> default re-derivation on the
+//      reused simulator)
 //
 // Usage:
-//   dma_dispatch_runner <elf>
+//   dma_dispatch_runner <default_elf> <highmem_elf>
 
 #include "crt/coralnpu_dma.h"
 #include "runtime/sim/simulator_api.h"
@@ -39,7 +45,7 @@ namespace {
 
 // Each binding alone overruns the 12 KB below the trace.
 constexpr size_t kBindingSize = 16 * 1024;
-constexpr int kRuns = 2;
+constexpr uint32_t kHighmemItcmSentinel = 0xCAFE1234u;
 
 // Reads a file into memory, or exits on error.
 std::vector<uint8_t> ReadFile(const char* path) {
@@ -64,6 +70,19 @@ std::vector<uint8_t> ReadFile(const char* path) {
   }
   std::fclose(f);
   return buf;
+}
+
+// Writes highmem ITCM data at 0x00032000 followed by a [0x10000, 0x18000)
+// .rodata-style write to verify phdr ordering cannot flip highmem back off.
+void StageHighmemItcmSegments(void* /*self*/,
+                              const iree_hal_coralnpu_run_t* run) {
+  const uint32_t sentinel = kHighmemItcmSentinel;
+  run->core.write_mem(run->core.self, CORALNPU_DMA_DEFAULT_BASE, &sentinel,
+                      sizeof(sentinel));
+  const uint32_t rodata_words[4] = {0x11111111u, 0x22222222u, 0x33333333u,
+                                    0x44444444u};
+  run->core.write_mem(run->core.self, 0x00012000u, rodata_words,
+                      sizeof(rodata_words));
 }
 
 // Returns true if the trace holds one START and one DONE of |bytes| bytes at
@@ -98,10 +117,10 @@ bool CheckTrace(coralnpu_simulator_t* sim, uint32_t bytes) {
 
 // Runs the dispatch once on |sim| and checks its output and the trace.
 bool RunOnce(coralnpu_simulator_t* sim, const std::vector<uint8_t>& image,
-             int run) {
+             bool is_highmem, int run) {
   std::vector<uint32_t> input(kBindingSize / sizeof(uint32_t));
   for (size_t i = 0; i < input.size(); ++i) {
-    input[i] = 0xA5000000u + static_cast<uint32_t>(i);
+    input[i] = 0xA5000000u + static_cast<uint32_t>(run * 0x10000u + i);
   }
   std::vector<uint32_t> output(input.size(), 0);
 
@@ -122,10 +141,15 @@ bool RunOnce(coralnpu_simulator_t* sim, const std::vector<uint8_t>& image,
   dispatch_state.binding_ptrs = binding_ptrs;
   dispatch_state.binding_lengths = binding_lengths;
 
+  iree_hal_coralnpu_run_hooks_t hooks = {};
+  if (is_highmem) {
+    hooks.before_run = StageHighmemItcmSegments;
+  }
+
   iree_status_t status = iree_hal_simulator_issue_dispatch_inline(
       sim, iree_make_const_byte_span(image.data(), image.size()),
       &dispatch_state, binding_writeable, /*ordinal=*/0,
-      /*local_memory_size=*/0, /*out_stats=*/nullptr);
+      /*local_memory_size=*/0, is_highmem ? &hooks : nullptr);
   if (!iree_status_is_ok(status)) {
     std::fprintf(stderr, "FAIL: run %d: ", run);
     iree_status_fprint(stderr, status);
@@ -151,11 +175,12 @@ bool RunOnce(coralnpu_simulator_t* sim, const std::vector<uint8_t>& image,
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc != 2) {
-    std::fprintf(stderr, "usage: %s <elf>\n", argv[0]);
+  if (argc != 3) {
+    std::fprintf(stderr, "usage: %s <default_elf> <highmem_elf>\n", argv[0]);
     return 2;
   }
-  std::vector<uint8_t> image = ReadFile(argv[1]);
+  std::vector<uint8_t> default_image = ReadFile(argv[1]);
+  std::vector<uint8_t> highmem_image = ReadFile(argv[2]);
 
   coralnpu_simulator_t* sim = coralnpu_simulator_mpact_create();
   if (sim == nullptr) {
@@ -163,9 +188,12 @@ int main(int argc, char** argv) {
     return 2;
   }
 
+  const bool schedule[4] = {false, false, true, false};
   bool ok = true;
-  for (int run = 0; run < kRuns && ok; ++run) {
-    ok = RunOnce(sim, image, run);
+  for (int run = 0; run < 4 && ok; ++run) {
+    const bool is_highmem = schedule[run];
+    ok = RunOnce(sim, is_highmem ? highmem_image : default_image, is_highmem,
+                 run);
   }
 
   iree_hal_simulator_inline_forget(sim);

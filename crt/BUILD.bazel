@@ -44,6 +44,7 @@ __itcm_start = ORIGIN(ITCM);
 __itcm_size = LENGTH(ITCM);
 __dtcm_start = ORIGIN(DTCM);
 __dtcm_size = LENGTH(DTCM);
+__dma_base = DEFINED(__dma_base) ? __dma_base : @@CSR_ORIGIN@@ + 0x2000;
 EOF
     """,
 )
@@ -56,6 +57,7 @@ expand_template(
         "@@ITCM_LENGTH@@": "8",
         "@@DTCM_ORIGIN@@": "0x00010000",
         "@@DTCM_LENGTH@@": "32",
+        "@@CSR_ORIGIN@@": "0x00030000",
     },
     template = ":coralnpu_tcm_ld_tpl",
 )
@@ -68,6 +70,7 @@ expand_template(
         "@@ITCM_LENGTH@@": "1024",
         "@@DTCM_ORIGIN@@": "0x00100000",
         "@@DTCM_LENGTH@@": "1024",
+        "@@CSR_ORIGIN@@": "0x00200000",
     },
     template = ":coralnpu_tcm_ld_tpl",
 )

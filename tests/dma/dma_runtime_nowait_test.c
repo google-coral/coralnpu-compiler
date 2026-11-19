@@ -17,8 +17,8 @@
 // read, and the runner asserts the mismatch count is nonzero.
 //
 // This is what makes every other DMA result in the tree trustworthy. The MPACT
-// emulation completes a chain synchronously inside the CTRL write, so only the
-// CRT's deferred-issue model (crt/coralnpu_dma.c) makes a missing wait
+// emulation completes a transfer synchronously inside the CTRL write, so only
+// the CRT's deferred-issue model (crt/coralnpu_dma.c) makes a missing wait
 // observable. If this test ever reports zero mismatches, deferred issue has
 // been switched off or compiled out.
 
@@ -30,7 +30,6 @@
 #define TEST_SIZE 64
 
 static uint32_t dtcm_buf[TEST_SIZE] __attribute__((aligned(64)));
-static coralnpu_dma_descriptor_t desc;
 
 static volatile uint32_t *const ddr_src = (volatile uint32_t *)DDR_SRC;
 
@@ -41,7 +40,7 @@ int main(void) {
   }
 
   coralnpu_dma_copy_async((uint32_t)(uintptr_t)dtcm_buf, DDR_SRC,
-                          sizeof(dtcm_buf), &desc);
+                          sizeof(dtcm_buf));
   // NO coralnpu_dma_wait_done() -- deliberately.
 
   uint32_t mismatches = 0;

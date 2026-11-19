@@ -207,6 +207,7 @@ git_override(
     patches = [
         "//:coralnpu-mpact-0001-vme-m4-decoder.patch",
         "//:coralnpu-mpact-0002-vfmerge-vf-frs1.patch",
+        "//:coralnpu-mpact-0003-dma-core.patch",
     ],
     remote = "https://github.com/google-coral/coralnpu-mpact.git",
 )
