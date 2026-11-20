@@ -10,10 +10,9 @@ products in uint32_t to match two's-complement wrap without signed
 overflow UB.
 ---
 diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
-index 7f7038d..39b19aa 100644
 --- a/riscv/riscv_zvt_instructions.cc
 +++ b/riscv/riscv_zvt_instructions.cc
-@@ -1128,29 +1128,32 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+@@ -1124,29 +1124,32 @@
      std::memcpy(&d, &span[e * sew_bytes], sizeof(d));
      return d;
    };
@@ -66,21 +65,7 @@ index 7f7038d..39b19aa 100644
    };
  
    auto* fp_state = matrix_state->riscv_state()->rv_fp();
-@@ -1229,10 +1232,11 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
-               std::memcpy(&tile[offset], &final_acc, sizeof(float));
-             }
-           } else {
--            int32_t acc = 0;
-+            uint32_t acc = 0;
-             if (offset >= 0) std::memcpy(&acc, &tile[offset], sizeof(acc));
-             for (int kk = 0; kk < tile_k; kk++) {
--              acc += a_i[kk][mm] * b_i[kk][nn];
-+              acc += static_cast<uint32_t>(a_i[kk][mm]) *
-+                     static_cast<uint32_t>(b_i[kk][nn]);
-             }
-             if (offset >= 0) std::memcpy(&tile[offset], &acc, sizeof(acc));
-           }
-@@ -1297,14 +1301,14 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
+@@ -1221,14 +1224,14 @@
                  .IgnoreError();
            }
          } else {
@@ -99,7 +84,7 @@ index 7f7038d..39b19aa 100644
                .IgnoreError();
          }
        }
-@@ -1350,7 +1354,8 @@ void RiscVZvtVtmms(const Instruction* inst) {
+@@ -1274,7 +1277,8 @@
    auto* matrix_state = *m_result;
    auto* vector_state = matrix_state->riscv_state()->rv_vector();
    const int sew_bits = GetSewBits(vector_state);

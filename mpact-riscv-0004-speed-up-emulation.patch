@@ -6,8 +6,8 @@ Subject: [PATCH] Speed up Zvt matmul, RVV and dispatch emulation
 Emulation overhead dominated the simulator wall time of matmul-heavy
 workloads. Results are bit-identical:
 - RiscVZvtMatmul reads each operand element and punning offset once
-  instead of once per multiply-accumulate (one vtfmm was ~25x slower
-  to emulate than a vector instruction).
+  instead of once per multiply-accumulate, sharing one FP32 accumulator
+  helper with the fallback loop.
 - Unmasked vector loads, stores and element-wise ops with vstart == 0
   write straight to the register buffers.
 - RiscVTop skips advancing the delay lines while the function and data
@@ -18,7 +18,7 @@ workloads. Results are bit-identical:
 diff --git a/riscv/riscv_zvt_state.h b/riscv/riscv_zvt_state.h
 --- a/riscv/riscv_zvt_state.h
 +++ b/riscv/riscv_zvt_state.h
-@@ -119,6 +119,8 @@ class RiscVZvtMatrixState {
+@@ -119,6 +119,8 @@
    [[nodiscard]] int tile_buffer_bytes() const {
      return tile_buffer_->size<uint8_t>();
    }
@@ -39,7 +39,7 @@ diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
  
  #include "absl/log/log.h"
  #include "absl/types/span.h"
-@@ -925,6 +927,34 @@ void RiscVZvtVtse(int eew_bits, const Instruction* inst) {
+@@ -961,6 +963,34 @@
  // Matrix multiply: C[m,n] += sum_k A[k,m] * B[k,n]
  // ----------------------------------------------------------------------------
  
@@ -74,11 +74,31 @@ diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
  void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
    auto m_result = GetMatrixState(inst);
    if (!m_result.ok()) {
-@@ -1125,7 +1155,81 @@ void RiscVZvtMatmul(RiscVZvtMatmulKind kind, const Instruction* inst) {
-       fp_status.emplace(fp_state->host_fp_interface());
-     }
+@@ -1166,7 +1196,92 @@
+     // Probed once per instruction, under the status scope set up above.
+     const bool host_rn = fp_status.has_value() && HostRoundsToNearest();
  
 -    for (int mm = 0; mm < tile_m; mm++) {
++    // Shared FP32-accumulator update used by both the preloaded tile loop and
++    // the fallback loop below so rounding rules live in one place.
++    auto accum_fp32 = [kind, tile_k, fp_state, host_rn](
++                          const double* products, double sum_products,
++                          float initial_acc) -> float {
++      float sum_products_f;
++      if (kind == RiscVZvtMatmulKind::kBf16) {
++        sum_products_f = Bf16DotROD(products, tile_k, fp_state, host_rn);
++      } else if (kind != RiscVZvtMatmulKind::kFp32) {
++        sum_products_f = DoubleToFloatROD(sum_products, fp_state);
++      } else {
++        sum_products_f = static_cast<float>(sum_products);
++      }
++      if (kind != RiscVZvtMatmulKind::kFp32) {
++        return AddROD(initial_acc, sum_products_f, fp_state, host_rn);
++      }
++      return static_cast<float>(static_cast<double>(initial_acc) +
++                                static_cast<double>(sum_products_f));
++    };
++
 +    // Read each operand element once instead of once per multiply-accumulate
 +    // and resolve the punning offsets once; the arithmetic matches the
 +    // per-element loop below.
@@ -123,30 +143,21 @@ diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
 +              sum_products += product;
 +              products[kk] = product;
 +            }
-+            const float sum_products_f =
-+                kind == RiscVZvtMatmulKind::kBf16
-+                    ? Bf16DotROD(products, tile_k, fp_state)
-+                : kind != RiscVZvtMatmulKind::kFp32
-+                    ? DoubleToFloatROD(sum_products, fp_state)
-+                    : static_cast<float>(sum_products);
 +            float initial_acc = 0.0f;
 +            if (offset >= 0) {
 +              std::memcpy(&initial_acc, &tile[offset], sizeof(float));
 +            }
-+            const double final_acc_d = static_cast<double>(initial_acc) +
-+                                       static_cast<double>(sum_products_f);
 +            const float final_acc =
-+                kind != RiscVZvtMatmulKind::kFp32
-+                    ? AddROD(initial_acc, sum_products_f, fp_state)
-+                    : static_cast<float>(final_acc_d);
++                accum_fp32(products, sum_products, initial_acc);
 +            if (offset >= 0) {
 +              std::memcpy(&tile[offset], &final_acc, sizeof(float));
 +            }
 +          } else {
-+            int32_t acc = 0;
++            uint32_t acc = 0;
 +            if (offset >= 0) std::memcpy(&acc, &tile[offset], sizeof(acc));
 +            for (int kk = 0; kk < tile_k; kk++) {
-+              acc += a_i[kk][mm] * b_i[kk][nn];
++              acc += static_cast<uint32_t>(a_i[kk][mm]) *
++                     static_cast<uint32_t>(b_i[kk][nn]);
 +            }
 +            if (offset >= 0) std::memcpy(&tile[offset], &acc, sizeof(acc));
 +          }
@@ -157,10 +168,41 @@ diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
        for (int nn = 0; nn < tile_n; nn++) {
          if (is_fp) {
            if (kind == RiscVZvtMatmulKind::kFp64) {
+@@ -1198,28 +1313,11 @@
+               products[kk] = product;
+             }
+ 
+-            float sum_products_f;
+-            if (kind == RiscVZvtMatmulKind::kBf16) {
+-              sum_products_f = Bf16DotROD(products, tile_k, fp_state, host_rn);
+-            } else if (kind != RiscVZvtMatmulKind::kFp32) {
+-              sum_products_f = DoubleToFloatROD(sum_products, fp_state);
+-            } else {
+-              sum_products_f = static_cast<float>(sum_products);
+-            }
+-
+             float initial_acc =
+                 matrix_state->GetElem<float>(dest_tile, mm, nn, tew)
+                     .value_or(0.0f);
+-            float final_acc;
+-            if (kind != RiscVZvtMatmulKind::kFp32) {
+-              final_acc =
+-                  AddROD(initial_acc, sum_products_f, fp_state, host_rn);
+-            } else {
+-              final_acc =
+-                  static_cast<float>(static_cast<double>(initial_acc) +
+-                                     static_cast<double>(sum_products_f));
+-            }
+-
++            const float final_acc =
++                accum_fp32(products, sum_products, initial_acc);
+             matrix_state->SetElem<float>(dest_tile, mm, nn, tew, final_acc)
+                 .IgnoreError();
+           }
 diff --git a/riscv/riscv_top.h b/riscv/riscv_top.h
 --- a/riscv/riscv_top.h
 +++ b/riscv/riscv_top.h
-@@ -208,6 +208,10 @@ class RiscVTop : public generic::Component, public RiscVDebugInterface {
+@@ -208,6 +208,10 @@
    generic::DecoderInterface* rv_decoder_ = nullptr;
    // Decode cache, memory and memory watcher.
    generic::DecodeCache* rv_decode_cache_ = nullptr;
@@ -174,7 +216,7 @@ diff --git a/riscv/riscv_top.h b/riscv/riscv_top.h
 diff --git a/riscv/riscv_top.cc b/riscv/riscv_top.cc
 --- a/riscv/riscv_top.cc
 +++ b/riscv/riscv_top.cc
-@@ -117,13 +117,14 @@ RiscVTop::~RiscVTop() {
+@@ -117,13 +117,14 @@
    delete rv_breakpoint_manager_;
    delete rv_action_point_manager_;
    delete rv_action_point_memory_interface_;
@@ -190,7 +232,7 @@ diff --git a/riscv/riscv_top.cc b/riscv/riscv_top.cc
  
    // Replace the memory with the memory watcher.
    memory_watcher_ = new util::MemoryWatcher(state_->memory());
-@@ -178,7 +179,7 @@ void RiscVTop::Initialize() {
+@@ -178,7 +179,7 @@
    // Set up break and action points.
    rv_action_point_memory_interface_ = new RiscVActionPointMemoryInterface(
        state_->memory(),
@@ -199,7 +241,7 @@ diff --git a/riscv/riscv_top.cc b/riscv/riscv_top.cc
    rv_action_point_manager_ =
        new ActionPointManagerBase(rv_action_point_memory_interface_);
    rv_breakpoint_manager_ = new BreakpointManager(
-@@ -336,7 +337,13 @@ absl::StatusOr<int> RiscVTop::Step(int num) {
+@@ -336,7 +337,13 @@
      do {
        executed = ExecuteInstruction(inst);
        counter_num_cycles_.Increment(1);
@@ -214,7 +256,7 @@ diff --git a/riscv/riscv_top.cc b/riscv/riscv_top.cc
        // Check for interrupt.
        if (state_->is_interrupt_available()) {
          uint64_t epc = pc;
-@@ -352,8 +359,8 @@ absl::StatusOr<int> RiscVTop::Step(int num) {
+@@ -352,8 +359,8 @@
      counter_opcode_[inst->opcode()].Increment(1);
      counter_num_instructions_.Increment(1);
      // Get the next pc value.
@@ -224,7 +266,7 @@ diff --git a/riscv/riscv_top.cc b/riscv/riscv_top.cc
        state_->set_branch(false);
        AddToBranchTrace(pc, pc_val);
        next_pc = pc_val;
-@@ -673,6 +680,45 @@ absl::StatusOr<size_t> RiscVTop::WriteMemory(uint64_t address,
+@@ -673,6 +680,45 @@
    // Store bypassing any watch points/semihosting.
    state_->memory()->Store(address, db);
    db->DecRef();
@@ -273,7 +315,7 @@ diff --git a/riscv/riscv_top.cc b/riscv/riscv_top.cc
 diff --git a/riscv/riscv_register.h b/riscv/riscv_register.h
 --- a/riscv/riscv_register.h
 +++ b/riscv/riscv_register.h
-@@ -131,6 +131,7 @@ class RV32VectorDestinationOperand
+@@ -135,6 +135,7 @@
    void InitializeDataBuffer(int i, generic::DataBuffer* db);
    generic::DataBuffer* CopyDataBuffer(int i);
    std::any GetObject(int i) const;
@@ -300,7 +342,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
  #include "riscv/riscv_vector_state.h"
  #include "riscv/riscv_zvt_state.h"
  
-@@ -71,7 +73,9 @@ absl::Status WriteBackLoadData(int vector_register_byte_length,
+@@ -71,7 +73,9 @@
    // Iterate over the number of registers to write.
    for (int reg = start_reg; (reg < max_regs) && (value_count > 0); reg++) {
      // Allocate data buffer for the new register data.
@@ -311,7 +353,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
      auto dest_span = dest_db->Get<T>();
      // Write data into register subject to masking.
      int max_entry = std::min(elements_per_vector, item_index + value_count);
-@@ -82,7 +86,7 @@ absl::Status WriteBackLoadData(int vector_register_byte_length,
+@@ -82,7 +86,7 @@
        load_data_index++;
        value_count--;
      }
@@ -320,7 +362,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
      item_index = 0;
    }
    return absl::OkStatus();
-@@ -241,17 +245,70 @@ void VlStrided(int element_width, const Instruction* inst) {
+@@ -241,17 +245,70 @@
    int num_elements = rv_vector->vector_length();
    int num_elements_loaded = num_elements - start;
  
@@ -396,7 +438,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    // Allocate a byte mask data buffer for the load.
    auto* mask_db = db_factory->Allocate<bool>(num_elements_loaded);
  
-@@ -272,7 +329,6 @@ void VlStrided(int element_width, const Instruction* inst) {
+@@ -272,7 +329,6 @@
    // Set up the context, and submit the load.
    auto* context = new VectorLoadContext(value_db, mask_db, element_width, start,
                                          rv_vector->vector_length());
@@ -404,7 +446,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    value_db->set_latency(0);
    rv32_state->LoadMemory(inst, address_db, mask_db, element_width, value_db,
                           inst->child(), context);
-@@ -451,6 +507,23 @@ void VlRegister(int num_regs, int element_width_bytes,
+@@ -451,6 +507,23 @@
      rv_vector->clear_vstart();
      return;
    }
@@ -428,7 +470,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    int num_elements_loaded = num_elements - start;
    // Allocate data buffers.
    auto* db_factory = inst->state()->db_factory();
-@@ -476,7 +549,6 @@ void VlRegister(int num_regs, int element_width_bytes,
+@@ -476,7 +549,6 @@
    // Set up context and submit load.
    auto* context = new VectorLoadContext(data_db, mask_db, element_width_bytes,
                                          start, num_elements);
@@ -436,7 +478,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    data_db->set_latency(0);
    rv32_state->LoadMemory(inst, address_db, mask_db, element_width_bytes,
                           data_db, inst->child(), context);
-@@ -769,8 +841,41 @@ void StoreVectorStrided(int vector_length, int vstart, int emul,
+@@ -769,8 +841,41 @@
  
    // Compute total number of elements to be stored.
    int num_elements = vector_length;
@@ -479,7 +521,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    auto* address_db = db_factory->Allocate<uint64_t>(num_elements);
    auto addresses = address_db->Get<uint64_t>();
    auto* store_data_db = db_factory->Allocate(num_elements * sizeof(T));
-@@ -789,7 +894,6 @@ void StoreVectorStrided(int vector_length, int vstart, int emul,
+@@ -789,7 +894,6 @@
      store_data[i - vstart] = GetInstructionSource<T>(inst, 0, i);
    }
    // Perform the store.
@@ -487,7 +529,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    rv32_state->StoreMemory(inst, address_db, mask_db, sizeof(T), store_data_db);
    address_db->DecRef();
    mask_db->DecRef();
-@@ -1001,6 +1105,22 @@ void VsRegister(int num_regs, const Instruction* inst) {
+@@ -1001,6 +1105,22 @@
      rv_vector->clear_vstart();
      return;
    }
@@ -510,7 +552,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
    int num_elements_stored = num_elements - start;
    // Allocate data buffers.
    auto* db_factory = inst->state()->db_factory();
-@@ -1016,7 +1136,6 @@ void VsRegister(int num_regs, const Instruction* inst) {
+@@ -1016,7 +1136,6 @@
      masks[i - start] = true;
      data[i - start] = GetInstructionSource<uint8_t>(inst, 0, i);
    }  // Submit store.
@@ -521,7 +563,7 @@ diff --git a/riscv/riscv_vector_memory_instructions.cc b/riscv/riscv_vector_memo
 diff --git a/riscv/riscv_instruction_helpers.h b/riscv/riscv_instruction_helpers.h
 --- a/riscv/riscv_instruction_helpers.h
 +++ b/riscv/riscv_instruction_helpers.h
-@@ -385,11 +385,10 @@ inline void RVLoad(const Instruction* instruction) {
+@@ -385,11 +385,10 @@
    auto* value_db =
        instruction->state()->db_factory()->Allocate(sizeof(ValueType));
    value_db->set_latency(0);
@@ -546,7 +588,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
  
  #include "absl/log/log.h"
  #include "absl/strings/str_cat.h"
-@@ -103,13 +104,26 @@ void RiscVSetMaskBinaryVectorMaskOp(RiscVVectorState* rv_vector,
+@@ -103,13 +104,26 @@
    rv_vector->clear_vstart();
  }
  
@@ -576,7 +618,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    if (rv_vector->vector_exception()) return;
    auto* dest_op =
        static_cast<RV32VectorDestinationOperand*>(inst->Destination(0));
-@@ -117,11 +131,9 @@ void RiscVMaskBinaryVectorMaskOp(RiscVVectorState* rv_vector,
+@@ -117,11 +131,9 @@
    // the operation.
    int num_elements = rv_vector->vector_length();
    int vector_index = rv_vector->vstart();
@@ -590,7 +632,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    // Get the vector mask.
    auto* mask_op = static_cast<RV32VectorSourceOperand*>(inst->Source(2));
    bool vm_unmasked_bit = false;
-@@ -130,6 +142,52 @@ void RiscVMaskBinaryVectorMaskOp(RiscVVectorState* rv_vector,
+@@ -130,6 +142,52 @@
    }
    const bool mask_used = !vm_unmasked_bit;
    auto mask_span = mask_op->GetRegister(0)->data_buffer()->Get<uint8_t>();
@@ -643,7 +685,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    for (int i = vector_index; i < num_elements; i++) {
      int mask_index = i >> 3;
      int mask_offset = i & 0b111;
-@@ -155,10 +212,9 @@ void RiscVMaskBinaryVectorMaskOp(RiscVVectorState* rv_vector,
+@@ -155,10 +213,9 @@
  
  // This helper function handles the case of vector mask
  // operations.
@@ -656,7 +698,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    RiscVMaskBinaryVectorMaskOp<Vs2, Vs1>(
        rv_vector, inst, [op](Vs2 vs2, Vs1 vs1, bool mask_value) -> bool {
          if (mask_value) {
-@@ -247,9 +303,9 @@ void RiscVMaskNullaryVectorOp(RiscVVectorState* rv_vector,
+@@ -247,9 +304,9 @@
  // This helper function handles the case of unary vector
  // operations. It implements all the checking necessary for both widening and
  // narrowing operations.
@@ -668,7 +710,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    if (rv_vector->vector_exception()) return;
    int num_elements = rv_vector->vector_length();
    int lmul = rv_vector->vector_length_multiplier();
-@@ -285,6 +341,50 @@ void RiscVUnaryVectorOp(RiscVVectorState* rv_vector, const Instruction* inst,
+@@ -285,6 +342,50 @@
    // Get the vector start element index and compute where to start
    // the operation.
    int vector_index = rv_vector->vstart();
@@ -719,7 +761,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    int start_reg = vector_index / elements_per_vector;
    int item_index = vector_index % elements_per_vector;
    // Iterate over the number of registers to write.
-@@ -318,10 +418,9 @@ void RiscVUnaryVectorOp(RiscVVectorState* rv_vector, const Instruction* inst,
+@@ -318,10 +419,9 @@
  // This helper function handles the case of unary vector operations that set
  // fflags. It implements all the checking necessary for both widening and
  // narrowing operations.
@@ -733,7 +775,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    if (rv_vector->vector_exception()) return;
    int num_elements = rv_vector->vector_length();
    int lmul = rv_vector->vector_length_multiplier();
-@@ -357,6 +456,57 @@ void RiscVUnaryVectorOpWithFflags(
+@@ -357,6 +457,57 @@
    // Get the vector start element index and compute where to start
    // the operation.
    int vector_index = rv_vector->vstart();
@@ -791,7 +833,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    int start_reg = vector_index / elements_per_vector;
    int item_index = vector_index % elements_per_vector;
    // Iterate over the number of registers to write.
-@@ -396,10 +546,9 @@ void RiscVUnaryVectorOpWithFflags(
+@@ -396,10 +547,9 @@
  // This helper function handles the case of mask + two source operand vector
  // operations. It implements all the checking necessary for both widening and
  // narrowing operations.
@@ -805,7 +847,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    if (rv_vector->vector_exception()) return;
    int num_elements = rv_vector->vector_length();
    int lmul = rv_vector->vector_length_multiplier();
-@@ -436,10 +585,52 @@ void RiscVMaskBinaryVectorOp(
+@@ -436,10 +586,52 @@
    // Get the vector start element index and compute where to start
    // the operation.
    int vector_index = rv_vector->vstart();
@@ -860,7 +902,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    // Iterate over the number of registers to write.
    bool exception = false;
    for (int reg = start_reg;
-@@ -459,7 +650,7 @@ void RiscVMaskBinaryVectorOp(
+@@ -459,7 +651,7 @@
        Vs2 vs2 = GetInstructionSource<Vs2>(inst, 0, vector_index);
        Vs1 vs1 = GetInstructionSource<Vs1>(inst, 1,
                                            (vector_scalar ? 0 : vector_index));
@@ -869,7 +911,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
        if (value.has_value()) {
          dest_span[i] = CanonicalizeVectorNaN<Vd>(value.value());
        } else if (mask_value) {
-@@ -483,23 +674,22 @@ void RiscVMaskBinaryVectorOp(
+@@ -483,23 +675,22 @@
  // This helper function handles the case of two source operand vector
  // operations. It implements all the checking necessary for both widening and
  // narrowing operations.
@@ -899,7 +941,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    if (rv_vector->vector_exception()) return;
    int num_elements = rv_vector->vector_length();
    int lmul = rv_vector->vector_length_multiplier();
-@@ -536,10 +726,54 @@ void RiscVBinaryVectorOpWithFflags(
+@@ -536,10 +727,54 @@
    // Get the vector start element index and compute where to start
    // the operation.
    int vector_index = rv_vector->vstart();
@@ -956,7 +998,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    // Iterate over the number of registers to write.
    bool exception = false;
    uint32_t fflags = 0;
-@@ -585,9 +819,9 @@ void RiscVBinaryVectorOpWithFflags(
+@@ -585,9 +820,9 @@
  // This helper function handles three source operand vector operations. It
  // implements all the checking necessary for both widening and narrowing
  // operations.
@@ -968,7 +1010,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    if (rv_vector->vector_exception()) return;
    int num_elements = rv_vector->vector_length();
    int lmul = rv_vector->vector_length_multiplier();
-@@ -624,10 +858,51 @@ void RiscVTernaryVectorOp(RiscVVectorState* rv_vector, const Instruction* inst,
+@@ -624,10 +859,51 @@
    // Get the vector start element index and compute where to start
    // the operation.
    int vector_index = rv_vector->vstart();
@@ -1022,7 +1064,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    // Iterate over the number of registers to write.
    for (int reg = start_reg; (reg < max_regs) && (vector_index < num_elements);
         reg++) {
-@@ -662,10 +937,9 @@ void RiscVTernaryVectorOp(RiscVVectorState* rv_vector, const Instruction* inst,
+@@ -662,10 +938,9 @@
  // The reduction instructions take Vs1[0], and all the elements (subject to
  // masking) from Vs2 and apply the reduction operation to produce a single
  // element that is written to Vd[0].
@@ -1035,7 +1077,7 @@ diff --git a/riscv/riscv_vector_instruction_helpers.h b/riscv/riscv_vector_instr
    if (rv_vector->vector_exception()) return;
    if (rv_vector->vstart()) {
      rv_vector->vector_exception();
-@@ -692,20 +966,41 @@ void RiscVBinaryReductionVectorOp(RiscVVectorState* rv_vector,
+@@ -692,20 +967,41 @@
    auto mask_span = mask_op->GetRegister(0)->data_buffer()->Get<uint8_t>();
    Vd accumulator =
        static_cast<Vd>(generic::GetInstructionSource<Vs1>(inst, 1, 0));

@@ -1,0 +1,359 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lun Dong <lundong@google.com>
+Date: Wed, 28 Oct 2026 00:00:00 -0700
+Subject: [PATCH] Round narrow Zvt FP matmuls as CoralNPU does
+
+CoralNPU rounds the exact sum of the TK BF16 products to odd, and the
+exact sum of the accumulator and the dot product to odd for sources
+narrower than FP32, raising OF once a sum reaches 2^128 (the widening
+dot product then gives infinity, the accumulate FLT_MAX). vtfmm summed
+in double instead, which loses the sticky bit of a term more than 2^53
+below the other, so results were not bit-exact with the hardware. Round
+both from their exact (TwoSum) sums without per-element host rounding
+mode scopes:
+- DoubleToFloatROD truncates and jams in integer arithmetic. It no
+  longer depends on the compiler keeping the conversion inside the
+  rounding-mode scope (a direct call returned a NaN for 2^128).
+- TwoSum keeps the host mode when it already rounds to nearest and the
+  operands are finite: it then raises only NX, which RiscVZvtMatmul
+  discards. The host mode is probed once per instruction.
+- AddROD widens the accumulator without raising NV for a signaling NaN.
+---
+diff --git a/riscv/riscv_instruction_helpers.h b/riscv/riscv_instruction_helpers.h
+--- a/riscv/riscv_instruction_helpers.h
++++ b/riscv/riscv_instruction_helpers.h
+@@ -772,15 +772,38 @@
+ inline float DoubleToFloatROD(double d, RiscVFPState* fp_state) {
+   if (!fp_state) return static_cast<float>(d);
+ 
+-  ScopedFPRoundingMode scoped_rm(fp_state->host_fp_interface(),
+-                                 FPRoundingMode::kRoundTowardsZero);
+-  float f = static_cast<float>(d);
+-  if (std::isfinite(d) && static_cast<double>(f) != d) {
+-    uint32_t f_bits = 0;
+-    std::memcpy(&f_bits, &f, sizeof(f));
++  // Truncate toward zero and jam the LSB in integer arithmetic: switching the
++  // host rounding mode for every matrix element dominated emulation time.
++  uint64_t d_bits = 0;
++  std::memcpy(&d_bits, &d, sizeof(d));
++  const int biased_exp = static_cast<int>((d_bits >> 52) & 0x7ff);
++  const int exp = biased_exp - 1023;
++  const uint64_t frac = d_bits & ((uint64_t{1} << 52) - 1);
++  uint32_t f_bits = static_cast<uint32_t>(d_bits >> 63) << 31;
++  if (biased_exp == 0x7ff) {
++    // Infinity, or a NaN quieted with the top payload bits kept.
++    f_bits |= 0x7f800000u;
++    if (frac != 0) f_bits |= 0x00400000u | static_cast<uint32_t>(frac >> 29);
++  } else if (biased_exp == 0 && frac == 0) {
++    // Zero keeps its sign.
++  } else if (exp < -149) {
++    // Below the smallest float (double subnormals included): inexact zero.
+     f_bits |= 1;
+-    std::memcpy(&f, &f_bits, sizeof(f));
++  } else if (exp > 127) {
++    f_bits |= 0x7f7fffffu;  // FLT_MAX, whose LSB is already set.
++  } else if (exp >= -126) {
++    f_bits |= (static_cast<uint32_t>(exp + 127) << 23) |
++              static_cast<uint32_t>(frac >> 29);
++    if ((frac & 0x1fffffffu) != 0) f_bits |= 1;
++  } else {
++    // Float subnormal: shift the significand out, keeping a sticky bit.
++    const uint64_t significand = (uint64_t{1} << 52) | frac;
++    const int shift = -126 - exp + 29;
++    f_bits |= static_cast<uint32_t>(significand >> shift);
++    if ((significand & ((uint64_t{1} << shift) - 1)) != 0) f_bits |= 1;
+   }
++  float f = 0.0f;
++  std::memcpy(&f, &f_bits, sizeof(f));
+   return f;
+ }
+ 
+diff --git a/riscv/riscv_zvt_instructions.cc b/riscv/riscv_zvt_instructions.cc
+--- a/riscv/riscv_zvt_instructions.cc
++++ b/riscv/riscv_zvt_instructions.cc
+@@ -15,8 +15,10 @@
+ #include "riscv/riscv_zvt_instructions.h"
+ 
+ #include <algorithm>
++#include <cmath>
+ #include <cstdint>
+ #include <cstring>
++#include <limits>
+ #include <optional>
+ 
+ #include "absl/log/log.h"
+@@ -371,6 +373,113 @@
+   return std::min(vector_state->vector_length(), effective_tile_edge);
+ }
+ 
++// Rounds `sum + err` to odd, where `sum` is the exact sum rounded to nearest
++// and `err` the remainder.
++float ExactSumToFloatROD(double sum, double err, RiscVFPState* fp_state) {
++  float f = DoubleToFloatROD(sum, fp_state);
++  if (!std::isfinite(sum) || err == 0.0 || static_cast<double>(f) != sum) {
++    return f;
++  }
++  // The exact sum is just off `f`: truncate it toward zero, then set the LSB.
++  if ((err < 0.0) != (sum < 0.0)) f = std::nextafter(f, 0.0f);
++  uint32_t bits;
++  std::memcpy(&bits, &f, sizeof(f));
++  bits |= 1;
++  std::memcpy(&f, &bits, sizeof(f));
++  return f;
++}
++
++// Returns whether the host currently rounds to nearest. It is probed rather
++// than derived from frm, to reflect the mode the status scope installed.
++bool HostRoundsToNearest() {
++  volatile double one = 1.0;
++  volatile double tiny = 0x1p-60;
++  return one + tiny == 1.0 && one - tiny == 1.0;
++}
++
++// Adds `terms` to `sum` with TwoSum under round-to-nearest; `err` gets the
++// remainder, exact for up to 2 terms. The scope, when taken, discards the
++// flags it raises. `host_rn` is whether the host already rounds to nearest.
++double TwoSum(double sum, const double* terms, int n, double& err,
++              RiscVFPState* fp_state, bool host_rn) {
++  // Finite operands under round-to-nearest raise only NX, which
++  // RiscVZvtMatmul discards, so skip the costly rounding-mode switch.
++  bool needs_scope = !host_rn || !std::isfinite(sum);
++  for (int i = 0; i < n; i++) needs_scope |= !std::isfinite(terms[i]);
++  std::optional<ScopedFPRoundingMode> rn;
++  if (fp_state && needs_scope) {
++    rn.emplace(fp_state->host_fp_interface(), FPRoundingMode::kRoundToNearest);
++  }
++  err = 0.0;
++  for (int i = 0; i < n; i++) {
++    const double s = sum + terms[i];
++    const double b = s - sum;
++    err += (sum - (s - b)) + (terms[i] - b);
++    sum = s;
++  }
++  return sum;
++}
++
++// Returns whether the finite exact sum `sum + err` reaches 2^128, where
++// CoralNPU's round-to-odd overflows, and if so raises OF as it does.
++bool OverflowsROD(double sum, double err) {
++  const double mag = std::fabs(sum);
++  if (!std::isfinite(sum) || mag < 0x1p128 ||
++      (mag == 0x1p128 && err * sum < 0.0)) {
++    return false;
++  }
++  volatile float big = std::numeric_limits<float>::max();
++  big = big * 2.0f;
++  return true;
++}
++
++// Rounds the exact sum of the BF16 `products` to odd, as CoralNPU does; a
++// double sum can lose the sticky bit of a far smaller product.
++float Bf16DotROD(const double* products, int n, RiscVFPState* fp_state,
++                 bool host_rn) {
++  double err;
++  // Like CoralNPU, an exact-zero dot product is +0.
++  const double sum = TwoSum(0.0, products, n, err, fp_state, host_rn);
++  // Widening overflows to infinity.
++  if (OverflowsROD(sum, err)) {
++    return std::copysign(std::numeric_limits<float>::infinity(), sum);
++  }
++  return ExactSumToFloatROD(sum, err, fp_state);
++}
++
++// Widens `f` to double. A signaling NaN is quieted in integer arithmetic, as
++// the conversion would do, but without raising NV: the accumulator is
++// widened outside TwoSum's flag-discarding scope.
++double WidenQuietly(float f) {
++  uint32_t bits;
++  std::memcpy(&bits, &f, sizeof(f));
++  const bool is_nan = (bits & 0x7fffffffu) > 0x7f800000u;
++  // The FP conversion never sees a NaN, even if it is speculated.
++  const uint32_t safe_bits = is_nan ? 0 : bits;
++  float safe;
++  std::memcpy(&safe, &safe_bits, sizeof(safe));
++  double d = safe;
++  if (is_nan) {
++    const uint64_t d_bits = (uint64_t{bits >> 31} << 63) |
++                            0x7ff8000000000000ull |
++                            (uint64_t{bits & 0x007fffffu} << 29);
++    std::memcpy(&d, &d_bits, sizeof(d));
++  }
++  return d;
++}
++
++// Adds `acc` and `dot` rounded to odd, as CoralNPU's accumulator does for
++// sources narrower than FP32; a double sum can lose the sticky bit.
++float AddROD(float acc, float dot, RiscVFPState* fp_state, bool host_rn) {
++  double err;
++  const double term = dot;
++  const double sum =
++      TwoSum(WidenQuietly(acc), &term, 1, err, fp_state, host_rn);
++  // Saturates to FLT_MAX on overflow (ExactSumToFloatROD truncates).
++  OverflowsROD(sum, err);
++  return ExactSumToFloatROD(sum, err, fp_state);
++}
++
+ }  // namespace
+ 
+ void RiscVZvtMsetMtypei(const Instruction* inst) {
+@@ -1051,6 +1160,8 @@
+     if (is_fp && fp_state) {
+       fp_status.emplace(fp_state->host_fp_interface());
+     }
++    // Probed once per instruction, under the status scope set up above.
++    const bool host_rn = fp_status.has_value() && HostRoundsToNearest();
+ 
+     for (int mm = 0; mm < tile_m; mm++) {
+       for (int nn = 0; nn < tile_n; nn++) {
+@@ -1069,6 +1180,7 @@
+                 .IgnoreError();
+           } else {
+             double sum_products = 0.0;
++            double products[4];  // tile_k <= RiscVZvtKmax(8).
+             for (int kk = 0; kk < tile_k; kk++) {
+               double product =
+                   static_cast<double>(read_fp_a(a, a_spans, kk, mm)) *
+@@ -1080,10 +1192,13 @@
+                 product = static_cast<double>(static_cast<float>(product));
+               }
+               sum_products += product;
++              products[kk] = product;
+             }
+ 
+             float sum_products_f;
+-            if (kind != RiscVZvtMatmulKind::kFp32) {
++            if (kind == RiscVZvtMatmulKind::kBf16) {
++              sum_products_f = Bf16DotROD(products, tile_k, fp_state, host_rn);
++            } else if (kind != RiscVZvtMatmulKind::kFp32) {
+               sum_products_f = DoubleToFloatROD(sum_products, fp_state);
+             } else {
+               sum_products_f = static_cast<float>(sum_products);
+@@ -1092,14 +1207,14 @@
+             float initial_acc =
+                 matrix_state->GetElem<float>(dest_tile, mm, nn, tew)
+                     .value_or(0.0f);
+-            double final_acc_d = static_cast<double>(initial_acc) +
+-                                 static_cast<double>(sum_products_f);
+-
+             float final_acc;
+             if (kind != RiscVZvtMatmulKind::kFp32) {
+-              final_acc = DoubleToFloatROD(final_acc_d, fp_state);
++              final_acc =
++                  AddROD(initial_acc, sum_products_f, fp_state, host_rn);
+             } else {
+-              final_acc = static_cast<float>(final_acc_d);
++              final_acc =
++                  static_cast<float>(static_cast<double>(initial_acc) +
++                                     static_cast<double>(sum_products_f));
+             }
+ 
+             matrix_state->SetElem<float>(dest_tile, mm, nn, tew, final_acc)
+diff --git a/riscv/test/riscv_zvt_instructions_test.cc b/riscv/test/riscv_zvt_instructions_test.cc
+--- a/riscv/test/riscv_zvt_instructions_test.cc
++++ b/riscv/test/riscv_zvt_instructions_test.cc
+@@ -4204,6 +4204,105 @@
+   EXPECT_EQ(DoubleToFloatROD(-0.0, fp_state_.get()), -0.0f);
+ }
+ 
++TEST_F(RiscVZvtInstructionsTest, DoubleToFloatRODTruncatesAndJams) {
++  // Truncation toward zero with the LSB jammed when inexact, across the float
++  // normal, subnormal, underflow and overflow ranges.
++  const struct {
++    double d;
++    uint32_t bits;
++  } kCases[] = {
++      {0x1p-149, 0x00000001u},  // Smallest float, exact.
++      {0x1p-150, 0x00000001u},  // Below it: inexact zero.
++      {-0x1p-151, 0x80000001u},
++      {0x1p-1074, 0x00000001u},               // Double subnormal.
++      {0x1.8p-148, 0x00000003u},              // Subnormal, exact.
++      {0x1.4p-148, 0x00000003u},              // Subnormal, sticky bit.
++      {0x1p-126, 0x00800000u},                // Smallest normal float.
++      {0x1.fffffffffffffp-127, 0x007fffffu},  // Just below it.
++      {0x1.000002p0, 0x3f800001u},            // Exact, odd.
++      {0x1.000001p0, 0x3f800001u},            // Halfway: truncated, jammed.
++      {-0x1.000003p0, 0xbf800001u},
++      {0x1.fffffep127, 0x7f7fffffu},  // FLT_MAX, exact.
++      {0x1p128, 0x7f7fffffu},         // Overflow truncates to it.
++      {-0x1p1000, 0xff7fffffu},
++  };
++  for (const auto& c : kCases) {
++    EXPECT_EQ(absl::bit_cast<uint32_t>(DoubleToFloatROD(c.d, fp_state_.get())),
++              c.bits)
++        << c.d;
++  }
++  // A signaling NaN is quieted and keeps the top payload bits.
++  EXPECT_EQ(absl::bit_cast<uint32_t>(DoubleToFloatROD(
++                absl::bit_cast<double>(uint64_t{0x7ff4000020000000}),
++                fp_state_.get())),
++            0x7fe00001u);
++}
++
++TEST_F(RiscVZvtInstructionsTest, VtfmmAltTvvBf16RoundsToOddUnderDirectedFrm) {
++  // The exact (TwoSum) sums are taken under round-to-nearest whatever frm
++  // says; under the directed mode itself these results differ by an ulp.
++  const struct {
++    FPRoundingMode frm;
++    uint32_t acc, expected;
++    uint16_t a, b;
++  } kCases[] = {
++      {FPRoundingMode::kRoundUp, 0x92caf64au, 0x57e4efffu, 0xd304, 0xc45e},
++      {FPRoundingMode::kRoundDown, 0x1471b870u, 0xfb631bffu, 0x53be, 0xe719},
++  };
++  ConfigureMatrixUnit(kMtwiden2, kVsew16, kVlmul1, /*vl=*/1, /*tk=*/1,
++                      /*tm=*/1, /*vstart=*/0, /*vta=*/false, /*vma=*/false,
++                      /*altfmt=*/true);
++  AppendMatmulSources(/*reg_a=*/8, /*reg_b=*/16, /*dest_tile=*/0);
++  instruction_->set_semantic_function(&RiscVZvtVtfmmAlt);
++  for (const auto& c : kCases) {
++    fp_state_->fcsr()->Write(*c.frm << kFcsrFrmShift);
++    ASSERT_OK(
++        SetTileMatrix<float>(/*tile=*/0, {{absl::bit_cast<float>(c.acc)}}));
++    WriteVectorRegister<uint16_t>("v8", {c.a});
++    WriteVectorRegister<uint16_t>("v16", {c.b});
++
++    instruction_->Execute(nullptr);
++
++    ASSERT_OK_AND_ASSIGN(float result,
++                         GetTileElem<float>(/*tile=*/0, /*row=*/0, /*col=*/0));
++    EXPECT_EQ(absl::bit_cast<uint32_t>(result), c.expected);
++  }
++}
++
++TEST_F(RiscVZvtInstructionsTest, VtfmmAltTvvBf16NonFiniteRaisesNoFlags) {
++  // Non-finite accumulators and operands raise no flags: a signaling-NaN
++  // accumulator is widened in integer arithmetic, and infinities keep the
++  // exact sums inside their flag-discarding scope.
++  const struct {
++    uint32_t acc, expected;
++    uint16_t a, b;
++  } kCases[] = {
++      {0xff9d20e8u, 0xffdd20e8u, 0xe0a8, 0xa73f},  // Signaling-NaN accumulator.
++      {0x7f800000u, 0x7f800000u, 0x3f80, 0x3f80},  // Infinite accumulator.
++      {0x3f800000u, 0x7f800000u, 0x7f80, 0x3f80},  // Infinite operand.
++  };
++  ConfigureMatrixUnit(kMtwiden2, kVsew16, kVlmul1, /*vl=*/1, /*tk=*/1,
++                      /*tm=*/1, /*vstart=*/0, /*vta=*/false, /*vma=*/false,
++                      /*altfmt=*/true);
++  AppendMatmulSources(/*reg_a=*/8, /*reg_b=*/16, /*dest_tile=*/0);
++  instruction_->set_semantic_function(&RiscVZvtVtfmmAlt);
++  for (const auto& c : kCases) {
++    fp_state_->fcsr()->Write(0U);
++    ASSERT_OK(
++        SetTileMatrix<float>(/*tile=*/0, {{absl::bit_cast<float>(c.acc)}}));
++    WriteVectorRegister<uint16_t>("v8", {c.a});
++    WriteVectorRegister<uint16_t>("v16", {c.b});
++
++    instruction_->Execute(nullptr);
++
++    ASSERT_OK_AND_ASSIGN(float result,
++                         GetTileElem<float>(/*tile=*/0, /*row=*/0, /*col=*/0));
++    EXPECT_EQ(absl::bit_cast<uint32_t>(result), c.expected)
++        << std::hex << c.acc;
++    EXPECT_EQ(fp_state_->fcsr()->AsUint32(), 0U) << std::hex << c.acc;
++  }
++}
++
+ TEST_F(RiscVZvtInstructionsTest, MatmulFcsrNxExceptionInvarianceTrace) {
+   ConfigureMatrixUnit(kMtwiden1, kVsew32, kVlmul1, /*vl=*/2, /*tk=*/1,
+                       /*tm=*/2);
