@@ -2,9 +2,11 @@
 
 Use this reference during **Step 1 (`draft` and `draft-from-commits`)**, **Step
 2 (`challenge`)**, **Step 3 (`audit`)**, and **Step 4 (`revise`)** of
-[`../SKILL.md`](../SKILL.md)—as well as Tier 2 escalations in
-`/implement-design audit`—to give the developer self-contained codebase context
-and walk down open design decisions before writing or revising artifacts.
+[`../SKILL.md`](../SKILL.md)—as well as **Section 2** during `/roadmap`
+(`draft`, `draft-from-commits`, `challenge`, `to-doc`, `from-doc`) and Tier 2
+escalations in `/implement-design audit`—to give the developer self-contained
+codebase context and walk down open design decisions before writing or revising
+design or roadmap artifacts.
 
 ---
 
@@ -86,13 +88,15 @@ all load-bearing decisions are resolved:
      questions only for open forks, edge cases, or contradictions in the
      developer's outline (allowing the developer to defer any hard fork to
      targeted Design Lenses if needed).
-   - **During `challenge`, `audit`, `revise`, or `/implement-design audit`**:
-     Use the same 1-at-a-time question format whenever Tier 2 findings, inline
-     `A:` notes, or Gerrit comments open a trade-off, scope/contract change, or
-     prior-decision conflict. When `>= 2` Tier 2 items are queued, list the
-     remaining topics in 1 line before asking Question 1, and apply each
-     resolved decision as it settles (following the active skill's verification
-     cadence).
+   - **During `challenge`, `audit`, `revise`, `/implement-design audit`, or
+     `/roadmap` (`draft`, `draft-from-commits`, `challenge`, `to-doc`,
+     `from-doc`)**: Use the same 1-at-a-time question format whenever open
+     roadmap scope/track forks, Tier 2 findings, inline `A:` notes, Gerrit
+     comments, re-export choices, or unresolved Google Doc comments/conflicts
+     open a trade-off, scope/contract change, or prior-decision conflict. When
+     `>= 2` Tier 2 items are queued, list the remaining topics in 1 line before
+     asking Question 1, and apply each resolved decision as it settles
+     (following the active skill's verification cadence).
 2. **Never Ask Codebase-Answerable Questions**: Every question must resolve a
    **design trade-off, scope boundary, or unwritten requirement/priority**,
    never a fact readable from the repository.
@@ -132,11 +136,11 @@ all load-bearing decisions are resolved:
        reopening an oscillating/settled choice, include an explicit option to
        **keep the current simpler design** and persist a **1–2 line** rationale
        (with no `[Lens: ...]` tags) in the active persisted decision record
-       (`### Alternatives Considered` / `Non-Goals`, or `Implementation Notes &
-       Adaptations`) so subsequent fresh-session passes stop reopening it. Make
-       that keep-current option **`1. (Recommended)`** for oscillation or
-       speculative-addition escalations unless concrete failure evidence
-       outweighs the added complexity.
+       (`### Alternatives Considered` / `Non-Goals`, `Implementation Notes &
+       Adaptations`, or roadmap Section 3) so subsequent fresh-session passes
+       stop reopening it. Make that keep-current option **`1. (Recommended)`**
+       for oscillation or speculative-addition escalations unless concrete
+       failure evidence outweighs the added complexity.
      - **`<k+1>. Explain the background / current codebase flow or elaborate on
        the options before deciding`** *(during `draft`, include *"or a filtered
        lens idea"*)*: Always include this option. If selected (or if the

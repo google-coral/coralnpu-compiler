@@ -59,6 +59,13 @@ or `commit` automatically during `draft`, `draft-from-commits`, or `revise`.
 - **1. Reconnaissance & Buganizer Lookup (`2161972`)**:
   - Read `./docs/design/INDEX.md`, the relevant `./docs/design/<component>.md`
     living docs (including their TODOs), and target source files.
+  - Check `./docs/design/*_roadmap.md` for a matching `<change>` entry: if
+    found, read the roadmap's Section 1 (`HEAD` baseline & goals), the
+    `#### <change>` entry, `### Track Dependencies & Conflict Boundaries` at
+    the end of Section 2, and Section 3 (deferred/rejected directions), and
+    link `docs/design/<topic>_roadmap.md` (and its Track) in Section 1 of
+    `changes/<change>.md` so `audit`, `challenge`, and `revise` retain its
+    track boundaries.
   - If `/google/bin/releases/issues-cli/issues` exists (pass `BypassSandbox:
     true` if present in the tool schema), read cited `b/<id>` (`issues
     readonly render|list-updates <id>`) and search related open issues

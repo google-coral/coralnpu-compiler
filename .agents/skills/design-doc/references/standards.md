@@ -180,8 +180,8 @@ skill-agnostic core protocol below paired with the active skill's scope block.
 
 #### 4.2.1 Skill-Agnostic Core Protocol
 
-Applies to `/design-doc challenge`, `/design-doc audit`, and `/implement-design
-audit`:
+Applies to `/design-doc challenge`, `/design-doc audit`, `/implement-design
+audit`, and `/roadmap challenge`:
 
 1. **Codebase & Persisted-Decision Verification**:
    - Fact-check every subagent claim against the codebase, silently drop minor
@@ -214,12 +214,12 @@ audit`:
      recommend advancing to the next workflow step.
 3. **Fixed Chat Output Layout**:
    Present results in this order so Tier 2 options are never buried:
-   - **1. 1-Paragraph Blind Summary** (`/design-doc audit` and
-     `/implement-design audit`) or 1-line **`Lenses Run`** note (`/design-doc
-     challenge`).
+   - **1. 1-Paragraph Blind Summary** (`/design-doc audit`, `/implement-design
+     audit`, and `/roadmap challenge`) or 1-line **`Lenses Run`** note
+     (`/design-doc challenge`).
    - **2. Applied Updates** (omit if none): Compact bulleted summary of Tier 1
      edits applied in the working tree, naming touched files/sections with
-     clickable file links and preserving any `[Lens: ...]` tags.
+     clickable file links and preserving any `[Lens: ...]` or category tags.
    - **3. Refuted & Already-Settled** (omit if empty): Compact 1-line bullets
      (`- **[Refuted by <file> (<symbol>)]**: ...` or `- **[Already Settled]**:
      ...`).

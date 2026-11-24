@@ -1,11 +1,13 @@
 # CoralNPU Compiler Design Documents & CL Workflow
 
-This directory holds the architectural documentation and change design briefs
-for the CoralNPU Compiler. For non-trivial changes (new compiler passes,
-operation enablements, third-party patches, or changes larger than ~150 LOC),
-the project uses a **Two-CL Spec-Driven Development (SDD)** workflow supported
-by the `/design-doc` and `/implement-design` agent skills (detailed in
-[`.agents/skills/design-doc/`](../../.agents/skills/design-doc/SKILL.md) and
+This directory holds the architectural documentation, optional topic roadmaps,
+and change design briefs for the CoralNPU Compiler. For non-trivial changes (new
+compiler passes, operation enablements, third-party patches, or changes larger
+than ~150 LOC), the project uses a **Two-CL Spec-Driven Development (SDD)**
+workflow supported by the `/roadmap` (optional multi-change planning),
+`/design-doc`, and `/implement-design` agent skills (detailed in
+[`.agents/skills/roadmap/`](../../.agents/skills/roadmap/SKILL.md),
+[`.agents/skills/design-doc/`](../../.agents/skills/design-doc/SKILL.md), and
 [`.agents/skills/implement-design/`](../../.agents/skills/implement-design/SKILL.md)).
 
 ---
@@ -17,6 +19,7 @@ docs/design/
 ├── README.md               # This workflow guide
 ├── INDEX.md                # Maps each living <component>.md doc to its source paths & passes
 ├── <component>.md          # Living component architecture at HEAD (updated in CL 2)
+├── <topic>_roadmap.md      # Optional multi-change topic roadmap feeding into /design-doc draft
 ├── changes/
 │   ├── TEMPLATE.md         # 4-section template for new change briefs
 │   └── <change>.md         # Active, unmerged change brief (created in CL 1)
@@ -66,6 +69,21 @@ them as a **2-CL chain**:
 
 ```text
 ===============================================================================
+          PHASE 0: ROADMAP (Optional — `/roadmap` -> <topic>_roadmap.md)
+===============================================================================
+  1. `/roadmap draft`        -> Gather sources, investigate HEAD, interview &
+     (or `draft-from-commits`)  write `docs/design/<topic>_roadmap.md`
+           │
+           ▼
+  2. `/roadmap challenge`    -> Zero-history 5-point check (completeness, HEAD
+           │                    grounding, sizing, boundaries, altitude)
+           ▼
+  3. `/roadmap to-doc`       -> Optional Google Doc team review & merge back
+     -> `/roadmap from-doc`     (if Google Docs tools exist) -> re-run
+           │                    `challenge`; optionally commit & push
+           ▼                    (each `<change>` feeds into Phase 1 below)
+
+===============================================================================
                PHASE 1: DESIGN (`/design-doc` -> CL 1 + Initial CL 2)
 ===============================================================================
   1. `/design-doc draft`     -> Co-design & update in the working tree:
@@ -112,6 +130,11 @@ them as a **2-CL chain**:
 
 | Command                                                     | What It Does                                                                                                                                                        |
 | :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/roadmap draft [<topic>] [<sources/prompt>]`               | Gathers sources, investigates `HEAD`, interviews on open scope/track forks, and writes or updates `docs/design/<topic>_roadmap.md`.                                 |
+| `/roadmap draft-from-commits [<commits>] [<topic>]`         | Abstracts and critiques a pre-code multi-change roadmap anchored at `<base_sha>` from an existing prototype commit range (`<commits>`).                             |
+| `/roadmap challenge [<topic>]`                              | Spawns a zero-history wide-search subagent for a 5-point roadmap check, applies clear-cut fixes directly, and interviews on open trade-offs.                        |
+| `/roadmap to-doc [<topic>] [<doc_url_or_id>]`               | Exports `<topic>_roadmap.md` to a Google Doc for team review, or asks how to update an existing Doc *(if Google Docs tools are available)*.                         |
+| `/roadmap from-doc [<topic>] [<doc_url_or_id>]`             | Merges edits from the linked Google Doc back into `<topic>_roadmap.md` without `HEAD` checks *(if Google Docs tools are available)*.                                |
 | `/design-doc draft [<change>] <description>`                | Co-designs the change, updates `<component>.md` + `.h`/`.td` interfaces, writes `changes/<change>.md`, and stops for your review.                                   |
 | `/design-doc draft-from-commits [<commits>] [<change>]`     | Abstracts and critiques a pre-code design from existing commit(s) (`<commits>`, default `HEAD`), highlighting opportunities to simplify the code.                   |
 | `/design-doc challenge [<change>]`                          | Spawns 2–3 bounded adversarial Design Lens subagents (wide search), applies clear-cut fixes directly, and interviews on open trade-offs.                            |
@@ -129,12 +152,13 @@ them as a **2-CL chain**:
   or omit it when only one active doc exists in `docs/design/changes/`.
 - **Inline `A:` Comments & Same-Session Edits**: Within a session, you can ask
   for edits in plain text or add `A:` comments directly inside `<change>.md` or
-  `<component>.md` and run `/design-doc revise`. In a new session (or after
-  `/compact`), start with the `/design-doc` or `/implement-design` command.
-- **Verify the Blind Comprehension Summary (`audit`)**: Always read the
-  1-paragraph summary at the top of `/design-doc audit` (and
-  `/implement-design audit`) to confirm that a zero-context reader understands
-  the design and code the way you intended.
+  `<component>.md` and run `/design-doc revise` (or inside `<topic>_roadmap.md`
+  and run `/roadmap draft <topic>`). In a new session (or after `/compact`),
+  start with the `/roadmap`, `/design-doc`, or `/implement-design` command.
+- **Verify the Blind Comprehension Summary (`audit` / `challenge`)**: Always
+  read the 1-paragraph summary at the top of `/design-doc audit`,
+  `/implement-design audit`, and `/roadmap challenge` to confirm that a
+  zero-context reader understands the roadmap, design, or code as intended.
 - **Pushing to Gerrit (`-o wip` vs. `-o ready`)**:
   - After `/design-doc commit` (`n = 1` for a single CL 2, or the number of
     staged `CL 2a..2n` commits):
